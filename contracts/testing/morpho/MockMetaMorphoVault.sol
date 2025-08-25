@@ -24,6 +24,7 @@ contract MockMetaMorphoVault is ERC4626 {
   uint256 public mockTotalAssets;
   uint256 public yieldRate = 10000; // 100% APY in basis points (for easy testing)
   uint256 public lastYieldUpdate;
+  address public owner;
   
   // Tracking for security testing
   mapping(address => uint256) public lastDepositTimestamp;
@@ -32,6 +33,9 @@ contract MockMetaMorphoVault is ERC4626 {
   mapping(address => uint256) public pendingRewards;
   address public rewardToken;
   uint256 public rewardRate; // rewards per second per share
+  
+  // Mock skim recipient for MetaMorpho compatibility
+  address public skimRecipient;
   
   // Mock behaviors for testing edge cases
   bool public mockPaused = false;
@@ -52,6 +56,7 @@ contract MockMetaMorphoVault is ERC4626 {
     string memory _symbol
   ) ERC20(_name, _symbol) ERC4626(_asset) {
     lastYieldUpdate = block.timestamp;
+    owner = msg.sender;
   }
 
   // --- Mock Controls ---
@@ -258,6 +263,39 @@ contract MockMetaMorphoVault is ERC4626 {
     return lastDepositTimestamp[account] == block.timestamp;
   }
 
+  // --- Mock Skim Functions (MetaMorpho compatibility) ---
+  
+  /**
+   * @notice Transfer ownership of the vault
+   * @param newOwner Address of the new owner
+   */
+  function transferOwnership(address newOwner) external {
+    require(msg.sender == owner, "Not owner");
+    owner = newOwner;
+  }
+  
+  /**
+   * @notice Set the skim recipient for reward collection
+   * @param _skimRecipient Address to receive skimmed rewards
+   */
+  function setSkimRecipient(address _skimRecipient) external {
+    require(msg.sender == owner, "Not owner");
+    skimRecipient = _skimRecipient;
+  }
+  
+  /**
+   * @notice Skim rewards to the skim recipient
+   * @param token Token to skim
+   */
+  function skim(address token) external {
+    if (skimRecipient != address(0)) {
+      uint256 balance = IERC20(token).balanceOf(address(this));
+      if (balance > 0) {
+        IERC20(token).transfer(skimRecipient, balance);
+      }
+    }
+  }
+  
   // --- Mock Reward Functions ---
   
   /**
