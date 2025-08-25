@@ -105,6 +105,21 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
           args: [instanceConfig.dStable, vaultAsset, collateralVault.address],
           log: true,
         });
+      } else if (adapterContract === "WrappedMorphoConversionAdapter") {
+        const deploymentName = `${adapterContract}_${dStableSymbol}`;
+        // Avoid accidental redeployments on live networks by skipping if already deployed
+        const existingAdapter = await deployments.getOrNull(deploymentName);
+
+        if (existingAdapter) {
+          console.log(`    ${deploymentName} already exists at ${existingAdapter.address}. Skipping deployment.`);
+          continue;
+        }
+        await deploy(deploymentName, {
+          from: deployer,
+          contract: adapterContract,
+          args: [instanceConfig.dStable, vaultAsset, collateralVault.address],
+          log: true,
+        });
       }
     }
   }

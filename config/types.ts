@@ -39,6 +39,7 @@ export interface Config {
     [key: string]: DStakeInstanceConfig; // e.g., sdUSD, sdETH
   };
   readonly vesting?: VestingConfig;
+  readonly morpho?: MorphoConfig;
 }
 
 // Configuration for mocking infrastructure on local and test networks
@@ -251,4 +252,23 @@ export interface ChainlinkCompositeAggregatorConfig {
   readonly fixedPriceInBase1: bigint; // Fixed price for sourceFeed1 when threshold is exceeded (e.g., 100000000n for 1.00)
   readonly lowerThresholdInBase2: bigint; // Lower threshold for sourceFeed2 (e.g., 98000000n for 0.98)
   readonly fixedPriceInBase2: bigint; // Fixed price for sourceFeed2 when threshold is exceeded (e.g., 100000000n for 1.00)
+}
+
+// --- Morpho Types ---
+
+export interface MorphoMarketConfig {
+  readonly name: string; // Human-readable name for the market
+  readonly symbol: string; // Symbol for the vault token
+  readonly loanToken: Address; // The token being supplied/borrowed (e.g., dUSD)
+  readonly collateralToken: Address; // The collateral token (can be zero address for pure supply)
+  readonly oracle: Address; // Oracle address for the market
+  readonly irm: Address; // Interest rate model address
+  readonly lltv: number; // Loan-to-value ratio (in basis points or as configured by Morpho)
+}
+
+export interface MorphoConfig {
+  readonly morphoAddress: Address; // Address of the Morpho Blue contract
+  readonly markets: {
+    [key: string]: MorphoMarketConfig; // e.g., "dUSD_market"
+  };
 }
