@@ -7,6 +7,7 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
+import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
 
 /**
  * @title MetaMorphoConversionAdapter
@@ -20,14 +21,21 @@ import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapt
  * - Clears approvals after operations
  * - Validates all return values from external vault
  * - Ensures no value remains in adapter contract
+ * 
+ * Note on slippage protection:
+ * While ERC-4626 vaults like MetaMorpho should theoretically have no slippage (shares are
+ * deterministic based on totalAssets/totalSupply), we include slippage protection for:
+ * 1. Protection against malicious vault implementations
+ * 2. Handling vaults with fees (deposit/withdrawal fees)
+ * 3. Protection during high-volatility periods where underlying Morpho positions may change
+ * 4. Future-proofing against MetaMorpho vaults that may implement dynamic fees
  */
 contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGuard {
   using SafeERC20 for IERC20;
   using Math for uint256;
 
   // --- Constants ---
-  uint256 private constant MAX_SLIPPAGE_BPS = 100; // 1% max slippage
-  uint256 private constant BPS_BASE = 10000;
+  uint256 private constant MAX_SLIPPAGE_BPS = BasisPointConstants.ONE_PERCENT_BPS; // 1% max slippage
   uint256 private constant MIN_SHARES = 100; // Minimum shares to prevent dust attacks (100 wei)
 
   // --- Errors ---
@@ -104,7 +112,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     }
 
     // Calculate minimum acceptable shares (with slippage protection)
-    uint256 minShares = expectedShares.mulDiv(BPS_BASE - MAX_SLIPPAGE_BPS, BPS_BASE, Math.Rounding.Floor);
+    uint256 minShares = expectedShares.mulDiv(
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS, 
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS, 
+      Math.Rounding.Floor
+    );
     
     // Prevent dust deposits that could be vulnerable to rounding attacks
     if (minShares < MIN_SHARES) revert DustAmount();
@@ -164,7 +176,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     }
 
     // Calculate minimum acceptable assets
-    uint256 minAssets = expectedAssets.mulDiv(BPS_BASE - MAX_SLIPPAGE_BPS, BPS_BASE, Math.Rounding.Floor);
+    uint256 minAssets = expectedAssets.mulDiv(
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+      Math.Rounding.Floor
+    );
 
     // 3. Redeem shares for dStable, sending directly to caller
     uint256 actualAssets;
@@ -236,7 +252,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   {
     try metaMorphoVault.previewRedeem(vaultAssetAmount) returns (uint256 assets) {
       // Apply slippage for preview (conservative estimate)
-      return assets.mulDiv(BPS_BASE - MAX_SLIPPAGE_BPS, BPS_BASE, Math.Rounding.Floor);
+      return assets.mulDiv(
+        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+        Math.Rounding.Floor
+      );
     } catch {
       return 0;
     }
@@ -253,7 +273,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   {
     try metaMorphoVault.previewDeposit(dStableAmount) returns (uint256 shares) {
       // Apply slippage for preview (conservative estimate)
-      uint256 expectedShares = shares.mulDiv(BPS_BASE - MAX_SLIPPAGE_BPS, BPS_BASE, Math.Rounding.Floor);
+      uint256 expectedShares = shares.mulDiv(
+        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+        Math.Rounding.Floor
+      );
       return (address(metaMorphoVault), expectedShares);
     } catch {
       return (address(metaMorphoVault), 0);

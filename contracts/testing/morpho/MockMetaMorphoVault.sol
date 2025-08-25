@@ -9,8 +9,13 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 /**
  * @title MockMetaMorphoVault
  * @notice Mock implementation of a MetaMorpho vault for testing
- * @dev Simulates a MetaMorpho vault with configurable yield generation
+ * @dev Simulates a MetaMorpho vault with configurable yield generation and rewards
  *      This mock allows testing of integrations without deploying to mainnet
+ *      
+ *      Note on rewards: Real MetaMorpho vaults may have external reward mechanisms
+ *      (e.g., through Universal Rewards Distributor or curator incentives), but these
+ *      are handled outside the vault contract itself. This mock includes basic reward
+ *      tracking for testing purposes.
  */
 contract MockMetaMorphoVault is ERC4626 {
   using Math for uint256;
@@ -23,6 +28,11 @@ contract MockMetaMorphoVault is ERC4626 {
   // Tracking for security testing
   mapping(address => uint256) public lastDepositTimestamp;
   
+  // Mock reward tracking (for testing reward scenarios)
+  mapping(address => uint256) public pendingRewards;
+  address public rewardToken;
+  uint256 public rewardRate; // rewards per second per share
+  
   // Mock behaviors for testing edge cases
   bool public mockPaused = false;
   bool public mockRevertOnDeposit = false;
@@ -33,6 +43,7 @@ contract MockMetaMorphoVault is ERC4626 {
   // --- Events ---
   event YieldAccrued(uint256 amount);
   event MockBehaviorSet(string behavior, bool value);
+  event RewardsClaimed(address indexed user, uint256 amount);
 
   // --- Constructor ---
   constructor(
@@ -245,6 +256,58 @@ contract MockMetaMorphoVault is ERC4626 {
    */
   function wouldTriggerSandwichProtection(address account) external view returns (bool) {
     return lastDepositTimestamp[account] == block.timestamp;
+  }
+
+  // --- Mock Reward Functions ---
+  
+  /**
+   * @notice Set mock reward token and rate for testing
+   * @param _rewardToken Address of the reward token (can be 0 to disable)
+   * @param _rewardRate Rewards per second per share
+   */
+  function setRewardConfig(address _rewardToken, uint256 _rewardRate) external {
+    rewardToken = _rewardToken;
+    rewardRate = _rewardRate;
+  }
+
+  /**
+   * @notice Mock function to simulate reward accrual
+   * @param user Address to accrue rewards for
+   */
+  function accrueRewards(address user) external {
+    if (rewardToken != address(0) && balanceOf(user) > 0) {
+      uint256 timeSinceDeposit = block.timestamp - lastDepositTimestamp[user];
+      uint256 rewards = (balanceOf(user) * rewardRate * timeSinceDeposit) / 1e18;
+      pendingRewards[user] += rewards;
+    }
+  }
+
+  /**
+   * @notice Mock function to claim accrued rewards
+   * @dev In real MetaMorpho, rewards are typically handled externally
+   */
+  function claimRewards() external returns (uint256) {
+    uint256 rewards = pendingRewards[msg.sender];
+    if (rewards > 0 && rewardToken != address(0)) {
+      pendingRewards[msg.sender] = 0;
+      // In a real implementation, would transfer reward tokens
+      emit RewardsClaimed(msg.sender, rewards);
+    }
+    return rewards;
+  }
+
+  /**
+   * @notice Get pending rewards for a user
+   * @param user Address to check
+   * @return Amount of pending rewards
+   */
+  function getPendingRewards(address user) external view returns (uint256) {
+    if (rewardToken == address(0) || balanceOf(user) == 0) {
+      return pendingRewards[user];
+    }
+    uint256 timeSinceDeposit = block.timestamp - lastDepositTimestamp[user];
+    uint256 accruedRewards = (balanceOf(user) * rewardRate * timeSinceDeposit) / 1e18;
+    return pendingRewards[user] + accruedRewards;
   }
 
   // --- Internal Overrides ---
