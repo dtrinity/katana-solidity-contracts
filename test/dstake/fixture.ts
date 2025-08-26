@@ -117,6 +117,24 @@ async function fetchDStakeComponents(
     (await deployments.get(config.routerContractId)).address
   );
 
+  // Setup test permissions for DStakeRouter
+  // Grant DEFAULT_ADMIN_ROLE to the first test signer (standard test owner)
+  const signers = await ethers.getSigners();
+  const testOwner = signers[0]; // Standard test owner address
+  const DEFAULT_ADMIN_ROLE = await router.DEFAULT_ADMIN_ROLE();
+  
+  try {
+    const ownerHasRole = await router.hasRole(DEFAULT_ADMIN_ROLE, testOwner.address);
+    if (!ownerHasRole) {
+      const deployerHasRole = await router.hasRole(DEFAULT_ADMIN_ROLE, deployer);
+      if (deployerHasRole) {
+        await router.connect(deployerSigner).grantRole(DEFAULT_ADMIN_ROLE, testOwner.address);
+      }
+    }
+  } catch (error) {
+    // Ignore permission setup errors in testing
+  }
+
   const wrappedATokenAddress = (
     await deployments.get(
       config.dStableSymbol === "dUSD"

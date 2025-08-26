@@ -12,10 +12,17 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  * @dev Simulates a MetaMorpho vault with configurable yield generation and rewards
  *      This mock allows testing of integrations without deploying to mainnet
  *
- *      Note on rewards: Real MetaMorpho vaults may have external reward mechanisms
- *      (e.g., through Universal Rewards Distributor or curator incentives), but these
- *      are handled outside the vault contract itself. This mock includes basic reward
- *      tracking for testing purposes.
+ *      IMPORTANT - Reward Handling Architecture:
+ *      Real MetaMorpho vaults do not handle rewards directly within the vault contract.
+ *      Instead, rewards are managed externally through:
+ *      1. Universal Rewards Distributor (URD) contracts
+ *      2. Curator incentive programs
+ *      3. Other external reward mechanisms
+ *      
+ *      In our dSTAKE integration, MetaMorpho rewards are handled by the 
+ *      DStakeRewardManagerMetaMorpho contract, not by the conversion adapter.
+ *      This mock includes basic reward tracking functions for testing scenarios
+ *      but should not be confused with production reward handling.
  */
 contract MockMetaMorphoVault is ERC4626 {
   using Math for uint256;

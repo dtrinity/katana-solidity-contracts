@@ -1,7 +1,6 @@
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { DUSD_TOKEN_ID, DETH_TOKEN_ID } from "../typescript/deploy-ids";
-import { getConfig } from "../config/config";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployments, getNamedAccounts } = hre;
@@ -79,51 +78,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
   }
 
-  // Setup DStakeRouter permissions if deployed
-  const config = await getConfig(hre);
+  console.log("Test permissions setup completed for dUSD and dETH tokens");
   
-  if (config.dStake) {
-    console.log("Setting up DStakeRouter test permissions...");
-    
-    // Get test signers (the first signer is typically the one used as 'owner' in tests)
-    const signers = await hre.ethers.getSigners();
-    const ownerSigner = signers[0]; // This is the test 'owner' - 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-    
-    for (const instanceKey in config.dStake) {
-      const routerDeploymentName = `DStakeRouter_${instanceKey}`;
-      const routerDeployment = await deployments.getOrNull(routerDeploymentName);
-      
-      if (routerDeployment) {
-        try {
-          const routerContract = await hre.ethers.getContractAt("DStakeRouter", routerDeployment.address);
-          const DEFAULT_ADMIN_ROLE = await routerContract.DEFAULT_ADMIN_ROLE();
-          
-          // Check if owner already has the role
-          const ownerHasRole = await routerContract.hasRole(DEFAULT_ADMIN_ROLE, ownerSigner.address);
-          
-          if (!ownerHasRole) {
-            // The deployer should have DEFAULT_ADMIN_ROLE from the router constructor
-            const deployerSigner = await hre.ethers.getSigner(deployer);
-            const deployerHasRole = await routerContract.hasRole(DEFAULT_ADMIN_ROLE, deployer);
-            
-            if (deployerHasRole) {
-              await routerContract.connect(deployerSigner).grantRole(DEFAULT_ADMIN_ROLE, ownerSigner.address);
-              console.log(`Granted DEFAULT_ADMIN_ROLE to test owner for ${routerDeploymentName}`);
-            } else {
-              console.log(`Warning: Deployer doesn't have DEFAULT_ADMIN_ROLE for ${routerDeploymentName}`);
-            }
-          } else {
-            console.log(`Test owner already has DEFAULT_ADMIN_ROLE for ${routerDeploymentName}`);
-          }
-        } catch (error) {
-          console.log(`Could not grant DEFAULT_ADMIN_ROLE for ${routerDeploymentName}:`, error);
-        }
-      }
-    }
-  }
+  // Note: DStakeRouter permissions are now handled in dSTAKE-specific test fixtures
+  // to avoid global side effects that don't reflect reality
 };
 
 func.tags = ["test-permissions"];
-func.dependencies = ["dusd", "deth", "dStake"];
+func.dependencies = ["dusd", "deth"];
 
 export default func;
