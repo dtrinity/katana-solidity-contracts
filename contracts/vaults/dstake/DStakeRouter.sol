@@ -429,6 +429,11 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   /**
    * @notice Funds the router with reserves to handle vault fees and operational costs.
    * @dev This function allows governance to seed the router with dStable reserves.
+   *      Reserves are critical for covering shortfalls during withdrawals when adapters
+   *      cannot provide the exact requested amount of dStable, ensuring withdrawal 
+   *      guarantees are always met. While the router accumulates reserves naturally
+   *      from withdrawal surpluses, manual funding may be needed during system bootstrap
+   *      or to maintain adequate reserve levels for operational reliability.
    * @param amount The amount of dStable to fund as reserves.
    */
   function fundReserves(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
