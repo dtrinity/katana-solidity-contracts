@@ -5,6 +5,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployments, getNamedAccounts } = hre;
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
+  
+  console.log("Running mock MetaMorpho vault deployment...");
 
   // Only deploy mocks on test networks
   const chainId = await hre.getChainId();
@@ -15,27 +17,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     return;
   }
 
-  // Get deployed mock tokens to use as underlying assets
-  const dUSDDeployment = await deployments.getOrNull("DUSD_TOKEN_ID");
-  const dETHDeployment = await deployments.getOrNull("DETH_TOKEN_ID");
+  // Get deployed dStable tokens to use as underlying assets
+  const dUSDDeployment = await deployments.getOrNull("dUSD");
+  const dETHDeployment = await deployments.getOrNull("dETH");
 
-  // If no dStable tokens, try to get mock tokens
-  let mockUSDCAddress = dUSDDeployment?.address;
-  let mockWETHAddress = dETHDeployment?.address;
-
-  if (!mockUSDCAddress) {
-    const mockUSDC = await deployments.getOrNull("MockUSDC");
-    mockUSDCAddress = mockUSDC?.address;
-  }
-
-  if (!mockWETHAddress) {
-    const mockWETH = await deployments.getOrNull("MockWETH");
-    mockWETHAddress = mockWETH?.address;
-  }
-
-  // Deploy MockMetaMorphoVault for USDC/dUSD
-  if (mockUSDCAddress) {
-    const deploymentName = "MockMetaMorphoVault_USDC";
+  // Deploy MockMetaMorphoVault for dUSD
+  if (dUSDDeployment?.address) {
+    const deploymentName = "MockMetaMorphoVault_dUSD";
     const existingVault = await deployments.getOrNull(deploymentName);
 
     if (!existingVault) {
@@ -43,9 +31,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         from: deployer,
         contract: "MockMetaMorphoVault",
         args: [
-          mockUSDCAddress,
-          "Mock MetaMorpho USDC Vault",
-          "mmvUSDC"
+          dUSDDeployment.address,
+          "Mock MetaMorpho dUSD Vault",
+          "mmvdUSD"
         ],
         log: true,
       });
@@ -55,9 +43,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
   }
 
-  // Deploy MockMetaMorphoVault for WETH/dETH
-  if (mockWETHAddress) {
-    const deploymentName = "MockMetaMorphoVault_WETH";
+  // Deploy MockMetaMorphoVault for dETH
+  if (dETHDeployment?.address) {
+    const deploymentName = "MockMetaMorphoVault_dETH";
     const existingVault = await deployments.getOrNull(deploymentName);
 
     if (!existingVault) {
@@ -65,9 +53,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         from: deployer,
         contract: "MockMetaMorphoVault",
         args: [
-          mockWETHAddress,
-          "Mock MetaMorpho WETH Vault",
-          "mmvWETH"
+          dETHDeployment.address,
+          "Mock MetaMorpho dETH Vault",
+          "mmvdETH"
         ],
         log: true,
       });
@@ -104,8 +92,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["MockMetaMorphoVaults", "Mocks"];
-func.dependencies = ["MockTokens", "dStableCore"];
+func.tags = ["mock-metamorpho-vaults", "Mocks"];
+func.dependencies = ["local-setup", "dusd", "deth"];
 
 // Ensure one-shot execution
 func.id = "deploy_mock_metamorpho_vaults";

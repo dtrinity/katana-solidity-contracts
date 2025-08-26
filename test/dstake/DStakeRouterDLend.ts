@@ -18,7 +18,7 @@ import {
 } from "./fixture";
 
 DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
-  describe.skip(`DStakeRouterDLend for ${config.DStakeTokenSymbol}`, function () {
+  describe(`DStakeRouterDLend for ${config.DStakeTokenSymbol}`, function () {
     // Create fixture once per suite for snapshot caching
     const fixture = createDStakeFixture(config);
 
