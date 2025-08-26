@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
+
 /**
  * @title AllocationCalculator
  * @notice Library for calculating allocations, deficits, and amount distributions
  * @dev Provides stateless functions for allocation calculations used in the DStake Morpho Router V2
  */
 library AllocationCalculator {
-    
-    /// @dev Basis points base (100% = 10,000 basis points)
-    uint256 internal constant BPS_BASE = 10000;
     
     /// @dev Error thrown when arrays have mismatched lengths
     error ArrayLengthMismatch();
@@ -25,7 +24,7 @@ library AllocationCalculator {
 
     /**
      * @notice Calculates current allocations in basis points from vault balances
-     * @dev Allocation for vault i = (balance[i] * BPS_BASE) / totalBalance
+     * @dev Allocation for vault i = (balance[i] * BasisPointConstants.ONE_PERCENT_BPS) / totalBalance
      * @param vaultBalances Array of vault balances
      * @return allocations Array of current allocations in basis points
      * @return totalBalance Sum of all vault balances
@@ -53,7 +52,7 @@ library AllocationCalculator {
 
         // Calculate allocations in basis points
         for (uint256 i = 0; i < vaultBalances.length; i++) {
-            allocations[i] = (vaultBalances[i] * BPS_BASE) / totalBalance;
+            allocations[i] = (vaultBalances[i] * BasisPointConstants.ONE_PERCENT_BPS) / totalBalance;
         }
 
         return (allocations, totalBalance);
@@ -259,9 +258,9 @@ library AllocationCalculator {
     }
 
     /**
-     * @notice Validates that target allocations sum to exactly BPS_BASE (10,000)
+     * @notice Validates that target allocations sum to exactly BasisPointConstants.ONE_PERCENT_BPS (10,000)
      * @param targetAllocations Array of target allocations in basis points
-     * @return isValid True if allocations sum to BPS_BASE
+     * @return isValid True if allocations sum to BasisPointConstants.ONE_PERCENT_BPS
      * @return totalBps Sum of all target allocations
      */
     function validateTargetAllocations(
@@ -269,13 +268,13 @@ library AllocationCalculator {
     ) internal pure returns (bool isValid, uint256 totalBps) {
         totalBps = 0;
         for (uint256 i = 0; i < targetAllocations.length; i++) {
-            if (targetAllocations[i] > BPS_BASE) {
+            if (targetAllocations[i] > BasisPointConstants.ONE_PERCENT_BPS) {
                 revert InvalidBasisPoints();
             }
             totalBps += targetAllocations[i];
         }
         
-        isValid = (totalBps == BPS_BASE);
+        isValid = (totalBps == BasisPointConstants.ONE_PERCENT_BPS);
         return (isValid, totalBps);
     }
 
@@ -321,7 +320,7 @@ library AllocationCalculator {
 
         // Calculate ideal remaining amounts based on target allocations
         for (uint256 i = 0; i < length; i++) {
-            uint256 targetRemaining = (remainingBalance * targetAllocations[i]) / BPS_BASE;
+            uint256 targetRemaining = (remainingBalance * targetAllocations[i]) / BasisPointConstants.ONE_PERCENT_BPS;
             
             if (vaultBalances[i] <= targetRemaining) {
                 // Vault is already at or below target, don't withdraw
@@ -346,7 +345,7 @@ library AllocationCalculator {
             uint256 maxExcess = 0;
             
             for (uint256 i = 0; i < length; i++) {
-                uint256 targetRemaining = (remainingBalance * targetAllocations[i]) / BPS_BASE;
+                uint256 targetRemaining = (remainingBalance * targetAllocations[i]) / BasisPointConstants.ONE_PERCENT_BPS;
                 if (vaultBalances[i] > targetRemaining) {
                     uint256 excess = vaultBalances[i] - targetRemaining - withdrawAmounts[i];
                     if (excess > maxExcess) {

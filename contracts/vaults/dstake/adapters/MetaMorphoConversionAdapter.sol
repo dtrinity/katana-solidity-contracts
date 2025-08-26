@@ -6,6 +6,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
 import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
 
@@ -30,7 +31,7 @@ import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
  * 3. Protection during high-volatility periods where underlying Morpho positions may change
  * 4. Future-proofing against MetaMorpho vaults that may implement dynamic fees
  */
-contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGuard {
+contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGuard, AccessControl {
   using SafeERC20 for IERC20;
   using Math for uint256;
 
@@ -71,6 +72,9 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     dStable = _dStable;
     metaMorphoVault = IERC4626(_metaMorphoVault);
     collateralVault = _collateralVault;
+
+    // Initialize access control - grant admin role to collateral vault
+    _grantRole(DEFAULT_ADMIN_ROLE, _collateralVault);
 
     // Critical: Verify the vault's underlying asset matches our dStable
     address vaultUnderlying = metaMorphoVault.asset();
@@ -275,12 +279,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
   /**
    * @notice Emergency function to recover stuck tokens
-   * @dev Only callable by collateral vault (which has access control)
+   * @dev Only callable by admin role
    * @param token The token to recover
    * @param amount The amount to recover
    */
-  function emergencyWithdraw(address token, uint256 amount) external {
-    require(msg.sender == collateralVault, "Only collateral vault");
+  function emergencyWithdraw(address token, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
 
     if (token == address(0)) {
       // Withdraw ETH

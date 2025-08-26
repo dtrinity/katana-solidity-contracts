@@ -8,6 +8,7 @@ import { DStakeRouter } from "./DStakeRouter.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
 import { WeightedRandomSelector } from "./libraries/WeightedRandomSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
+import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 
 /**
  * @title DStakeRouterMorpho
@@ -32,8 +33,9 @@ contract DStakeRouterMorpho is DStakeRouter {
 
     // --- Constants ---
     uint256 public constant MAX_VAULTS_PER_OPERATION = 3;
-    uint256 public constant BPS_BASE = 10000;
-    uint256 public constant MAX_VAULT_COUNT = 10; // Reasonable limit for gas optimization
+    
+    // --- State Variables ---
+    uint256 public maxVaultCount = 10; // Governable limit for gas optimization
     
     // --- Errors ---
     error InvalidAmount();
@@ -46,6 +48,7 @@ contract DStakeRouterMorpho is DStakeRouter {
     error TotalAllocationInvalid(uint256 total);
     error NoLiquidityAvailable();
     error AllVaultsPaused();
+    error InvalidMaxVaultCount(uint256 count);
 
     // --- Structs ---
     
@@ -106,6 +109,7 @@ contract DStakeRouterMorpho is DStakeRouter {
         uint256[] targetAllocations,
         uint256 totalBalance
     );
+    event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
 
     // --- Constructor ---
     
@@ -291,7 +295,7 @@ contract DStakeRouterMorpho is DStakeRouter {
             totalTargetBps += configs[i].targetBps;
         }
         
-        if (totalTargetBps != BPS_BASE) {
+        if (totalTargetBps != BasisPointConstants.ONE_PERCENT_BPS) {
             revert TotalAllocationInvalid(totalTargetBps);
         }
         
@@ -396,6 +400,27 @@ contract DStakeRouterMorpho is DStakeRouter {
             vaultConfigs[index].targetBps,
             false
         );
+    }
+
+    /**
+     * @notice Sets the maximum number of vaults allowed in the system
+     * @dev Only callable by admin role. Must be greater than 0 and at least the current vault count
+     * @param _maxVaultCount New maximum vault count
+     */
+    function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_maxVaultCount == 0) {
+            revert InvalidMaxVaultCount(_maxVaultCount);
+        }
+        
+        // Ensure we don't set it below the current number of vaults
+        if (_maxVaultCount < vaultConfigs.length) {
+            revert InvalidMaxVaultCount(_maxVaultCount);
+        }
+        
+        uint256 oldMaxVaultCount = maxVaultCount;
+        maxVaultCount = _maxVaultCount;
+        
+        emit MaxVaultCountUpdated(oldMaxVaultCount, _maxVaultCount);
     }
 
     // --- View Functions ---
@@ -762,7 +787,7 @@ contract DStakeRouterMorpho is DStakeRouter {
             revert ZeroAddress();
         }
         
-        if (config.targetBps > BPS_BASE) {
+        if (config.targetBps > BasisPointConstants.ONE_PERCENT_BPS) {
             revert InvalidTargetAllocation(config.targetBps);
         }
         
@@ -770,7 +795,7 @@ contract DStakeRouterMorpho is DStakeRouter {
             revert VaultAlreadyExists(config.vault);
         }
         
-        if (vaultConfigs.length >= MAX_VAULT_COUNT) {
+        if (vaultConfigs.length >= maxVaultCount) {
             revert InvalidVaultConfig();
         }
         
