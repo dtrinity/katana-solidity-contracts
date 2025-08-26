@@ -102,15 +102,22 @@ export const DSTAKE_DEPLOYMENT_TAG = "dStake"; // Define the deployment tag
 export const DSTAKE_TOKEN_ID_PREFIX = "DStakeToken";
 export const DSTAKE_COLLATERAL_VAULT_ID_PREFIX = "DStakeCollateralVault";
 export const DSTAKE_ROUTER_ID_PREFIX = "DStakeRouter";
+export const DSTAKE_ROUTER_MORPHO_ID_PREFIX = "DStakeRouterMorpho";
+
+// dSTAKE Libraries
+export const WEIGHTED_RANDOM_SELECTOR_LIB_ID = "WeightedRandomSelector";
+export const ALLOCATION_CALCULATOR_LIB_ID = "AllocationCalculator";
 
 // dSTAKE specific instance IDs
 export const SDUSD_DSTAKE_TOKEN_ID = `${DSTAKE_TOKEN_ID_PREFIX}_sdUSD`;
 export const SDUSD_COLLATERAL_VAULT_ID = `${DSTAKE_COLLATERAL_VAULT_ID_PREFIX}_sdUSD`;
 export const SDUSD_ROUTER_ID = `${DSTAKE_ROUTER_ID_PREFIX}_sdUSD`;
+export const SDUSD_ROUTER_MORPHO_ID = `${DSTAKE_ROUTER_MORPHO_ID_PREFIX}_sdUSD`;
 
 export const SDETH_DSTAKE_TOKEN_ID = `${DSTAKE_TOKEN_ID_PREFIX}_sdETH`;
 export const SDETH_COLLATERAL_VAULT_ID = `${DSTAKE_COLLATERAL_VAULT_ID_PREFIX}_sdETH`;
 export const SDETH_ROUTER_ID = `${DSTAKE_ROUTER_ID_PREFIX}_sdETH`;
+export const SDETH_ROUTER_MORPHO_ID = `${DSTAKE_ROUTER_MORPHO_ID_PREFIX}_sdETH`;
 
 // RedeemerWithFees
 export const DUSD_REDEEMER_WITH_FEES_CONTRACT_ID = "dUSD_RedeemerWithFees";

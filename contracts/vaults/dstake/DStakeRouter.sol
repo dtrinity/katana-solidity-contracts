@@ -86,7 +86,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   /**
    * @inheritdoc IDStakeRouter
    */
-  function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) {
+  function deposit(uint256 dStableAmount) external virtual override onlyRole(DSTAKE_TOKEN_ROLE) {
     address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(defaultDepositVaultAsset);
@@ -143,7 +143,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   /**
    * @inheritdoc IDStakeRouter
    */
-  function withdraw(uint256 dStableAmount, address receiver, address owner) external override onlyRole(DSTAKE_TOKEN_ROLE) {
+  function withdraw(uint256 dStableAmount, address receiver, address owner) external virtual override onlyRole(DSTAKE_TOKEN_ROLE) {
     address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(defaultDepositVaultAsset);
