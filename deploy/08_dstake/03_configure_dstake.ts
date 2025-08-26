@@ -115,7 +115,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     // --- Configure DStakeCollateralVault ---
-    const routerContract = await ethers.getContractAt("DStakeRouterDLend", routerDeployment.address, deployerSigner);
+    const routerContract = await ethers.getContractAt("DStakeRouter", routerDeployment.address, deployerSigner);
 
     const vaultRouter = await collateralVault.router();
     const vaultRouterRole = await collateralVault.ROUTER_ROLE();

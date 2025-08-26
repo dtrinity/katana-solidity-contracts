@@ -10,13 +10,13 @@ import { IDStakeCollateralVault } from "./interfaces/IDStakeCollateralVault.sol"
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
- * @title DStakeRouterDLend
+ * @title DStakeRouter
  * @notice Orchestrates deposits, withdrawals, and asset exchanges for a DStakeToken vault.
  * @dev Interacts with the DStakeToken, DStakeCollateralVault, and various IDStableConversionAdapters.
  *      This contract is non-upgradeable but replaceable via DStakeToken governance.
  *      Relies on the associated DStakeToken for role management.
  */
-contract DStakeRouterDLend is IDStakeRouter, AccessControl {
+contract DStakeRouter is IDStakeRouter, AccessControl {
   using SafeERC20 for IERC20;
 
   // --- Errors ---
@@ -162,20 +162,20 @@ contract DStakeRouterDLend is IDStakeRouter, AccessControl {
       // Check if router has sufficient reserves to cover the shortfall
       uint256 routerBalance = IERC20(dStable).balanceOf(address(this));
       uint256 shortfall = dStableAmount - receivedDStable;
-      
+
       if (routerBalance < shortfall) {
         revert InsufficientDStableFromAdapter(vaultAsset, dStableAmount, receivedDStable);
       }
       // Router covers the shortfall from its reserves
     }
 
-    // 7. Transfer the exact requested amount to the user as promised by the router contract  
+    // 7. Transfer the exact requested amount to the user as promised by the router contract
     IERC20(dStable).safeTransfer(receiver, dStableAmount);
 
     // 8. Handle any surplus from the conversion (should be rare with proper previewWithdraw)
     if (receivedDStable > dStableAmount) {
       uint256 surplus = receivedDStable - dStableAmount;
-      
+
       // Give the adapter allowance to pull the surplus
       IERC20(dStable).forceApprove(adapterAddress, surplus);
 
@@ -424,9 +424,9 @@ contract DStakeRouterDLend is IDStakeRouter, AccessControl {
    */
   function fundReserves(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
     if (amount == 0) revert ZeroInputDStableValue(dStable, 0);
-    
+
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), amount);
-    
+
     emit ReservesFunded(msg.sender, amount);
   }
 

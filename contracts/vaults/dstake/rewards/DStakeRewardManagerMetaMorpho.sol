@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { RewardClaimable } from "../../rewards_claimable/RewardClaimable.sol";
-import { DStakeRouterDLend } from "../DStakeRouterDLend.sol";
+import { DStakeRouter } from "../DStakeRouter.sol";
 import { IDStakeCollateralVault } from "../interfaces/IDStakeCollateralVault.sol";
 import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -14,15 +14,10 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
  * @notice Interface for Morpho's Universal Rewards Distributor
  */
 interface IUniversalRewardsDistributor {
-  function claim(
-    address account,
-    address reward,
-    uint256 claimable,
-    bytes32[] calldata proof
-  ) external returns (uint256);
-  
+  function claim(address account, address reward, uint256 claimable, bytes32[] calldata proof) external returns (uint256);
+
   function claimed(address account, address reward) external view returns (uint256);
-  
+
   function root() external view returns (bytes32);
 }
 
@@ -41,14 +36,14 @@ interface IMetaMorpho is IERC4626 {
  * @notice Manages claiming of rewards from MetaMorpho vaults through the Universal Rewards Distributor
  *         and compounds dStable into the DStakeCollateralVault.
  * @dev Implements the RewardClaimable interface.
- *      
+ *
  *      MetaMorpho reward flow:
  *      1. Rewards accumulate in MetaMorpho vault from underlying Morpho Blue markets
  *      2. Anyone can call skim() to transfer rewards to the skimRecipient (URD)
  *      3. URD computes Merkle trees off-chain for fair distribution
  *      4. Users claim rewards via Merkle proofs
  *      5. This contract automates the claiming and compounding process
- *      
+ *
  *      Note: Unlike dLEND which has on-chain reward accrual, MetaMorpho relies on
  *      off-chain computation and API integration for reward distribution.
  */
@@ -57,7 +52,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
   // --- State ---
   address public immutable dStakeCollateralVault;
-  DStakeRouterDLend public immutable dStakeRouter;
+  DStakeRouter public immutable dStakeRouter;
   IMetaMorpho public immutable metaMorphoVault;
   IUniversalRewardsDistributor public urd; // Can be updated by admin
 
@@ -105,11 +100,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
       _initialExchangeThreshold
     )
   {
-    if (
-      _dStakeCollateralVault == address(0) ||
-      _dStakeRouter == address(0) ||
-      _metaMorphoVault == address(0)
-    ) {
+    if (_dStakeCollateralVault == address(0) || _dStakeRouter == address(0) || _metaMorphoVault == address(0)) {
       revert ZeroAddress();
     }
     if (exchangeAsset == address(0)) {
@@ -117,9 +108,9 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     }
 
     dStakeCollateralVault = _dStakeCollateralVault;
-    dStakeRouter = DStakeRouterDLend(_dStakeRouter);
+    dStakeRouter = DStakeRouter(_dStakeRouter);
     metaMorphoVault = IMetaMorpho(_metaMorphoVault);
-    
+
     if (_urd != address(0)) {
       urd = IUniversalRewardsDistributor(_urd);
     }
@@ -145,7 +136,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
         revert InvalidURD();
       }
     }
-    
+
     address oldURD = address(urd);
     urd = newURD == address(0) ? IUniversalRewardsDistributor(address(0)) : IUniversalRewardsDistributor(newURD);
     emit URDUpdated(oldURD, newURD);
@@ -169,12 +160,12 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
   function skimRewards(address[] calldata tokens) external onlyRole(REWARDS_MANAGER_ROLE) nonReentrant {
     // Cache skim recipient to save gas on multiple token skims
     address recipient = metaMorphoVault.skimRecipient();
-    
+
     for (uint256 i = 0; i < tokens.length; i++) {
       uint256 balanceBefore = IERC20(tokens[i]).balanceOf(recipient);
       metaMorphoVault.skim(tokens[i]);
       uint256 balanceAfter = IERC20(tokens[i]).balanceOf(recipient);
-      
+
       if (balanceAfter > balanceBefore) {
         emit RewardsSkimmed(tokens[i], balanceAfter - balanceBefore);
       }
@@ -193,13 +184,15 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
     for (uint256 i = 0; i < claimData.length; i++) {
       uint256 balanceBefore = IERC20(claimData[i].rewardToken).balanceOf(address(this));
-      
-      try urd.claim(
-        dStakeCollateralVault, // Claiming for the vault
-        claimData[i].rewardToken,
-        claimData[i].claimableAmount,
-        claimData[i].proof
-      ) returns (uint256 claimed) {
+
+      try
+        urd.claim(
+          dStakeCollateralVault, // Claiming for the vault
+          claimData[i].rewardToken,
+          claimData[i].claimableAmount,
+          claimData[i].proof
+        )
+      returns (uint256 claimed) {
         emit RewardsClaimed(claimData[i].rewardToken, claimed);
       } catch {
         revert ClaimFailed(claimData[i].rewardToken);
@@ -221,15 +214,15 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     // MetaMorpho rewards are claimed externally via URD
     // This function returns the amounts that were already claimed and are held in this contract
     // Note: receiver parameter is not used as rewards are already in this contract from URD claims
-    
+
     actualAmounts = new uint256[](rewardTokens.length);
-    
+
     for (uint256 i = 0; i < rewardTokens.length; i++) {
       // Check balance of reward tokens in this contract
       // These should have been claimed via claimRewardsFromURD
       actualAmounts[i] = IERC20(rewardTokens[i]).balanceOf(address(this));
     }
-    
+
     return actualAmounts;
   }
 
@@ -254,9 +247,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
     // Convert dStable to vault asset via adapter
-    (address returnedVaultAsset, uint256 vaultAssetAmount) = IDStableConversionAdapter(adapter).convertToVaultAsset(
-      exchangeAmountIn
-    );
+    (address returnedVaultAsset, uint256 vaultAssetAmount) = IDStableConversionAdapter(adapter).convertToVaultAsset(exchangeAmountIn);
 
     // Verify the adapter returned the expected vault asset
     if (returnedVaultAsset != defaultVaultAsset) {

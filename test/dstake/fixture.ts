@@ -7,10 +7,6 @@ import { IERC20 } from "../../typechain-types/@openzeppelin/contracts/token/ERC2
 import {
   DETH_A_TOKEN_WRAPPER_ID,
   DUSD_A_TOKEN_WRAPPER_ID,
-  EMISSION_MANAGER_ID,
-  INCENTIVES_PROXY_ID,
-  POOL_ADDRESSES_PROVIDER_ID,
-  PULL_REWARDS_TRANSFER_STRATEGY_ID,
   SDETH_COLLATERAL_VAULT_ID,
   SDETH_DSTAKE_TOKEN_ID,
   SDETH_ROUTER_ID,
@@ -117,7 +113,7 @@ async function fetchDStakeComponents(
   );
 
   const router = await ethers.getContractAt(
-    "DStakeRouterDLend",
+    "DStakeRouter",
     (await deployments.get(config.routerContractId)).address
   );
 
@@ -162,145 +158,8 @@ async function fetchDStakeComponents(
   };
 }
 
-// Main fixture setup function to be called from tests
-/**
- *
- * @param hreElements
- * @param hreElements.deployments
- * @param hreElements.ethers
- * @param hreElements.getNamedAccounts
- * @param hreElements.globalHre
- * @param config
- * @param rewardTokenSymbol
- * @param rewardAmount
- * @param emissionPerSecondSetting
- * @param distributionDuration
- */
-export async function executeSetupDLendRewards(
-  hreElements: {
-    deployments: HardhatRuntimeEnvironment["deployments"];
-    ethers: HardhatRuntimeEnvironment["ethers"];
-    getNamedAccounts: HardhatRuntimeEnvironment["getNamedAccounts"];
-    globalHre: HardhatRuntimeEnvironment; // For helpers
-  },
-  config: DStakeFixtureConfig,
-  rewardTokenSymbol: string,
-  rewardAmount: BigNumberish,
-  emissionPerSecondSetting?: BigNumberish, // Optional, with default below
-  distributionDuration: number = 3600
-) {
-  const { deployments, ethers, getNamedAccounts, globalHre } = hreElements;
-
-  // Combine all necessary tags for a single deployment run
-  const allDeploymentTags = [
-    ...config.deploymentTags, // from SDUSD_CONFIG (includes local-setup, oracles, dStable, dlend, dStake)
-    "dlend-static-wrapper-factory", // ensure static wrapper factory runs before static wrappers
-    "dStakeRewards", // Tag for DStakeRewardManagerDLend deployment script and its dependencies
-    // Add "dlend-static-wrapper-factory" if it's not reliably covered by dStake->dStakeAdapters dependency chain
-    // However, the current setup should have dStake depend on dStakeAdapters, which depends on StaticATokenFactory
-  ];
-
-  // Single fixture execution for all deployments
-  await deployments.fixture(allDeploymentTags);
-
-  // Fetch base dStake components (now that all deployments are done)
-  const dStakeBase = await fetchDStakeComponents(hreElements, config);
-  const { deployer: signer } = dStakeBase; // deployer is an Ethers Signer
-
-  // Get DStakeRewardManagerDLend related contracts
-  const rewardManagerDeployment = await deployments.get(
-    `DStakeRewardManagerDLend_${config.DStakeTokenSymbol}`
-  );
-  const rewardManager = await ethers.getContractAt(
-    "DStakeRewardManagerDLend",
-    rewardManagerDeployment.address
-  );
-
-  const targetStaticATokenWrapper =
-    await rewardManager.targetStaticATokenWrapper();
-  const dLendAssetToClaimFor = await rewardManager.dLendAssetToClaimFor();
-
-  const { contract: rewardToken, tokenInfo: rewardTokenInfo } =
-    await getTokenContractForSymbol(
-      globalHre,
-      signer.address,
-      rewardTokenSymbol
-    );
-
-  // Get EmissionManager and RewardsController instances
-  const emissionManagerDeployment = await deployments.get(EMISSION_MANAGER_ID);
-  const emissionManager = await ethers.getContractAt(
-    "EmissionManager",
-    emissionManagerDeployment.address
-  );
-  const incentivesProxy = await deployments.get(INCENTIVES_PROXY_ID);
-  const rewardsController = await ethers.getContractAt(
-    "RewardsController",
-    incentivesProxy.address
-  );
-
-  // For configureAssets, deployer (owner of EmissionManager) must set itself as emission admin for the reward token first
-  await emissionManager
-    .connect(signer)
-    .setEmissionAdmin(rewardTokenInfo.address, signer.address);
-
-  const transferStrategyAddress = (
-    await deployments.get(PULL_REWARDS_TRANSFER_STRATEGY_ID)
-  ).address;
-  const block = (await ethers.provider.getBlock("latest"))!;
-  const distributionEnd = block.timestamp + distributionDuration;
-  const poolAddressesProviderDeployment = await deployments.get(
-    POOL_ADDRESSES_PROVIDER_ID
-  );
-  const poolAddressesProvider = await ethers.getContractAt(
-    "PoolAddressesProvider",
-    poolAddressesProviderDeployment.address
-  );
-  const rewardOracle = await poolAddressesProvider.getPriceOracle();
-
-  const emissionPerSecond =
-    emissionPerSecondSetting ??
-    ethers.parseUnits("1", rewardTokenInfo.decimals ?? 18);
-
-  // Call configureAssets via EmissionManager, now that signer is emissionAdmin for the rewardToken
-  await emissionManager.connect(signer).configureAssets([
-    {
-      asset: dLendAssetToClaimFor,
-      reward: rewardTokenInfo.address,
-      transferStrategy: transferStrategyAddress,
-      rewardOracle,
-      emissionPerSecond,
-      distributionEnd,
-      totalSupply: 0, // This is usually fetched or calculated, 0 for new setup
-    },
-  ]);
-
-  // Cast to ERC20 for token operations
-  const rewardTokenERC20 = rewardToken as unknown as ERC20;
-
-  // Fund the rewards vault for PullRewardsTransferStrategy and approve
-  const pullStrategy = await ethers.getContractAt(
-    "IPullRewardsTransferStrategy",
-    transferStrategyAddress
-  );
-  const rewardsVault = await pullStrategy.getRewardsVault();
-  // Transfer reward tokens to the vault address
-  await rewardTokenERC20.connect(signer).transfer(rewardsVault, rewardAmount);
-  // Approve the PullRewardsTransferStrategy to pull rewards from the vault
-  const vaultSigner = await ethers.getSigner(rewardsVault);
-  await rewardTokenERC20
-    .connect(vaultSigner)
-    .approve(transferStrategyAddress, rewardAmount);
-
-  return {
-    ...dStakeBase,
-    rewardManager,
-    rewardsController,
-    rewardToken,
-    targetStaticATokenWrapper,
-    dLendAssetToClaimFor,
-  };
-}
+// Note: dLEND reward setup functions have been removed as dLEND support is deprecated.
+// Use MetaMorpho reward management instead.
 
 export const createDStakeFixture = (config: DStakeFixtureConfig) => {
   return deployments.createFixture(
@@ -323,44 +182,5 @@ export const createDStakeFixture = (config: DStakeFixtureConfig) => {
   );
 };
 
-export const setupDLendRewardsFixture = (
-  config: DStakeFixtureConfig,
-  rewardTokenSymbol: string,
-  rewardAmount: BigNumberish,
-  emissionPerSecond?: BigNumberish,
-  distributionDuration: number = 3600
-) =>
-  deployments.createFixture(
-    async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
-      // Execute DStake rewards setup, which includes its own deployments.fixture(allDeploymentTags)
-      // Don't run all deployments to avoid interference from RedeemerWithFees
-      return executeSetupDLendRewards(
-        {
-          deployments: hreFixtureEnv.deployments,
-          ethers: hreFixtureEnv.ethers,
-          getNamedAccounts: hreFixtureEnv.getNamedAccounts,
-          globalHre: hreFixtureEnv,
-        },
-        config,
-        rewardTokenSymbol,
-        rewardAmount,
-        emissionPerSecond,
-        distributionDuration
-      );
-    }
-  );
-
-// Pre-bound SDUSD rewards fixture for tests
-export const SDUSDRewardsFixture = setupDLendRewardsFixture(
-  SDUSD_CONFIG,
-  "sfrxUSD",
-  ethers.parseUnits("100", 6), // total reward amount
-  ethers.parseUnits("1", 6) // emission per second (1 token/sec in 6-decimals)
-);
-
-// Pre-bound SDS rewards fixture for table-driven tests
-export const SDSRewardsFixture = setupDLendRewardsFixture(
-  SDETH_CONFIG,
-  "stETH",
-  ethers.parseUnits("100", 18)
-);
+// Note: dLEND reward fixtures have been removed.
+// Use MetaMorpho-specific test fixtures from MetaMorpho test files instead.

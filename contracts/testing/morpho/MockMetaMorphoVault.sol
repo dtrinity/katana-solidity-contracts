@@ -11,7 +11,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  * @notice Mock implementation of a MetaMorpho vault for testing
  * @dev Simulates a MetaMorpho vault with configurable yield generation and rewards
  *      This mock allows testing of integrations without deploying to mainnet
- *      
+ *
  *      Note on rewards: Real MetaMorpho vaults may have external reward mechanisms
  *      (e.g., through Universal Rewards Distributor or curator incentives), but these
  *      are handled outside the vault contract itself. This mock includes basic reward
@@ -25,18 +25,18 @@ contract MockMetaMorphoVault is ERC4626 {
   uint256 public yieldRate = 10000; // 100% APY in basis points (for easy testing)
   uint256 public lastYieldUpdate;
   address public owner;
-  
+
   // Tracking for security testing
   mapping(address => uint256) public lastDepositTimestamp;
-  
+
   // Mock reward tracking (for testing reward scenarios)
   mapping(address => uint256) public pendingRewards;
   address public rewardToken;
   uint256 public rewardRate; // rewards per second per share
-  
+
   // Mock skim recipient for MetaMorpho compatibility
   address public skimRecipient;
-  
+
   // Mock behaviors for testing edge cases
   bool public mockPaused = false;
   bool public mockRevertOnDeposit = false;
@@ -50,17 +50,13 @@ contract MockMetaMorphoVault is ERC4626 {
   event RewardsClaimed(address indexed user, uint256 amount);
 
   // --- Constructor ---
-  constructor(
-    IERC20 _asset,
-    string memory _name,
-    string memory _symbol
-  ) ERC20(_name, _symbol) ERC4626(_asset) {
+  constructor(IERC20 _asset, string memory _name, string memory _symbol) ERC20(_name, _symbol) ERC4626(_asset) {
     lastYieldUpdate = block.timestamp;
     owner = msg.sender;
   }
 
   // --- Mock Controls ---
-  
+
   /**
    * @notice Set the yield rate for testing
    * @param _rate Yield rate in basis points (10000 = 100% APY)
@@ -104,16 +100,16 @@ contract MockMetaMorphoVault is ERC4626 {
     if (block.timestamp > lastYieldUpdate && totalSupply() > 0) {
       uint256 timeElapsed = block.timestamp - lastYieldUpdate;
       uint256 currentAssets = mockTotalAssets;
-      
+
       // Simple interest calculation for predictable testing
       // yield = principal * rate * time / (365 days * 10000)
       uint256 yield = (currentAssets * yieldRate * timeElapsed) / (365 days * 10000);
-      
+
       if (yield > 0) {
         mockTotalAssets += yield;
         emit YieldAccrued(yield);
       }
-      
+
       lastYieldUpdate = block.timestamp;
     }
   }
@@ -144,107 +140,99 @@ contract MockMetaMorphoVault is ERC4626 {
   function deposit(uint256 assets, address receiver) public virtual override returns (uint256) {
     require(!mockPaused, "Vault paused");
     require(!mockRevertOnDeposit, "Mock revert");
-    
+
     // Apply deposit fee if set
     uint256 assetsAfterFee = assets;
     if (mockDepositFee > 0) {
       uint256 fee = (assets * mockDepositFee) / 10000;
       assetsAfterFee = assets - fee;
     }
-    
+
     // Accrue yield before deposit
     accrueYield();
-    
+
     // Track deposit timestamp for testing time-based attacks
     lastDepositTimestamp[receiver] = block.timestamp;
-    
+
     uint256 shares = previewDeposit(assetsAfterFee);
     _deposit(_msgSender(), receiver, assets, shares);
-    
+
     mockTotalAssets += assetsAfterFee;
-    
+
     return shares;
   }
 
   function mint(uint256 shares, address receiver) public virtual override returns (uint256) {
     require(!mockPaused, "Vault paused");
     require(!mockRevertOnDeposit, "Mock revert");
-    
+
     accrueYield();
-    
+
     uint256 assets = previewMint(shares);
-    
+
     // Apply deposit fee if set
     if (mockDepositFee > 0) {
       uint256 fee = (assets * mockDepositFee) / 10000;
       assets = assets + fee; // User needs to provide more assets to mint exact shares
     }
-    
+
     lastDepositTimestamp[receiver] = block.timestamp;
-    
+
     _deposit(_msgSender(), receiver, assets, shares);
     mockTotalAssets += assets - ((mockDepositFee > 0) ? (assets * mockDepositFee) / 10000 : 0);
-    
+
     return assets;
   }
 
-  function withdraw(
-    uint256 assets,
-    address receiver,
-    address owner
-  ) public virtual override returns (uint256) {
+  function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256) {
     require(!mockPaused, "Vault paused");
     require(!mockRevertOnWithdraw, "Mock revert");
-    
+
     accrueYield();
-    
+
     // Apply withdraw fee if set
     uint256 assetsToUser = assets;
     if (mockWithdrawFee > 0) {
       uint256 fee = (assets * mockWithdrawFee) / 10000;
       assetsToUser = assets - fee;
     }
-    
+
     uint256 shares = previewWithdraw(assets);
-    
+
     // Check for sandwich attack protection (optional test)
     if (lastDepositTimestamp[owner] > 0) {
       // Could implement a minimum holding period here for testing
     }
-    
+
     _withdraw(_msgSender(), receiver, owner, assetsToUser, shares);
     mockTotalAssets -= assets;
-    
+
     return shares;
   }
 
-  function redeem(
-    uint256 shares,
-    address receiver,
-    address owner
-  ) public virtual override returns (uint256) {
+  function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256) {
     require(!mockPaused, "Vault paused");
     require(!mockRevertOnWithdraw, "Mock revert");
-    
+
     accrueYield();
-    
+
     uint256 assets = previewRedeem(shares);
-    
+
     // Apply withdraw fee if set
     uint256 assetsToUser = assets;
     if (mockWithdrawFee > 0) {
       uint256 fee = (assets * mockWithdrawFee) / 10000;
       assetsToUser = assets - fee;
     }
-    
+
     _withdraw(_msgSender(), receiver, owner, assetsToUser, shares);
     mockTotalAssets -= assets;
-    
+
     return assetsToUser;
   }
 
   // --- View Functions for Testing ---
-  
+
   /**
    * @notice Get the current exchange rate for testing
    */
@@ -264,7 +252,7 @@ contract MockMetaMorphoVault is ERC4626 {
   }
 
   // --- Mock Skim Functions (MetaMorpho compatibility) ---
-  
+
   /**
    * @notice Transfer ownership of the vault
    * @param newOwner Address of the new owner
@@ -273,7 +261,7 @@ contract MockMetaMorphoVault is ERC4626 {
     require(msg.sender == owner, "Not owner");
     owner = newOwner;
   }
-  
+
   /**
    * @notice Set the skim recipient for reward collection
    * @param _skimRecipient Address to receive skimmed rewards
@@ -282,7 +270,7 @@ contract MockMetaMorphoVault is ERC4626 {
     require(msg.sender == owner, "Not owner");
     skimRecipient = _skimRecipient;
   }
-  
+
   /**
    * @notice Skim rewards to the skim recipient
    * @param token Token to skim
@@ -295,9 +283,9 @@ contract MockMetaMorphoVault is ERC4626 {
       }
     }
   }
-  
+
   // --- Mock Reward Functions ---
-  
+
   /**
    * @notice Set mock reward token and rate for testing
    * @param _rewardToken Address of the reward token (can be 0 to disable)
@@ -349,32 +337,21 @@ contract MockMetaMorphoVault is ERC4626 {
   }
 
   // --- Internal Overrides ---
-  
-  function _deposit(
-    address caller,
-    address receiver,
-    uint256 assets,
-    uint256 shares
-  ) internal virtual override {
+
+  function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
     IERC20(asset()).transferFrom(caller, address(this), assets);
     _mint(receiver, shares);
     emit Deposit(caller, receiver, assets, shares);
   }
 
-  function _withdraw(
-    address caller,
-    address receiver,
-    address owner,
-    uint256 assets,
-    uint256 shares
-  ) internal virtual override {
+  function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares) internal virtual override {
     if (caller != owner) {
       _spendAllowance(owner, caller, shares);
     }
-    
+
     _burn(owner, shares);
     IERC20(asset()).transfer(receiver, assets);
-    
+
     emit Withdraw(caller, receiver, owner, assets, shares);
   }
 }

@@ -4,7 +4,7 @@ import { ethers, getNamedAccounts } from "hardhat";
 
 import {
   DStakeCollateralVault,
-  DStakeRouterDLend,
+  DStakeRouter,
   DStakeToken,
   ERC20,
 } from "../../typechain-types";
@@ -15,13 +15,13 @@ import { createDStakeFixture, SDUSD_CONFIG as CONFIG } from "./fixture";
 const parseUnits = (value: string, decimals: number | bigint) =>
   ethers.parseUnits(value, decimals);
 
-describe.skip("DStakeRouterDLend – surplus < 1 share withdraw DoS", function () {
+describe.skip("DStakeRouter – surplus < 1 share withdraw DoS", function () {
   const fixture = createDStakeFixture(CONFIG);
 
   let deployer: SignerWithAddress;
   let user1: SignerWithAddress;
   let DStakeTokenInst: DStakeToken;
-  let router: DStakeRouterDLend;
+  let router: DStakeRouter;
   let collateralVault: DStakeCollateralVault;
   let dStable: ERC20;
   let dStableDecimals: bigint;

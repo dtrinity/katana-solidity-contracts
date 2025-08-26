@@ -14,23 +14,23 @@ contract MockUniversalRewardsDistributor {
 
   // Current Merkle root (for testing, we don't actually verify)
   bytes32 public root;
-  
+
   // Track claimed amounts per account per reward token
   mapping(address => mapping(address => uint256)) public claimed;
-  
+
   // Mock pending rewards (set by test setup)
   mapping(address => mapping(address => uint256)) public pendingRewards;
-  
+
   // Events
   event Claimed(address indexed account, address indexed reward, uint256 amount);
   event RootSet(bytes32 newRoot);
   event PendingRewardSet(address indexed account, address indexed reward, uint256 amount);
-  
+
   constructor() {
     // Set a dummy root for testing
     root = keccak256("test_root");
   }
-  
+
   /**
    * @notice Claims rewards for an account
    * @param account The account to claim for
@@ -38,49 +38,44 @@ contract MockUniversalRewardsDistributor {
    * @param claimable The total claimable amount (cumulative)
    * @return amount The amount actually claimed
    */
-  function claim(
-    address account,
-    address reward,
-    uint256 claimable,
-    bytes32[] calldata /* proof */
-  ) external returns (uint256) {
+  function claim(address account, address reward, uint256 claimable, bytes32[] calldata /* proof */) external returns (uint256) {
     // In the mock, we use pendingRewards instead of Merkle verification
     uint256 alreadyClaimed = claimed[account][reward];
     uint256 pending = pendingRewards[account][reward];
-    
+
     // Simulate the real URD behavior: claimable is cumulative
     if (claimable <= alreadyClaimed) {
       return 0; // Nothing to claim
     }
-    
+
     uint256 toClaim = claimable - alreadyClaimed;
-    
+
     // If trying to claim more than pending and no pending, revert (for testing)
     if (toClaim > 0 && pending == 0) {
       revert("No pending rewards");
     }
-    
+
     // Cap at what we have pending (for test control)
     if (toClaim > pending) {
       toClaim = pending;
     }
-    
+
     if (toClaim == 0) {
       return 0;
     }
-    
+
     // Update state
     claimed[account][reward] = alreadyClaimed + toClaim;
     pendingRewards[account][reward] = pending - toClaim;
-    
+
     // Transfer tokens
     IERC20(reward).safeTransfer(msg.sender, toClaim);
-    
+
     emit Claimed(account, reward, toClaim);
-    
+
     return toClaim;
   }
-  
+
   /**
    * @notice Sets the Merkle root (mock functionality)
    * @param newRoot The new root to set
@@ -89,7 +84,7 @@ contract MockUniversalRewardsDistributor {
     root = newRoot;
     emit RootSet(newRoot);
   }
-  
+
   /**
    * @notice Sets pending rewards for testing
    * @param account The account to set rewards for
@@ -100,7 +95,7 @@ contract MockUniversalRewardsDistributor {
     pendingRewards[account][reward] = amount;
     emit PendingRewardSet(account, reward, amount);
   }
-  
+
   /**
    * @notice Funds the distributor with reward tokens for testing
    * @param token The token to fund

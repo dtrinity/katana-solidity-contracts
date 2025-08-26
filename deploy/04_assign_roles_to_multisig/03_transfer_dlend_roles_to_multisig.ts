@@ -7,7 +7,7 @@ import { DeployFunction } from "hardhat-deploy/types";
  * @param hre Hardhat Runtime Environment
  */
 // DISABLED: This deployment script is disabled because the dlend module was removed
-const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+const func: DeployFunction = async function (_hre: HardhatRuntimeEnvironment) {
   console.log(`\n🚫 ${__filename.split("/").slice(-2).join("/")}: DISABLED - dlend module removed`);
   return true;
 

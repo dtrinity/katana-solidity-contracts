@@ -13,7 +13,7 @@ import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
  * @title MetaMorphoConversionAdapter
  * @notice Adapter for converting between dSTABLE assets and MetaMorpho vault shares
  * @dev Implements IDStableConversionAdapter interface with security considerations for external vault integration
- *      
+ *
  * Security considerations:
  * - Validates vault asset matches expected dStable
  * - Implements slippage protection via minimum output validation
@@ -21,7 +21,7 @@ import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
  * - Clears approvals after operations
  * - Validates all return values from external vault
  * - Ensures no value remains in adapter contract
- * 
+ *
  * Note on slippage protection:
  * While ERC-4626 vaults like MetaMorpho should theoretically have no slippage (shares are
  * deterministic based on totalAssets/totalSupply), we include slippage protection for:
@@ -92,12 +92,9 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    * @inheritdoc IDStableConversionAdapter
    * @dev Converts dStable to MetaMorpho vault shares with slippage protection
    */
-  function convertToVaultAsset(uint256 dStableAmount) 
-    external 
-    override 
-    nonReentrant 
-    returns (address _vaultAsset, uint256 vaultAssetAmount) 
-  {
+  function convertToVaultAsset(
+    uint256 dStableAmount
+  ) external override nonReentrant returns (address _vaultAsset, uint256 vaultAssetAmount) {
     if (dStableAmount == 0) revert InvalidAmount();
 
     // 1. Pull dStable from caller (router)
@@ -113,11 +110,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
     // Calculate minimum acceptable shares (with slippage protection)
     uint256 minShares = expectedShares.mulDiv(
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS, 
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS, 
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
       Math.Rounding.Floor
     );
-    
+
     // Prevent dust deposits that could be vulnerable to rounding attacks
     if (minShares < MIN_SHARES) revert DustAmount();
 
@@ -156,12 +153,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    * @inheritdoc IDStableConversionAdapter
    * @dev Converts MetaMorpho vault shares back to dStable with slippage protection
    */
-  function convertFromVaultAsset(uint256 vaultAssetAmount) 
-    external 
-    override 
-    nonReentrant 
-    returns (uint256 dStableAmount) 
-  {
+  function convertFromVaultAsset(uint256 vaultAssetAmount) external override nonReentrant returns (uint256 dStableAmount) {
     if (vaultAssetAmount == 0) revert InvalidAmount();
 
     // 1. Pull vault shares from caller (router)
@@ -217,12 +209,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    * @inheritdoc IDStableConversionAdapter
    * @dev Returns the current value of vault shares in dStable terms
    */
-  function assetValueInDStable(address _vaultAsset, uint256 vaultAssetAmount) 
-    external 
-    view 
-    override 
-    returns (uint256) 
-  {
+  function assetValueInDStable(address _vaultAsset, uint256 vaultAssetAmount) external view override returns (uint256) {
     if (_vaultAsset != address(metaMorphoVault)) {
       revert AssetMismatch(address(metaMorphoVault), _vaultAsset);
     }
@@ -244,19 +231,15 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function previewConvertFromVaultAsset(uint256 vaultAssetAmount) 
-    external 
-    view 
-    override 
-    returns (uint256 dStableAmount) 
-  {
+  function previewConvertFromVaultAsset(uint256 vaultAssetAmount) external view override returns (uint256 dStableAmount) {
     try metaMorphoVault.previewRedeem(vaultAssetAmount) returns (uint256 assets) {
       // Apply slippage for preview (conservative estimate)
-      return assets.mulDiv(
-        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
-        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
-        Math.Rounding.Floor
-      );
+      return
+        assets.mulDiv(
+          BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+          BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+          Math.Rounding.Floor
+        );
     } catch {
       return 0;
     }
@@ -265,12 +248,9 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function previewConvertToVaultAsset(uint256 dStableAmount) 
-    external 
-    view 
-    override 
-    returns (address _vaultAsset, uint256 vaultAssetAmount) 
-  {
+  function previewConvertToVaultAsset(
+    uint256 dStableAmount
+  ) external view override returns (address _vaultAsset, uint256 vaultAssetAmount) {
     try metaMorphoVault.previewDeposit(dStableAmount) returns (uint256 shares) {
       // Apply slippage for preview (conservative estimate)
       uint256 expectedShares = shares.mulDiv(
@@ -301,16 +281,16 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    */
   function emergencyWithdraw(address token, uint256 amount) external {
     require(msg.sender == collateralVault, "Only collateral vault");
-    
+
     if (token == address(0)) {
       // Withdraw ETH
-      (bool success, ) = msg.sender.call{value: amount}("");
+      (bool success, ) = msg.sender.call{ value: amount }("");
       require(success, "ETH transfer failed");
     } else {
       // Withdraw ERC20
       IERC20(token).safeTransfer(msg.sender, amount);
     }
-    
+
     emit EmergencyWithdraw(token, amount);
   }
 
@@ -361,7 +341,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     if (totalShares == 0) {
       return 1e18;
     }
-    
+
     uint256 totalAssets = metaMorphoVault.totalAssets();
     return (totalAssets * 1e18) / totalShares;
   }

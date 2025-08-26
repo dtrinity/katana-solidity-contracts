@@ -8,4 +8,3 @@ library MarketParamsLib {
     return keccak256(abi.encode(p));
   }
 }
-

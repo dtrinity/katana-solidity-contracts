@@ -67,4 +67,3 @@ interface IMorpho {
   function market(bytes32 marketId) external view returns (Market memory);
   function position(bytes32 marketId, address user) external view returns (Position memory);
 }
-
