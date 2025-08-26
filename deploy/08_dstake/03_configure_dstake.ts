@@ -56,12 +56,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing adapters array for dSTAKE instance ${instanceKey}`);
     }
 
-    if (!instanceConfig.defaultDepositVaultAsset || instanceConfig.defaultDepositVaultAsset === ethers.ZeroAddress) {
-      console.log(
-        `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing defaultDepositVaultAsset (likely due to dlend infrastructure not being deployed)`
-      );
-      continue;
-    }
+    // Note: defaultDepositVaultAsset might not be available if dLend is not deployed
+    // In test environments, MetaMorpho adapters will set this up separately
 
     if (!instanceConfig.collateralExchangers || !Array.isArray(instanceConfig.collateralExchangers)) {
       throw new Error(`Missing collateralExchangers array for dSTAKE instance ${instanceKey}`);
@@ -129,8 +125,23 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // --- Configure DStakeCollateralVault Adapters ---
     for (const adapterConfig of instanceConfig.adapters) {
       const adapterDeploymentName = `${adapterConfig.adapterContract}_${instanceConfig.symbol}`;
+      
+      // Skip if adapter is not deployed (e.g., dLend adapters when dLend is not available)
+      const adapterDeploymentExists = await deployments.getOrNull(adapterDeploymentName);
+      if (!adapterDeploymentExists) {
+        console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - not deployed yet`);
+        continue;
+      }
+      
       const adapterDeployment = await get(adapterDeploymentName);
       const vaultAssetAddress = adapterConfig.vaultAsset;
+      
+      // Skip if vault asset is not valid
+      if (!vaultAssetAddress || vaultAssetAddress === ethers.ZeroAddress) {
+        console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - vault asset not available`);
+        continue;
+      }
+      
       const existingAdapter = await routerContract.vaultAssetToAdapter(vaultAssetAddress);
 
       if (existingAdapter === ethers.ZeroAddress) {
@@ -159,23 +170,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       }
     }
 
-    for (const adapterConfig of instanceConfig.adapters) {
-      const adapterDeploymentName = `${adapterConfig.adapterContract}_${instanceConfig.symbol}`;
-      const adapterDeployment = await get(adapterDeploymentName);
-      const vaultAssetAddress = adapterConfig.vaultAsset;
-      const currentAdapter = await routerContract.vaultAssetToAdapter(vaultAssetAddress);
+    // Adapters have already been configured above
 
-      if (currentAdapter !== adapterDeployment.address) {
-        await routerContract.addAdapter(vaultAssetAddress, adapterDeployment.address);
-        console.log(`    ➕ Added adapter ${adapterDeploymentName} for asset ${vaultAssetAddress} to ${routerDeploymentName}`);
+    // Set default deposit vault asset if configured
+    if (instanceConfig.defaultDepositVaultAsset && instanceConfig.defaultDepositVaultAsset !== ethers.ZeroAddress) {
+      const currentDefaultAsset = await routerContract.defaultDepositVaultAsset();
+
+      if (currentDefaultAsset !== instanceConfig.defaultDepositVaultAsset) {
+        await routerContract.setDefaultDepositVaultAsset(instanceConfig.defaultDepositVaultAsset);
+        console.log(`    ⚙️ Set default deposit vault asset for ${routerDeploymentName}`);
       }
-    }
-
-    const currentDefaultAsset = await routerContract.defaultDepositVaultAsset();
-
-    if (currentDefaultAsset !== instanceConfig.defaultDepositVaultAsset) {
-      await routerContract.setDefaultDepositVaultAsset(instanceConfig.defaultDepositVaultAsset);
-      console.log(`    ⚙️ Set default deposit vault asset for ${routerDeploymentName}`);
+    } else {
+      console.log(`    ⚠️  No defaultDepositVaultAsset configured for ${instanceKey}, will be set by adapter deployment script`);
     }
   }
 
@@ -184,7 +190,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.tags = ["dStakeConfigure", "dStake"];
-func.dependencies = ["dStakeCore", "dStakeAdapters"];
+func.dependencies = ["dStakeCore", "dStakeAdapters", "metamorpho-adapters"];
 func.runAtTheEnd = true;
 
 // Prevent re-execution after successful run.

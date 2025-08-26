@@ -44,23 +44,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await sdUSDRouterContract.setDefaultDepositVaultAsset(mockMetaMorphoVaultdUSD.address);
   console.log(`Set default deposit vault asset for sdUSD router`);
 
-  // Configure dStakeToken with collateralVault and router since configure script might skip
+  // These configurations should be handled by 03_configure_dstake.ts
+  // We'll only do minimal checks here to ensure proper setup
   const dStakeTokenDeployment = await get("DStakeToken_sdUSD");
-  const collateralVaultDeployment = await get("DStakeCollateralVault_sdUSD");
   const dStakeToken = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
-
+  
   const currentRouter = await dStakeToken.router();
-
   if (currentRouter === hre.ethers.ZeroAddress) {
-    await dStakeToken.setRouter(sdUSDRouter.address);
-    console.log(`Set router for sdUSD dStakeToken`);
-  }
-
-  const currentVault = await dStakeToken.collateralVault();
-
-  if (currentVault === hre.ethers.ZeroAddress) {
-    await dStakeToken.setCollateralVault(collateralVaultDeployment.address);
-    console.log(`Set collateralVault for sdUSD dStakeToken`);
+    console.log(`Warning: sdUSD dStakeToken router not configured. This should have been done by configure script.`);
   }
 
   // Deploy for dETH
@@ -90,23 +81,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await sdETHRouterContract.setDefaultDepositVaultAsset(mockMetaMorphoVaultdETH.address);
   console.log(`Set default deposit vault asset for sdETH router`);
 
-  // Configure dStakeToken with collateralVault and router since configure script might skip
+  // These configurations should be handled by 03_configure_dstake.ts
+  // We'll only do minimal checks here to ensure proper setup
   const dStakeTokenDeploymentETH = await get("DStakeToken_sdETH");
-  const collateralVaultDeploymentETH = await get("DStakeCollateralVault_sdETH");
   const dStakeTokenETH = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeploymentETH.address);
-
+  
   const currentRouterETH = await dStakeTokenETH.router();
-
   if (currentRouterETH === hre.ethers.ZeroAddress) {
-    await dStakeTokenETH.setRouter(sdETHRouter.address);
-    console.log(`Set router for sdETH dStakeToken`);
-  }
-
-  const currentVaultETH = await dStakeTokenETH.collateralVault();
-
-  if (currentVaultETH === hre.ethers.ZeroAddress) {
-    await dStakeTokenETH.setCollateralVault(collateralVaultDeploymentETH.address);
-    console.log(`Set collateralVault for sdETH dStakeToken`);
+    console.log(`Warning: sdETH dStakeToken router not configured. This should have been done by configure script.`);
   }
 };
 

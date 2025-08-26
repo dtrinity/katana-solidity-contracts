@@ -143,24 +143,12 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     // Configure MetaMorpho vault to use reward manager as skim recipient
     await metaMorphoVaultContract.setSkimRecipient(urdContract.target);
     
-    // Configure router to use MetaMorpho adapter as default
-    await routerContract.setDefaultDepositVaultAsset(metaMorphoVaultContract.target);
-    
-    // Ensure proper permissions and setup
-    const currentRouter = await collateralVaultContract.router();
-    if (currentRouter !== routerContract.target) {
-      await collateralVaultContract.setRouter(routerContract.target);
-    }
-    
-    const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
-    const hasRouterRole = await collateralVaultContract.hasRole(ROUTER_ROLE, routerContract.target);
-    
-    if (!hasRouterRole) {
-      await collateralVaultContract.grantRole(ROUTER_ROLE, routerContract.target);
-    }
-    
-    // Register the adapter (this should add the supported asset)
-    await routerContract.addAdapter(metaMorphoVaultContract.target, adapterContract.target);
+    // Note: Router configuration, adapter registration, and permissions should be handled by deployment scripts
+    // The deployment scripts (03_deploy_metamorpho_adapters.ts) should have already:
+    // 1. Registered the adapter with the router
+    // 2. Set the default deposit vault asset
+    // 3. Configured collateralVault's router
+    // 4. Granted ROUTER_ROLE to the router
     
     // Grant roles
     const REWARDS_MANAGER_ROLE = await rewardManagerContract.REWARDS_MANAGER_ROLE();
@@ -212,6 +200,22 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     let aliceShares: bigint;
     let bobShares: bigint;
     let charlieShares: bigint;
+    
+    it("Phase 0: Verify deployment configuration", async function () {
+      // Check that the deployment scripts properly configured everything
+      const defaultVault = await router.defaultDepositVaultAsset();
+      expect(defaultVault).to.equal(metaMorphoVault.target, "Default deposit vault not set");
+      
+      const adapterAddr = await router.vaultAssetToAdapter(metaMorphoVault.target);
+      expect(adapterAddr).to.equal(adapter.target, "Adapter not registered");
+      
+      const vaultRouter = await collateralVault.router();
+      expect(vaultRouter).to.equal(router.target, "CollateralVault router not set");
+      
+      const ROUTER_ROLE = await collateralVault.ROUTER_ROLE();
+      const hasRole = await collateralVault.hasRole(ROUTER_ROLE, router.target);
+      expect(hasRole).to.be.true;
+    });
     
     it("Phase 1: Initial deposits and dSTAKE minting", async function () {
       // Alice deposits 1000 dUSD
