@@ -40,12 +40,16 @@ describe("MetaMorpho Integration", function () {
           "local-setup",     // Mock tokens and oracles
           "oracle",          // Oracle setup
           "dusd",            // dUSD token
-          "deth",            // dETH token  
-          "mock-dstake",     // Mock dStake contracts (replaces "dStake")
+          "deth",            // dETH token
+          "dUSD-aTokenWrapper",
+          "dETH-aTokenWrapper",
+          "dlend",           // dLend infrastructure
+          "dStake",          // Real dStake deployment scripts
           "mock-metamorpho-vaults",
           "mock-urd",
           "metamorpho-adapters",
           "mock-metamorpho-rewards",
+          "test-permissions",  // Grant MINTER_ROLE for testing
         ];
         
         await deployments.fixture(allTags);
@@ -54,10 +58,16 @@ describe("MetaMorpho Integration", function () {
         const [ownerSigner, userSigner, treasurySigner, managerSigner] = await ethers.getSigners();
         
         // Get deployed contracts
-        const { contract: dStableContract } = await getTokenContractForSymbol(
+        const { contract: dStableBaseContract } = await getTokenContractForSymbol(
           hre,
           deployer,
           config.dStableSymbol
+        );
+        
+        // Cast to proper contract type to access mint function
+        const dStableContract = await ethers.getContractAt(
+          "ERC20StablecoinUpgradeable",
+          dStableBaseContract.target
         );
         
         const dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
@@ -107,6 +117,8 @@ describe("MetaMorpho Integration", function () {
         const rewardTokenContract = await TokenFactory.deploy("Reward Token", "RWD", 18);
         
         // Setup initial state
+        // The test-permissions script should have granted MINTER_ROLE to deployer
+        // Mint dStable tokens for testing (deployer should have MINTER_ROLE from test-permissions)
         await dStableContract.mint(userSigner.address, ethers.parseEther("10000"));
         // Mint reward tokens to owner for later funding the URD
         await rewardTokenContract.mint(ownerSigner.address, ethers.parseEther("1000"));
@@ -116,7 +128,7 @@ describe("MetaMorpho Integration", function () {
           user: userSigner,
           treasury: treasurySigner,
           manager: managerSigner,
-          dStable: dStableContract as TestMintableERC20,
+          dStable: dStableContract as any as TestMintableERC20,  // Cast for interface compatibility
           rewardToken: rewardTokenContract,
           metaMorphoVault: metaMorphoVaultContract,
           urd: urdContract,

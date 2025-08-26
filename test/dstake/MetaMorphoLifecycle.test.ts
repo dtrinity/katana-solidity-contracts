@@ -60,6 +60,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       "mock-urd",               // External dependency - keep mocked
       "metamorpho-adapters",    // Real MetaMorpho adapters
       "mock-metamorpho-rewards", // Real MetaMorpho reward managers
+      "test-permissions",        // Grant MINTER_ROLE for testing
     ];
     
     await deployments.fixture(allTags);
@@ -75,10 +76,16 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     ] = await ethers.getSigners();
     
     // Get deployed contracts
-    const { contract: dStableContract } = await getTokenContractForSymbol(
+    const { contract: dStableBaseContract } = await getTokenContractForSymbol(
       hre,
       deployer,
       config.dStableSymbol
+    );
+    
+    // Cast to proper contract type to access mint function
+    const dStableContract = await ethers.getContractAt(
+      "ERC20StablecoinUpgradeable",
+      dStableBaseContract.target
     );
     
     // Use the real deployment names from the actual dStake deployment scripts
@@ -153,7 +160,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       charlie: charlieSigner,
       treasury: treasurySigner,
       manager: managerSigner,
-      dStable: dStableContract as TestMintableERC20,
+      dStable: dStableContract as any as TestMintableERC20,  // Cast for interface compatibility
       rewardToken: rewardTokenContract,
       metaMorphoVault: metaMorphoVaultContract,
       urd: urdContract,

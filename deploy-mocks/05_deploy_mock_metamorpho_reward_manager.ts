@@ -72,7 +72,7 @@ func.tags = ["mock-metamorpho-rewards"];
 func.dependencies = [
   "mock-metamorpho-vaults",
   "mock-urd",
-  "mock-dstake",
+  "dStake",  // Use real dStake deployment, not mock
 ];
 
 export default func;
