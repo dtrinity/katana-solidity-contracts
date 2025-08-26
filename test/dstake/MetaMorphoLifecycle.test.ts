@@ -55,7 +55,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       "oracle",          // Oracle setup
       "dusd",            // dUSD token
       "deth",            // dETH token  
-      "dStake",          // Real dStake deployment scripts (replaces "mock-dstake")
+      "dStake",          // Real dStake deployment scripts
       "mock-metamorpho-vaults",  // External dependency - keep mocked
       "mock-urd",               // External dependency - keep mocked
       "metamorpho-adapters",    // Real MetaMorpho adapters
