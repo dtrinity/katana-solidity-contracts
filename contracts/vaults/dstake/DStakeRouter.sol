@@ -42,7 +42,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   // Governance-configurable risk parameters
   uint256 public dustTolerance = 1; // 1 wei default tolerance
 
-  mapping(address => address) public vaultAssetToAdapter; // vaultAsset => adapterAddress
+  mapping(address => address) private _vaultAssetToAdapter; // vaultAsset => adapterAddress
   address public defaultDepositVaultAsset; // Default strategy for deposits
 
   // Struct used to pack local variables in functions prone to "stack too deep" compiler errors
@@ -75,10 +75,19 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   // --- External Functions (IDStakeRouter Interface) ---
 
   /**
+   * @notice Returns the adapter address for a given vault asset
+   * @param vaultAsset The vault asset address to query
+   * @return The adapter address, or address(0) if not found
+   */
+  function vaultAssetToAdapter(address vaultAsset) external view returns (address) {
+    return _vaultAssetToAdapter[vaultAsset];
+  }
+
+  /**
    * @inheritdoc IDStakeRouter
    */
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) {
-    address adapterAddress = vaultAssetToAdapter[defaultDepositVaultAsset];
+    address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(defaultDepositVaultAsset);
     }
@@ -135,7 +144,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @inheritdoc IDStakeRouter
    */
   function withdraw(uint256 dStableAmount, address receiver, address owner) external override onlyRole(DSTAKE_TOKEN_ROLE) {
-    address adapterAddress = vaultAssetToAdapter[defaultDepositVaultAsset];
+    address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(defaultDepositVaultAsset);
     }
@@ -211,8 +220,8 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
     uint256 fromVaultAssetAmount,
     uint256 minToVaultAssetAmount
   ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) {
-    address fromAdapterAddress = vaultAssetToAdapter[fromVaultAsset];
-    address toAdapterAddress = vaultAssetToAdapter[toVaultAsset];
+    address fromAdapterAddress = _vaultAssetToAdapter[fromVaultAsset];
+    address toAdapterAddress = _vaultAssetToAdapter[toVaultAsset];
     if (fromAdapterAddress == address(0)) revert AdapterNotFound(fromVaultAsset);
     if (toAdapterAddress == address(0)) revert AdapterNotFound(toVaultAsset);
 
@@ -282,8 +291,8 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
     ExchangeLocals memory locals;
 
     // Resolve adapters
-    locals.fromAdapterAddress = vaultAssetToAdapter[fromVaultAsset];
-    locals.toAdapterAddress = vaultAssetToAdapter[toVaultAsset];
+    locals.fromAdapterAddress = _vaultAssetToAdapter[fromVaultAsset];
+    locals.toAdapterAddress = _vaultAssetToAdapter[toVaultAsset];
 
     if (locals.fromAdapterAddress == address(0)) revert AdapterNotFound(fromVaultAsset);
     if (locals.toAdapterAddress == address(0)) revert AdapterNotFound(toVaultAsset);
@@ -346,10 +355,10 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
     }
     address adapterVaultAsset = IDStableConversionAdapter(adapterAddress).vaultAsset();
     if (adapterVaultAsset != vaultAsset) revert AdapterAssetMismatch(adapterAddress, vaultAsset, adapterVaultAsset);
-    if (vaultAssetToAdapter[vaultAsset] != address(0) && vaultAssetToAdapter[vaultAsset] != adapterAddress) {
-      revert VaultAssetManagedByDifferentAdapter(vaultAsset, vaultAssetToAdapter[vaultAsset]);
+    if (_vaultAssetToAdapter[vaultAsset] != address(0) && _vaultAssetToAdapter[vaultAsset] != adapterAddress) {
+      revert VaultAssetManagedByDifferentAdapter(vaultAsset, _vaultAssetToAdapter[vaultAsset]);
     }
-    vaultAssetToAdapter[vaultAsset] = adapterAddress;
+    _vaultAssetToAdapter[vaultAsset] = adapterAddress;
 
     // Inform the collateral vault of the new supported asset list (no-op if already added)
     try collateralVault.addSupportedAsset(vaultAsset) {} catch {}
@@ -365,11 +374,11 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @param vaultAsset The address of the vault asset to remove.
    */
   function removeAdapter(address vaultAsset) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    address adapterAddress = vaultAssetToAdapter[vaultAsset];
+    address adapterAddress = _vaultAssetToAdapter[vaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(vaultAsset);
     }
-    delete vaultAssetToAdapter[vaultAsset];
+    delete _vaultAssetToAdapter[vaultAsset];
 
     // Inform the collateral vault to remove supported asset.
     collateralVault.removeSupportedAsset(vaultAsset);
@@ -383,7 +392,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @param vaultAsset The address of the vault asset to set as default.
    */
   function setDefaultDepositVaultAsset(address vaultAsset) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (vaultAssetToAdapter[vaultAsset] == address(0)) {
+    if (_vaultAssetToAdapter[vaultAsset] == address(0)) {
       revert AdapterNotFound(vaultAsset);
     }
     defaultDepositVaultAsset = vaultAsset;
@@ -460,7 +469,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
 
     uint256 amountToSweep = (maxAmount == 0 || maxAmount > balance) ? balance : maxAmount;
 
-    address adapterAddress = vaultAssetToAdapter[defaultDepositVaultAsset];
+    address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
     if (adapterAddress == address(0)) revert AdapterNotFound(defaultDepositVaultAsset);
 
     IDStableConversionAdapter adapter = IDStableConversionAdapter(adapterAddress);

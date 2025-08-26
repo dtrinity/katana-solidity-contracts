@@ -140,6 +140,7 @@ contract MockMetaMorphoVault is ERC4626 {
   function deposit(uint256 assets, address receiver) public virtual override returns (uint256) {
     require(!mockPaused, "Vault paused");
     require(!mockRevertOnDeposit, "Mock revert");
+    require(assets > 0, "Zero assets");
 
     // Apply deposit fee if set
     uint256 assetsAfterFee = assets;
@@ -154,11 +155,17 @@ contract MockMetaMorphoVault is ERC4626 {
     // Track deposit timestamp for testing time-based attacks
     lastDepositTimestamp[receiver] = block.timestamp;
 
+    // For consistent ERC4626 behavior, shares should be calculated based on assets going into the vault
     uint256 shares = previewDeposit(assetsAfterFee);
-    _deposit(_msgSender(), receiver, assets, shares);
-
+    
+    // Transfer full assets from caller and mint calculated shares
+    IERC20(asset()).transferFrom(_msgSender(), address(this), assets);
+    _mint(receiver, shares);
+    
+    // Update mock state to reflect assets after fees
     mockTotalAssets += assetsAfterFee;
-
+    
+    emit Deposit(_msgSender(), receiver, assets, shares);
     return shares;
   }
 
@@ -179,7 +186,10 @@ contract MockMetaMorphoVault is ERC4626 {
     lastDepositTimestamp[receiver] = block.timestamp;
 
     _deposit(_msgSender(), receiver, assets, shares);
-    mockTotalAssets += assets - ((mockDepositFee > 0) ? (assets * mockDepositFee) / 10000 : 0);
+    
+    // Update total assets after deposit
+    uint256 assetsAfterFee = assets - ((mockDepositFee > 0) ? (assets * mockDepositFee) / 10000 : 0);
+    mockTotalAssets += assetsAfterFee;
 
     return assets;
   }

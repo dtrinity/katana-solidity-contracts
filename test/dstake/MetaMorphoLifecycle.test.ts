@@ -146,6 +146,22 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     // Configure router to use MetaMorpho adapter as default
     await routerContract.setDefaultDepositVaultAsset(metaMorphoVaultContract.target);
     
+    // Ensure proper permissions and setup
+    const currentRouter = await collateralVaultContract.router();
+    if (currentRouter !== routerContract.target) {
+      await collateralVaultContract.setRouter(routerContract.target);
+    }
+    
+    const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
+    const hasRouterRole = await collateralVaultContract.hasRole(ROUTER_ROLE, routerContract.target);
+    
+    if (!hasRouterRole) {
+      await collateralVaultContract.grantRole(ROUTER_ROLE, routerContract.target);
+    }
+    
+    // Register the adapter (this should add the supported asset)
+    await routerContract.addAdapter(metaMorphoVaultContract.target, adapterContract.target);
+    
     // Grant roles
     const REWARDS_MANAGER_ROLE = await rewardManagerContract.REWARDS_MANAGER_ROLE();
     await rewardManagerContract.grantRole(REWARDS_MANAGER_ROLE, managerSigner.address);
