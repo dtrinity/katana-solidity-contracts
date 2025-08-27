@@ -36,8 +36,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   using Math for uint256;
 
   // --- Constants ---
-  uint256 private constant MAX_SLIPPAGE_BPS = BasisPointConstants.ONE_PERCENT_BPS; // 1% max slippage
+  uint256 private constant MAX_ALLOWED_SLIPPAGE_BPS = 50000; // 5% maximum allowed slippage
   uint256 private constant MIN_SHARES = 100; // Minimum shares to prevent dust attacks (100 wei)
+
+  // --- Mutable State ---
+  uint256 private maxSlippageBps; // Current max slippage protection
 
   // --- Errors ---
   error ZeroAddress();
@@ -47,11 +50,13 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   error InsufficientOutput(uint256 output, uint256 minimum);
   error VaultOperationFailed();
   error DustAmount();
+  error SlippageTooHigh(uint256 slippage, uint256 maximum);
 
   // --- Events ---
   event ConversionToVault(address indexed from, uint256 dStableAmount, uint256 vaultShares);
   event ConversionFromVault(address indexed to, uint256 vaultShares, uint256 dStableAmount);
   event EmergencyWithdraw(address indexed token, uint256 amount);
+  event MaxSlippageUpdated(uint256 oldSlippage, uint256 newSlippage);
 
   // --- Immutable State ---
   address public immutable dStable;
@@ -75,6 +80,9 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
     // Initialize access control - grant admin role to collateral vault
     _grantRole(DEFAULT_ADMIN_ROLE, _collateralVault);
+
+    // Initialize slippage to 1% (backward compatibility)
+    maxSlippageBps = BasisPointConstants.ONE_PERCENT_BPS;
 
     // Critical: Verify the vault's underlying asset matches our dStable
     address vaultUnderlying = metaMorphoVault.asset();
@@ -114,7 +122,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
     // Calculate minimum acceptable shares (with slippage protection)
     uint256 minShares = expectedShares.mulDiv(
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - maxSlippageBps,
       BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
       Math.Rounding.Floor
     );
@@ -173,7 +181,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
     // Calculate minimum acceptable assets
     uint256 minAssets = expectedAssets.mulDiv(
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - maxSlippageBps,
       BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
       Math.Rounding.Floor
     );
@@ -239,7 +247,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
       // Apply slippage for preview (conservative estimate)
       return
         assets.mulDiv(
-          BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+          BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - maxSlippageBps,
           BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
           Math.Rounding.Floor
         );
@@ -257,7 +265,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     try metaMorphoVault.previewDeposit(dStableAmount) returns (uint256 shares) {
       // Apply slippage for preview (conservative estimate)
       uint256 expectedShares = shares.mulDiv(
-        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - MAX_SLIPPAGE_BPS,
+        BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - maxSlippageBps,
         BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
         Math.Rounding.Floor
       );
@@ -272,6 +280,24 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    */
   function vaultAsset() external view override returns (address) {
     return address(metaMorphoVault);
+  }
+
+  // --- Admin Functions ---
+
+  /**
+   * @notice Set the maximum slippage protection
+   * @dev Only callable by admin role. Cannot exceed MAX_ALLOWED_SLIPPAGE_BPS
+   * @param newSlippageBps New slippage protection in basis points
+   */
+  function setMaxSlippage(uint256 newSlippageBps) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (newSlippageBps > MAX_ALLOWED_SLIPPAGE_BPS) {
+      revert SlippageTooHigh(newSlippageBps, MAX_ALLOWED_SLIPPAGE_BPS);
+    }
+
+    uint256 oldSlippage = maxSlippageBps;
+    maxSlippageBps = newSlippageBps;
+
+    emit MaxSlippageUpdated(oldSlippage, newSlippageBps);
   }
 
   // --- Emergency Functions ---
@@ -297,6 +323,22 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   // --- View Functions ---
+
+  /**
+   * @notice Get the current maximum slippage protection
+   * @return slippageBps Current slippage protection in basis points
+   */
+  function getMaxSlippage() external view returns (uint256 slippageBps) {
+    return maxSlippageBps;
+  }
+
+  /**
+   * @notice Get the maximum allowed slippage protection
+   * @return maxAllowedBps Maximum allowed slippage in basis points (hardcoded to 5%)
+   */
+  function getMaxAllowedSlippage() external pure returns (uint256 maxAllowedBps) {
+    return MAX_ALLOWED_SLIPPAGE_BPS;
+  }
 
   /**
    * @notice Check if the vault is currently functional
