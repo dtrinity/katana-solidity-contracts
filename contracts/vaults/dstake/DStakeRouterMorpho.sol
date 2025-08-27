@@ -42,6 +42,12 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     // --- State Variables ---
     uint256 public maxVaultCount = 10; // Governable limit for gas optimization
     
+    // --- Enums ---
+    enum OperationType {
+        DEPOSIT,
+        WITHDRAWAL
+    }
+
     // --- Errors ---
     error InvalidAmount();
     error InvalidVaultConfig();
@@ -143,8 +149,8 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
         if (dStableAmount == 0) revert InvalidAmount();
         
-        // Get active vaults and their current allocations
-        (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) = _getActiveVaultsAndAllocations();
+        // Get active vaults and their current allocations (only vaults healthy for deposits)
+        (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
         
         if (activeVaults.length == 0) {
             revert InsufficientActiveVaults();
@@ -197,8 +203,8 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
         if (dStableAmount == 0) revert InvalidAmount();
         
-        // Get active vaults and their current allocations
-        (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) = _getActiveVaultsAndAllocations();
+        // Get active vaults and their current allocations (only vaults healthy for withdrawals)
+        (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
         
         if (activeVaults.length == 0) {
             revert InsufficientActiveVaults();
@@ -260,9 +266,13 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
             revert VaultNotActive(fromConfig.isActive ? toVault : fromVault);
         }
         
-        // Check if target vault is healthy (not paused)
-        if (!_isVaultHealthy(toVault)) {
+        // Check if target vault is healthy for deposits and source vault is healthy for withdrawals
+        if (!_isVaultHealthyForDeposits(toVault)) {
             revert VaultNotActive(toVault);
+        }
+        
+        if (!_isVaultHealthyForWithdrawals(fromVault)) {
+            revert VaultNotActive(fromVault);
         }
         
         // Use the existing exchangeAssetsUsingAdapters function
@@ -472,10 +482,11 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
     /**
      * @notice Returns only active vault addresses
+     * @dev For backward compatibility, defaults to checking deposit health
      * @return activeVaults Array of active vault addresses
      */
     function getActiveVaults() external view returns (address[] memory activeVaults) {
-        (activeVaults, , ) = _getActiveVaultsAndAllocations();
+        (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
     }
 
     /**
@@ -507,22 +518,42 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
     /**
      * @notice Checks if a vault is currently healthy and not paused
+     * @dev For backward compatibility, defaults to checking deposit health
      * @param vault Address of the vault to check
-     * @return healthy True if vault is healthy
+     * @return healthy True if vault is healthy for deposits
      */
     function isVaultHealthy(address vault) external view returns (bool healthy) {
-        return _isVaultHealthy(vault);
+        return _isVaultHealthyForDeposits(vault);
+    }
+
+    /**
+     * @notice Checks if a vault is healthy for deposit operations
+     * @param vault Address of the vault to check
+     * @return healthy True if vault can accept deposits
+     */
+    function isVaultHealthyForDeposits(address vault) external view returns (bool healthy) {
+        return _isVaultHealthyForDeposits(vault);
+    }
+
+    /**
+     * @notice Checks if a vault is healthy for withdrawal operations
+     * @param vault Address of the vault to check
+     * @return healthy True if vault can process withdrawals
+     */
+    function isVaultHealthyForWithdrawals(address vault) external view returns (bool healthy) {
+        return _isVaultHealthyForWithdrawals(vault);
     }
 
     // --- Internal Helper Functions ---
 
     /**
      * @notice Internal function to get active vaults and their allocations
+     * @param operationType Type of operation to filter vaults by health status
      * @return activeVaults Array of active vault addresses
      * @return currentAllocations Array of current allocations in basis points
      * @return targetAllocations Array of target allocations in basis points
      */
-    function _getActiveVaultsAndAllocations() internal view returns (
+    function _getActiveVaultsAndAllocations(OperationType operationType) internal view returns (
         address[] memory activeVaults,
         uint256[] memory currentAllocations,
         uint256[] memory targetAllocations
@@ -530,7 +561,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         // First, count active vaults
         uint256 activeCount = 0;
         for (uint256 i = 0; i < vaultConfigs.length; i++) {
-            if (vaultConfigs[i].isActive && _isVaultHealthy(vaultConfigs[i].vault)) {
+            if (vaultConfigs[i].isActive && _isVaultHealthyForOperation(vaultConfigs[i].vault, operationType)) {
                 activeCount++;
             }
         }
@@ -548,7 +579,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         uint256 activeIndex = 0;
         for (uint256 i = 0; i < vaultConfigs.length; i++) {
             VaultConfig memory config = vaultConfigs[i];
-            if (config.isActive && _isVaultHealthy(config.vault)) {
+            if (config.isActive && _isVaultHealthyForOperation(config.vault, operationType)) {
                 activeVaults[activeIndex] = config.vault;
                 balances[activeIndex] = _getVaultBalance(config.vault);
                 targetAllocations[activeIndex] = config.targetBps;
@@ -560,6 +591,20 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         (currentAllocations, ) = AllocationCalculator.calculateCurrentAllocations(balances);
         
         return (activeVaults, currentAllocations, targetAllocations);
+    }
+
+    /**
+     * @notice Helper function to check vault health based on operation type
+     * @param vault Address of the vault to check
+     * @param operationType Type of operation (deposit or withdrawal)
+     * @return healthy True if vault is healthy for the specified operation
+     */
+    function _isVaultHealthyForOperation(address vault, OperationType operationType) internal view returns (bool healthy) {
+        if (operationType == OperationType.DEPOSIT) {
+            return _isVaultHealthyForDeposits(vault);
+        } else {
+            return _isVaultHealthyForWithdrawals(vault);
+        }
     }
 
     /**
@@ -629,15 +674,39 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice Checks if a vault is healthy and not paused
-     * @dev For now, we'll use a simple approach checking if the vault can preview operations
+     * @notice Checks if a vault is healthy for deposits and not paused
+     * @dev Checks if the vault can preview deposit operations
      * @param vault Address of the vault to check
-     * @return healthy True if vault is healthy
+     * @return healthy True if vault can accept deposits
      */
-    function _isVaultHealthy(address vault) internal view returns (bool healthy) {
+    function _isVaultHealthyForDeposits(address vault) internal view returns (bool healthy) {
         try IERC4626(vault).totalAssets() returns (uint256) {
             try IERC4626(vault).previewDeposit(1e18) returns (uint256 shares) {
                 return shares > 0;
+            } catch {
+                return false;
+            }
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * @notice Checks if a vault is healthy for withdrawals and not paused
+     * @dev Checks if the vault can preview redeem operations
+     * @param vault Address of the vault to check
+     * @return healthy True if vault can process withdrawals
+     */
+    function _isVaultHealthyForWithdrawals(address vault) internal view returns (bool healthy) {
+        try IERC4626(vault).totalAssets() returns (uint256) {
+            // Check if we have any shares in this vault
+            uint256 vaultShares = IERC20(vault).balanceOf(address(collateralVault));
+            if (vaultShares == 0) {
+                return false;
+            }
+            
+            try IERC4626(vault).previewRedeem(vaultShares) returns (uint256 assets) {
+                return assets > 0;
             } catch {
                 return false;
             }
