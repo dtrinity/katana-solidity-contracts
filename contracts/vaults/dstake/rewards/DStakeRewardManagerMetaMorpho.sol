@@ -74,6 +74,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
   error InvalidRouter();
   error InvalidAdapter(address adapter);
   error AdapterReturnedUnexpectedAsset(address expected, address actual);
+  error InsufficientAssetsReceived(uint256 expected, uint256 actual);
   error DefaultDepositAssetNotSet();
   error AdapterNotSetForDefaultAsset();
   error InvalidURD();
@@ -255,6 +256,9 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     // Approve router to spend dStable
     IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
+    // Check collateral vault balance before conversion
+    uint256 balanceBefore = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
+
     // Convert dStable to vault asset via adapter
     (address returnedVaultAsset, uint256 vaultAssetAmount) = IDStableConversionAdapter(adapter).convertToVaultAsset(exchangeAmountIn);
 
@@ -263,9 +267,15 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
       revert AdapterReturnedUnexpectedAsset(defaultVaultAsset, returnedVaultAsset);
     }
 
-    // The adapter should have sent the vault assets directly to the collateral vault
-    // Emit event for tracking
-    emit ExchangeAssetProcessed(defaultVaultAsset, vaultAssetAmount, exchangeAmountIn);
+    // Verify that the collateral vault actually received the expected assets
+    uint256 balanceAfter = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
+    uint256 actualReceived = balanceAfter - balanceBefore;
+    if (actualReceived < vaultAssetAmount) {
+      revert InsufficientAssetsReceived(vaultAssetAmount, actualReceived);
+    }
+
+    // Emit event for tracking (use actualReceived for accuracy)
+    emit ExchangeAssetProcessed(defaultVaultAsset, actualReceived, exchangeAmountIn);
 
     // Clear any remaining approval
     IERC20(exchangeAsset).forceApprove(adapter, 0);
