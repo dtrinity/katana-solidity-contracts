@@ -48,8 +48,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // We'll only do minimal checks here to ensure proper setup
   const dStakeTokenDeployment = await get("DStakeToken_sdUSD");
   const dStakeToken = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
-  
+
   const currentRouter = await dStakeToken.router();
+
   if (currentRouter === hre.ethers.ZeroAddress) {
     console.log(`Warning: sdUSD dStakeToken router not configured. This should have been done by configure script.`);
   }
@@ -85,8 +86,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // We'll only do minimal checks here to ensure proper setup
   const dStakeTokenDeploymentETH = await get("DStakeToken_sdETH");
   const dStakeTokenETH = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeploymentETH.address);
-  
+
   const currentRouterETH = await dStakeTokenETH.router();
+
   if (currentRouterETH === hre.ethers.ZeroAddress) {
     console.log(`Warning: sdETH dStakeToken router not configured. This should have been done by configure script.`);
   }

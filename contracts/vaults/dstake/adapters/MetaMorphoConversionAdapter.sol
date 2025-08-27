@@ -309,7 +309,6 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    * @param amount The amount to recover
    */
   function emergencyWithdraw(address token, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-
     if (token == address(0)) {
       // Withdraw ETH with gas limit to prevent reentrancy
       (bool success, ) = msg.sender.call{ value: amount, gas: 2300 }("");
@@ -331,7 +330,6 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   function getMaxSlippage() external view returns (uint256 slippageBps) {
     return maxSlippageBps;
   }
-
 
   /**
    * @notice Check if the vault is currently functional

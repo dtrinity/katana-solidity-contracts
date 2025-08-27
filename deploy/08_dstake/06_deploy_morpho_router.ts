@@ -78,11 +78,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Deploy DStakeRouterMorpho for each dSTAKE instance
   for (const instanceKey in config.dStake) {
-    const instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
+    const _instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
     const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
-    
+
     // Check if already deployed to avoid redeployment on mainnet
     const existingMorphoRouter = await deployments.getOrNull(morphoRouterDeploymentName);
+
     if (existingMorphoRouter) {
       console.log(`DStakeRouterMorpho for ${instanceKey} already deployed at ${existingMorphoRouter.address}. Skipping deployment.`);
       continue;
@@ -97,10 +98,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const morphoRouterDeployment = await deploy(morphoRouterDeploymentName, {
       from: deployer,
       contract: "DStakeRouterMorpho",
-      args: [
-        dstakeTokenDeployment.address,
-        collateralVaultDeployment.address,
-      ],
+      args: [dstakeTokenDeployment.address, collateralVaultDeployment.address],
       libraries: {
         WeightedRandomSelector: weightedRandomSelectorDeployment.address,
         AllocationCalculator: allocationCalculatorDeployment.address,
@@ -125,19 +123,19 @@ func.id = "deploy_morpho_router";
 func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
   const { deployments } = hre;
   const config = await getConfig(hre);
-  
+
   if (!config.dStake || !config.morpho) return true;
 
   // Check if all DStakeRouterMorpho instances are deployed
   for (const instanceKey in config.dStake) {
     const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
     const existingRouter = await deployments.getOrNull(morphoRouterDeploymentName);
-    
+
     if (!existingRouter) {
       return false; // At least one router is missing, allow script to run
     }
   }
-  
+
   // All routers deployed, skip script
   return true;
 };

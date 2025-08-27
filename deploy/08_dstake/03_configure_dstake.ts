@@ -125,23 +125,24 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // --- Configure DStakeCollateralVault Adapters ---
     for (const adapterConfig of instanceConfig.adapters) {
       const adapterDeploymentName = `${adapterConfig.adapterContract}_${instanceConfig.symbol}`;
-      
+
       // Skip if adapter is not deployed (e.g., dLend adapters when dLend is not available)
       const adapterDeploymentExists = await deployments.getOrNull(adapterDeploymentName);
+
       if (!adapterDeploymentExists) {
         console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - not deployed yet`);
         continue;
       }
-      
+
       const adapterDeployment = await get(adapterDeploymentName);
       const vaultAssetAddress = adapterConfig.vaultAsset;
-      
+
       // Skip if vault asset is not valid
       if (!vaultAssetAddress || vaultAssetAddress === ethers.ZeroAddress) {
         console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - vault asset not available`);
         continue;
       }
-      
+
       const existingAdapter = await routerContract.vaultAssetToAdapter(vaultAssetAddress);
 
       if (existingAdapter === ethers.ZeroAddress) {

@@ -46,6 +46,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // Check if DStakeRouterMorpho is deployed for this instance
     const morphoRouterDeploymentExists = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
+
     if (!morphoRouterDeploymentExists) {
       console.log(`⚠️  Skipping ${instanceKey}: DStakeRouterMorpho not deployed yet`);
       continue;
@@ -62,11 +63,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`⚙️ Configuring DStakeRouterMorpho for ${instanceKey}...`);
 
     const morphoRouterDeployment = await get(morphoRouterDeploymentName);
-    const morphoRouter = await ethers.getContractAt(
-      "DStakeRouterMorpho", 
-      morphoRouterDeployment.address, 
-      deployerSigner
-    );
+    const morphoRouter = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
 
     // --- Configure Collateral Exchangers ---
     const collateralExchangerRole = await morphoRouter.COLLATERAL_EXCHANGER_ROLE();
@@ -90,17 +87,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     for (const adapterConfig of instanceConfig.adapters) {
       if (adapterConfig.adapterContract === "MetaMorphoConversionAdapter") {
         const adapterDeploymentName = `${adapterConfig.adapterContract}_${instanceConfig.symbol}`;
-        
+
         // Check if adapter is deployed
         const adapterDeploymentExists = await deployments.getOrNull(adapterDeploymentName);
+
         if (!adapterDeploymentExists) {
           console.log(`    ⚠️  Skipping vault config for ${adapterDeploymentName} - adapter not deployed yet`);
           continue;
         }
-        
+
         const adapterDeployment = await get(adapterDeploymentName);
         const vaultAssetAddress = adapterConfig.vaultAsset;
-        
+
         // Skip if vault asset is not valid
         if (!vaultAssetAddress || vaultAssetAddress === ethers.ZeroAddress) {
           console.log(`    ⚠️  Skipping vault config for ${adapterDeploymentName} - vault asset not available`);
@@ -110,6 +108,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         // For initial deployment, we'll use equal weights
         // In production, these should come from configuration
         let targetBps: number;
+
         if (vaultConfigs.length === 0) {
           targetBps = 5000; // 50% for first vault
         } else if (vaultConfigs.length === 1) {
@@ -122,18 +121,21 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
           vault: vaultAssetAddress,
           adapter: adapterDeployment.address,
           targetBps: targetBps,
-          isActive: true
+          isActive: true,
         });
 
         totalTargetBps += targetBps;
 
         // Add adapter to the router (base functionality)
         const existingAdapter = await morphoRouter.vaultAssetToAdapter(vaultAssetAddress);
+
         if (existingAdapter === ethers.ZeroAddress) {
           await morphoRouter.addAdapter(vaultAssetAddress, adapterDeployment.address);
           console.log(`    ➕ Added adapter ${adapterDeploymentName} for vault ${vaultAssetAddress}`);
         } else if (existingAdapter !== adapterDeployment.address) {
-          console.log(`    ⚠️  Adapter for vault ${vaultAssetAddress} is already set to ${existingAdapter}, expected ${adapterDeployment.address}`);
+          console.log(
+            `    ⚠️  Adapter for vault ${vaultAssetAddress} is already set to ${existingAdapter}, expected ${adapterDeployment.address}`
+          );
         } else {
           console.log(`    👍 Adapter ${adapterDeploymentName} for vault ${vaultAssetAddress} already configured`);
         }
@@ -152,12 +154,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       // Set vault configurations
       try {
         const currentVaultCount = await morphoRouter.getVaultCount();
-        
+
         if (currentVaultCount.toString() === "0") {
           console.log(`    ⚙️ Setting vault configurations for ${morphoRouterDeploymentName}...`);
           await morphoRouter.setVaultConfigs(vaultConfigs);
           console.log(`    ✅ Configured ${vaultConfigs.length} vaults with target allocations`);
-          
+
           // Log the configuration
           for (let i = 0; i < vaultConfigs.length; i++) {
             const config = vaultConfigs[i];

@@ -4,7 +4,7 @@ import { DeployFunction } from "hardhat-deploy/types";
 /**
  * Transfer all dLEND roles to the governance multisig
  *
- * @param hre Hardhat Runtime Environment
+ * @param _hre Hardhat Runtime Environment
  */
 // DISABLED: This deployment script is disabled because the dlend module was removed
 const func: DeployFunction = async function (_hre: HardhatRuntimeEnvironment) {

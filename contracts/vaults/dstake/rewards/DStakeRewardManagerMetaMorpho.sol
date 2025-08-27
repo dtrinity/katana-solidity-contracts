@@ -198,11 +198,11 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
         // Verify rewards were actually received
         uint256 balanceAfter = IERC20(claimData[i].rewardToken).balanceOf(address(this));
         uint256 actualReceived = balanceAfter - balanceBefore;
-        
+
         if (actualReceived == 0 && claimed > 0) {
           revert ClaimFailed(claimData[i].rewardToken);
         }
-        
+
         emit RewardsClaimed(claimData[i].rewardToken, actualReceived > 0 ? actualReceived : claimed);
       } catch {
         revert ClaimFailed(claimData[i].rewardToken);

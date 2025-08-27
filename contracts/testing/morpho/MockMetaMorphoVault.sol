@@ -18,8 +18,8 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
  *      1. Universal Rewards Distributor (URD) contracts
  *      2. Curator incentive programs
  *      3. Other external reward mechanisms
- *      
- *      In our dSTAKE integration, MetaMorpho rewards are handled by the 
+ *
+ *      In our dSTAKE integration, MetaMorpho rewards are handled by the
  *      DStakeRewardManagerMetaMorpho contract, not by the conversion adapter.
  *      This mock includes basic reward tracking functions for testing scenarios
  *      but should not be confused with production reward handling.
@@ -164,14 +164,14 @@ contract MockMetaMorphoVault is ERC4626 {
 
     // For consistent ERC4626 behavior, shares should be calculated based on assets going into the vault
     uint256 shares = previewDeposit(assetsAfterFee);
-    
+
     // Transfer full assets from caller and mint calculated shares
     IERC20(asset()).transferFrom(_msgSender(), address(this), assets);
     _mint(receiver, shares);
-    
+
     // Update mock state to reflect assets after fees
     mockTotalAssets += assetsAfterFee;
-    
+
     emit Deposit(_msgSender(), receiver, assets, shares);
     return shares;
   }
@@ -193,7 +193,7 @@ contract MockMetaMorphoVault is ERC4626 {
     lastDepositTimestamp[receiver] = block.timestamp;
 
     _deposit(_msgSender(), receiver, assets, shares);
-    
+
     // Update total assets after deposit
     uint256 assetsAfterFee = assets - ((mockDepositFee > 0) ? (assets * mockDepositFee) / 10000 : 0);
     mockTotalAssets += assetsAfterFee;

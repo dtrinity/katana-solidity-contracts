@@ -416,7 +416,6 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   event SurplusHeld(uint256 amount);
   event SurplusSwept(uint256 amount, address vaultAsset);
 
-
   // --- Governance setters ---
 
   /**

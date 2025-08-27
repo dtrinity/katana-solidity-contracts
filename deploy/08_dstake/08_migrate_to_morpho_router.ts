@@ -82,7 +82,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     const dstakeToken = await ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address, deployerSigner);
     const collateralVault = await ethers.getContractAt("DStakeCollateralVault", collateralVaultDeployment.address, deployerSigner);
-    const oldRouter = await ethers.getContractAt("DStakeRouter", oldRouterDeployment.address, deployerSigner);
+    const _oldRouter = await ethers.getContractAt("DStakeRouter", oldRouterDeployment.address, deployerSigner);
     const newRouter = await ethers.getContractAt("DStakeRouterMorpho", newRouterDeployment.address, deployerSigner);
 
     // --- Step 1: Safety Checks ---
@@ -90,6 +90,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // Check that the new router is properly configured
     const newRouterVaultCount = await newRouter.getVaultCount();
+
     if (newRouterVaultCount.toString() === "0") {
       throw new Error(`DStakeRouterMorpho for ${instanceKey} is not configured with any vaults. Run configuration script first.`);
     }
@@ -115,7 +116,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // In production, you might want to pause operations before migration
     const currentTotalSupply = await dstakeToken.totalSupply();
     const currentVaultBalance = await collateralVault.totalAssets();
-    
+
     console.log(`    📊 Current state for ${instanceKey}:`);
     console.log(`      Total Supply: ${ethers.formatEther(currentTotalSupply)}`);
     console.log(`      Vault Balance: ${ethers.formatEther(currentVaultBalance)}`);
@@ -123,9 +124,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // --- Step 4: Update DStakeToken Router Reference ---
     console.log(`    🔗 Updating DStakeToken router reference for ${instanceKey}...`);
     await dstakeToken.setRouter(newRouterDeployment.address);
-    
+
     // Verify the change
     const updatedRouter = await dstakeToken.router();
+
     if (updatedRouter !== newRouterDeployment.address) {
       throw new Error(`Failed to update router for ${instanceKey}. Expected ${newRouterDeployment.address}, got ${updatedRouter}`);
     }
@@ -133,14 +135,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // --- Step 5: Update Collateral Vault Router Reference ---
     console.log(`    🔗 Updating DStakeCollateralVault router reference for ${instanceKey}...`);
     const currentVaultRouter = await collateralVault.router();
-    
+
     if (currentVaultRouter !== newRouterDeployment.address) {
       await collateralVault.setRouter(newRouterDeployment.address);
-      
+
       // Verify the change
       const updatedVaultRouter = await collateralVault.router();
+
       if (updatedVaultRouter !== newRouterDeployment.address) {
-        throw new Error(`Failed to update collateral vault router for ${instanceKey}. Expected ${newRouterDeployment.address}, got ${updatedVaultRouter}`);
+        throw new Error(
+          `Failed to update collateral vault router for ${instanceKey}. Expected ${newRouterDeployment.address}, got ${updatedVaultRouter}`
+        );
       }
     } else {
       console.log(`    👍 Collateral vault router already set for ${instanceKey}`);
@@ -155,7 +160,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // --- Step 7: Verification ---
     console.log(`    ✅ Verifying migration for ${instanceKey}...`);
-    
+
     // Verify all references are updated
     const finalTokenRouter = await dstakeToken.router();
     const finalVaultRouter = await collateralVault.router();
@@ -165,11 +170,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     if (finalTokenRouter !== newRouterDeployment.address) {
       throw new Error(`Migration verification failed: DStakeToken router not updated for ${instanceKey}`);
     }
-    
+
     if (finalVaultRouter !== newRouterDeployment.address) {
       throw new Error(`Migration verification failed: CollateralVault router not updated for ${instanceKey}`);
     }
-    
+
     if (!finalHasNewRouterRole) {
       throw new Error(`Migration verification failed: New router doesn't have ROUTER_ROLE for ${instanceKey}`);
     }
@@ -197,14 +202,14 @@ func.id = "migrate_to_morpho_router";
 func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
   const { deployments } = hre;
   const config = await getConfig(hre);
-  
+
   if (!config.dStake || !config.morpho) return true;
 
   // Check if migration is needed for any instance
   for (const instanceKey in config.dStake) {
     const oldRouterExists = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
     const newRouterExists = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
-    
+
     if (!oldRouterExists || !newRouterExists) {
       continue; // Skip if routers don't exist
     }
@@ -214,15 +219,16 @@ func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
       const dstakeTokenDeployment = await deployments.get(`DStakeToken_${instanceKey}`);
       const dstakeToken = await hre.ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address);
       const currentRouter = await dstakeToken.router();
-      
+
       if (currentRouter !== newRouterExists.address) {
         return false; // Migration needed
       }
     } catch (error) {
+      console.warn(`Unable to check migration status for ${instanceKey}: ${error}`);
       return false; // Unable to check, allow migration to run
     }
   }
-  
+
   // No migration needed for any instance
   return true;
 };
