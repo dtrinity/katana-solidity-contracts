@@ -168,14 +168,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
 
     // 5. Ensure we received enough dStable to fulfill the withdrawal
     if (receivedDStable < dStableAmount) {
-      // Check if router has sufficient reserves to cover the shortfall
-      uint256 routerBalance = IERC20(dStable).balanceOf(address(this));
-      uint256 shortfall = dStableAmount - receivedDStable;
-
-      if (routerBalance < shortfall) {
-        revert InsufficientDStableFromAdapter(vaultAsset, dStableAmount, receivedDStable);
-      }
-      // Router covers the shortfall from its reserves
+      revert InsufficientDStableFromAdapter(vaultAsset, dStableAmount, receivedDStable);
     }
 
     // 7. Transfer the exact requested amount to the user as promised by the router contract
@@ -422,35 +415,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusHeld(uint256 amount);
   event SurplusSwept(uint256 amount, address vaultAsset);
-  event ReservesFunded(address indexed funder, uint256 amount);
 
-  // --- Reserve Management ---
-
-  /**
-   * @notice Funds the router with reserves to handle vault fees and operational costs.
-   * @dev This function allows governance to seed the router with dStable reserves.
-   *      Reserves are critical for covering shortfalls during withdrawals when adapters
-   *      cannot provide the exact requested amount of dStable, ensuring withdrawal 
-   *      guarantees are always met. While the router accumulates reserves naturally
-   *      from withdrawal surpluses, manual funding may be needed during system bootstrap
-   *      or to maintain adequate reserve levels for operational reliability.
-   * @param amount The amount of dStable to fund as reserves.
-   */
-  function fundReserves(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (amount == 0) revert ZeroInputDStableValue(dStable, 0);
-
-    IERC20(dStable).safeTransferFrom(msg.sender, address(this), amount);
-
-    emit ReservesFunded(msg.sender, amount);
-  }
-
-  /**
-   * @notice Returns the current reserve balance of the router.
-   * @return The amount of dStable held as reserves.
-   */
-  function reserveBalance() external view returns (uint256) {
-    return IERC20(dStable).balanceOf(address(this));
-  }
 
   // --- Governance setters ---
 
