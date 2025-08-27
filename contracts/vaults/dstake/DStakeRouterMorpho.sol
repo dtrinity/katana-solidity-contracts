@@ -34,7 +34,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     using AllocationCalculator for uint256[];
 
     // --- Constants ---
-    uint256 public constant MAX_VAULTS_PER_OPERATION = 3;
+    uint256 public maxVaultsPerOperation = 3;
     
     // --- Roles ---
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -61,6 +61,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     error AllVaultsPaused();
     error InvalidMaxVaultCount(uint256 count);
     error VaultMustHaveZeroAllocation(address vault, uint256 currentAllocation);
+    error InvalidMaxVaultsPerOperation(uint256 count);
 
     // --- Structs ---
     
@@ -122,6 +123,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         uint256 totalBalance
     );
     event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
+    event MaxVaultsPerOperationUpdated(uint256 oldCount, uint256 newCount);
 
     // --- Constructor ---
     
@@ -166,9 +168,9 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         uint256 randomSeed = WeightedRandomSelector.generateRandomSeed(msg.sender, nonce++);
         
         // Select vaults for deposit (up to 3, or fewer if not enough active)
-        uint256 selectCount = activeVaults.length < MAX_VAULTS_PER_OPERATION 
+        uint256 selectCount = activeVaults.length < maxVaultsPerOperation 
             ? activeVaults.length 
-            : MAX_VAULTS_PER_OPERATION;
+            : maxVaultsPerOperation;
             
         (address[] memory selectedVaults, ) = WeightedRandomSelector.selectWeightedRandom(
             activeVaults,
@@ -223,7 +225,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
         (address[] memory selectedVaults, uint256[] memory selectedIndices) = WeightedRandomSelector.selectWeightedRandom(
             activeVaults,
             withdrawalWeights,
-            activeVaults.length < MAX_VAULTS_PER_OPERATION ? activeVaults.length : MAX_VAULTS_PER_OPERATION,
+            activeVaults.length < maxVaultsPerOperation ? activeVaults.length : maxVaultsPerOperation,
             randomSeed
         );
         
@@ -423,6 +425,22 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
             vaultConfigs[index].targetBps,
             false
         );
+    }
+
+    /**
+     * @notice Sets the maximum number of vaults per deposit/withdrawal operation
+     * @dev Only callable by admin role. Must be greater than 0 to ensure functionality
+     * @param _maxVaultsPerOperation New maximum vaults per operation
+     */
+    function setMaxVaultsPerOperation(uint256 _maxVaultsPerOperation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_maxVaultsPerOperation == 0) {
+            revert InvalidMaxVaultsPerOperation(_maxVaultsPerOperation);
+        }
+        
+        uint256 oldMaxVaultsPerOperation = maxVaultsPerOperation;
+        maxVaultsPerOperation = _maxVaultsPerOperation;
+        
+        emit MaxVaultsPerOperationUpdated(oldMaxVaultsPerOperation, _maxVaultsPerOperation);
     }
 
     /**
@@ -883,10 +901,6 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     function _addVaultConfig(VaultConfig memory config) internal {
         if (config.vault == address(0) || config.adapter == address(0)) {
             revert ZeroAddress();
-        }
-        
-        if (config.targetBps > BasisPointConstants.ONE_HUNDRED_PERCENT_BPS) {
-            revert InvalidTargetAllocation(config.targetBps);
         }
         
         if (vaultExists[config.vault]) {
