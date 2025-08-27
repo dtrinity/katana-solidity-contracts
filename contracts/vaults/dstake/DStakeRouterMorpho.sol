@@ -56,7 +56,7 @@ contract DStakeRouterMorpho is DStakeRouter {
      * @notice Configuration for a MetaMorpho vault in the routing system
      * @param vault Address of the MetaMorpho vault (ERC4626)
      * @param adapter Address of the conversion adapter for this vault
-     * @param targetBps Target allocation in basis points (e.g., 6000 = 60%)
+     * @param targetBps Target allocation in basis points (e.g., 600000 = 60%)
      * @param isActive Whether this vault is currently active for routing
      */
     struct VaultConfig {
@@ -295,7 +295,7 @@ contract DStakeRouterMorpho is DStakeRouter {
             totalTargetBps += configs[i].targetBps;
         }
         
-        if (totalTargetBps != BasisPointConstants.ONE_PERCENT_BPS) {
+        if (totalTargetBps != BasisPointConstants.ONE_HUNDRED_PERCENT_BPS) {
             revert TotalAllocationInvalid(totalTargetBps);
         }
         
@@ -787,7 +787,7 @@ contract DStakeRouterMorpho is DStakeRouter {
             revert ZeroAddress();
         }
         
-        if (config.targetBps > BasisPointConstants.ONE_PERCENT_BPS) {
+        if (config.targetBps > BasisPointConstants.ONE_HUNDRED_PERCENT_BPS) {
             revert InvalidTargetAllocation(config.targetBps);
         }
         

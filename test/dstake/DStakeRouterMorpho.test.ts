@@ -152,19 +152,19 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       {
         vault: vault1Contract.target,
         adapter: adapter1Contract.target,
-        targetBps: 5000, // 50%
+        targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
         vault: vault2Contract.target,
         adapter: adapter2Contract.target,
-        targetBps: 3000, // 30%
+        targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
         vault: vault3Contract.target,
         adapter: adapter3Contract.target,
-        targetBps: 2000, // 20%
+        targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
       }
     ];
@@ -244,16 +244,16 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       const config1 = await router.getVaultConfigByIndex(0);
       expect(config1.vault).to.equal(vault1.target);
       expect(config1.adapter).to.equal(adapter1.target);
-      expect(config1.targetBps).to.equal(5000);
+      expect(config1.targetBps).to.equal(500000);
       expect(config1.isActive).to.be.true;
       
       const config2 = await router.getVaultConfigByIndex(1);
       expect(config2.vault).to.equal(vault2.target);
-      expect(config2.targetBps).to.equal(3000);
+      expect(config2.targetBps).to.equal(300000);
       
       const config3 = await router.getVaultConfigByIndex(2);
       expect(config3.vault).to.equal(vault3.target);
-      expect(config3.targetBps).to.equal(2000);
+      expect(config3.targetBps).to.equal(200000);
     });
 
     it("Should have correct active vaults", async function () {
@@ -269,19 +269,81 @@ describe("DStakeRouterMorpho Integration Tests", function () {
         {
           vault: vault1.target,
           adapter: adapter1.target,
-          targetBps: 6000, // 60%
+          targetBps: 600000, // 60% (in correct 1,000,000 basis point scale)
           isActive: true
         },
         {
           vault: vault2.target,
           adapter: adapter2.target,
-          targetBps: 3000, // 30% - Total = 90%, should fail
+          targetBps: 300000, // 30% - Total = 90%, should fail
           isActive: true
         }
       ];
       
       await expect(
         router.setVaultConfigs(invalidConfigs)
+      ).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
+    });
+
+    it("Should accept configurations that total exactly 1,000,000 basis points (100%)", async function () {
+      // Test that the fix works: configurations totaling exactly ONE_HUNDRED_PERCENT_BPS should pass
+      const correctConfigs = [
+        {
+          vault: vault1.target,
+          adapter: adapter1.target,
+          targetBps: 600000, // 60% in correct scale (600,000 out of 1,000,000)
+          isActive: true
+        },
+        {
+          vault: vault2.target,
+          adapter: adapter2.target,
+          targetBps: 250000, // 25% in correct scale (250,000 out of 1,000,000)
+          isActive: true
+        },
+        {
+          vault: vault3.target,
+          adapter: adapter3.target,
+          targetBps: 150000, // 15% in correct scale (150,000 out of 1,000,000)
+          isActive: true
+        }
+      ];
+      
+      // This should pass since it totals exactly 1,000,000 (100%)
+      await expect(router.setVaultConfigs(correctConfigs))
+        .to.not.be.reverted;
+        
+      // Verify the configurations were set correctly
+      expect(await router.getVaultCount()).to.equal(3);
+      const config1 = await router.getVaultConfigByIndex(0);
+      expect(config1.targetBps).to.equal(600000);
+    });
+
+    it("Should reject configurations using old 10,000 basis point scale", async function () {
+      // Test that old scale (which was previously accepted due to bug) now correctly fails
+      const oldScaleConfigs = [
+        {
+          vault: vault1.target,
+          adapter: adapter1.target,
+          targetBps: 5000, // 50% in old incorrect scale (5,000 out of 10,000)
+          isActive: true
+        },
+        {
+          vault: vault2.target,
+          adapter: adapter2.target,
+          targetBps: 3000, // 30% in old incorrect scale (3,000 out of 10,000)
+          isActive: true
+        },
+        {
+          vault: vault3.target,
+          adapter: adapter3.target,
+          targetBps: 2000, // 20% in old incorrect scale (2,000 out of 10,000)
+          isActive: true
+        }
+      ];
+      
+      // This should fail because total is 10,000, not 1,000,000
+      await expect(
+        router.setVaultConfigs(oldScaleConfigs)
       ).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
     });
   });
@@ -372,19 +434,19 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
       
       // Temporarily configure router to have only vault1 active for initial skew
-      await router.updateVaultConfig(vault1.target, adapter1.target, 5000, true);
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault1.target, adapter1.target, 500000, true);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
       
       // Re-activate all vaults
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, true);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, true);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
       
       // Verify initial skew
       let [, currentAllocations] = await router.getCurrentAllocations();
-      expect(currentAllocations[0]).to.be.gt(8000); // Vault1 should have >80%
+      expect(currentAllocations[0]).to.be.gt(800000); // Vault1 should have >80%
       
       // Perform 100 random-sized deposits/withdrawals to test convergence
       const operations = [];
@@ -421,9 +483,9 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       console.log("Target allocations: [50.0%, 30.0%, 20.0%]");
       
       // Allow 5% tolerance for convergence (500 basis points)
-      expect(finalAllocations[0]).to.be.closeTo(5000, 500); // 50% ± 5%
-      expect(finalAllocations[1]).to.be.closeTo(3000, 500); // 30% ± 5%  
-      expect(finalAllocations[2]).to.be.closeTo(2000, 500); // 20% ± 5%
+      expect(finalAllocations[0]).to.be.closeTo(500000, 50000); // 50% ± 5%
+      expect(finalAllocations[1]).to.be.closeTo(300000, 50000); // 30% ± 5%  
+      expect(finalAllocations[2]).to.be.closeTo(200000, 50000); // 20% ± 5%
     });
 
     it("Should demonstrate natural velocity adjustment toward targets", async function () {
@@ -432,8 +494,8 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       await dStable.connect(alice).approve(dStakeToken.target, initialAmount);
       
       // Force all to vault1 first
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       await dStakeToken.connect(alice).deposit(initialAmount, alice.address);
       
       // Record initial skewed state
@@ -441,8 +503,8 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       console.log("Initial (skewed):", allocsBefore.map(a => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
       
       // Re-enable all vaults
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, true);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, true);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
       
       // Perform several deposits and track allocation changes
       for (let i = 0; i < 20; i++) {
@@ -509,7 +571,7 @@ describe("DStakeRouterMorpho Integration Tests", function () {
 
     it("Should revert when exchanging to inactive vault", async function () {
       // Deactivate vault2
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       
       const exchangeAmount = ethers.parseEther("1000");
       
@@ -557,25 +619,25 @@ describe("DStakeRouterMorpho Integration Tests", function () {
         {
           vault: vault1.target,
           adapter: adapter1.target,
-          targetBps: 4000, // Reduce from 5000 to 4000
+          targetBps: 400000, // Reduce from 50% to 40%
           isActive: true
         },
         {
           vault: vault2.target,
           adapter: adapter2.target,
-          targetBps: 3000, // Keep at 3000
+          targetBps: 300000, // Keep at 30%
           isActive: true
         },
         {
           vault: vault3.target,
           adapter: adapter3.target,
-          targetBps: 2000, // Keep at 2000
+          targetBps: 200000, // Keep at 20%
           isActive: true
         },
         {
           vault: newVault.target,
           adapter: newAdapter.target,
-          targetBps: 1000, // New 10% allocation
+          targetBps: 100000, // New 10% allocation
           isActive: true
         }
       ];
@@ -632,9 +694,9 @@ describe("DStakeRouterMorpho Integration Tests", function () {
   describe("Edge Cases", function () {
     it("Should handle all vaults paused scenario", async function () {
       // Pause all vaults
-      await router.updateVaultConfig(vault1.target, adapter1.target, 5000, false);
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault1.target, adapter1.target, 500000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       
       const depositAmount = ethers.parseEther("1000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
@@ -647,8 +709,8 @@ describe("DStakeRouterMorpho Integration Tests", function () {
 
     it("Should handle single vault active scenario", async function () {
       // Pause vault2 and vault3, keep only vault1 active
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       
       const depositAmount = ethers.parseEther("1000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
@@ -657,7 +719,7 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       
       // All funds should go to vault1
       const [, currentAllocations] = await router.getCurrentAllocations();
-      expect(currentAllocations[0]).to.equal(10000); // 100% to vault1
+      expect(currentAllocations[0]).to.equal(1000000); // 100% to vault1
       expect(currentAllocations[1]).to.equal(0);     // 0% to vault2 
       expect(currentAllocations[2]).to.equal(0);     // 0% to vault3
     });
@@ -683,25 +745,25 @@ describe("DStakeRouterMorpho Integration Tests", function () {
         {
           vault: vault1.target,
           adapter: adapter1.target,
-          targetBps: 2000, // 20%
+          targetBps: 200000, // 20%
           isActive: true
         },
         {
           vault: vault2.target,
           adapter: adapter2.target,
-          targetBps: 2000, // 20%
+          targetBps: 200000, // 20%
           isActive: true
         },
         {
           vault: vault3.target,
           adapter: adapter3.target,
-          targetBps: 2000, // 20%
+          targetBps: 200000, // 20%
           isActive: true
         },
         {
           vault: newVault.target,
           adapter: newAdapter.target,
-          targetBps: 4000, // 40% - Should get high selection weight
+          targetBps: 400000, // 40% - Should get high selection weight
           isActive: true
         }
       ];
@@ -720,20 +782,20 @@ describe("DStakeRouterMorpho Integration Tests", function () {
 
     it("Should handle extreme skew (one vault at 95%)", async function () {
       // Create extreme skew by depositing only to vault1
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       
       const largeDeposit = ethers.parseEther("50000");
       await dStable.connect(alice).approve(dStakeToken.target, largeDeposit);
       await dStakeToken.connect(alice).deposit(largeDeposit, alice.address);
       
       // Re-enable other vaults
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, true);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, true);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
       
       // Verify extreme skew
       const [, allocationsBefore] = await router.getCurrentAllocations();
-      expect(allocationsBefore[0]).to.be.gt(9500); // >95% in vault1
+      expect(allocationsBefore[0]).to.be.gt(950000); // >95% in vault1
       
       // Small deposits should strongly favor other vaults
       for (let i = 0; i < 10; i++) {
@@ -858,16 +920,16 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       };
       
       // Create imbalance - all in vault1 initially
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, false);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       
       const initialDeposit = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
       
       // Re-enable all vaults
-      await router.updateVaultConfig(vault2.target, adapter2.target, 3000, true);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 2000, true);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
       
       // Track which vaults get selected for deposits
       for (let i = 0; i < iterations; i++) {
