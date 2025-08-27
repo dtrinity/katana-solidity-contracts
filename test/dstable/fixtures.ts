@@ -41,31 +41,16 @@ export const createDStableAmoFixture = (config: DStableFixtureConfig) => {
     await standaloneMinimalFixture(deployments);
 
     const { deployer } = await hre.getNamedAccounts();
-    const { address: amoManagerAddress } = await deployments.get(
-      config.amoManagerId
-    );
+    const { address: amoManagerAddress } = await deployments.get(config.amoManagerId);
 
-    const { tokenInfo: dstableInfo } = await getTokenContractForSymbol(
-      hre,
-      deployer,
-      config.symbol
-    );
+    const { tokenInfo: dstableInfo } = await getTokenContractForSymbol(hre, deployer, config.symbol);
 
-    const { address: oracleAggregatorAddress } = await deployments.get(
-      config.oracleAggregatorId
-    );
+    const { address: oracleAggregatorAddress } = await deployments.get(config.oracleAggregatorId);
 
     // Deploy MockAmoVault using standard deployment
     await hre.deployments.deploy("MockAmoVault", {
       from: deployer,
-      args: [
-        dstableInfo.address,
-        amoManagerAddress,
-        deployer,
-        deployer,
-        deployer,
-        oracleAggregatorAddress,
-      ],
+      args: [dstableInfo.address, amoManagerAddress, deployer, deployer, deployer, oracleAggregatorAddress],
       autoMine: true,
       log: false,
     });
@@ -80,8 +65,8 @@ export const DUSD_CONFIG: DStableFixtureConfig = {
   collateralVaultContractId: DUSD_COLLATERAL_VAULT_CONTRACT_ID,
   amoManagerId: DUSD_AMO_MANAGER_ID,
   oracleAggregatorId: USD_ORACLE_AGGREGATOR_ID,
-  peggedCollaterals: ["frxUSD", "USDC", "USDS"], // USDC is interesting due to 6 decimals
-  yieldBearingCollaterals: ["sfrxUSD", "sUSDS"],
+  peggedCollaterals: ["frxUSD", "USDC", "USDT", "AUSD"],
+  yieldBearingCollaterals: ["sfrxUSD", "yUSD"],
 };
 
 export const DETH_CONFIG: DStableFixtureConfig = {

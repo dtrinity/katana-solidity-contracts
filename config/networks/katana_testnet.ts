@@ -24,8 +24,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const dUSDDeployment = await _hre.deployments.getOrNull(DUSD_TOKEN_ID);
   const dETHDeployment = await _hre.deployments.getOrNull(DETH_TOKEN_ID);
   const USDCDeployment = await _hre.deployments.getOrNull("USDC");
-  const USDSDeployment = await _hre.deployments.getOrNull("USDS");
-  const sUSDSDeployment = await _hre.deployments.getOrNull("sUSDS");
+  const USDTDeployment = await _hre.deployments.getOrNull("USDT");
+  const AUSDDeployment = await _hre.deployments.getOrNull("AUSD");
+  const yUSDDeployment = await _hre.deployments.getOrNull("yUSD");
   const frxUSDDeployment = await _hre.deployments.getOrNull("frxUSD");
   const sfrxUSDDeployment = await _hre.deployments.getOrNull("sfrxUSD");
   const WETHDeployment = await _hre.deployments.getOrNull("WETH");
@@ -59,7 +60,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const namedAccounts = await _hre.getNamedAccounts();
   const deployer = namedAccounts.deployer;
   // Use deployer as governance for testnet since we may not have multiple accounts
-  const governanceAddress = namedAccounts.user1 || deployer;
+  const governanceAddress = deployer;
 
   return {
     MOCK_ONLY: {
@@ -70,15 +71,21 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           decimals: 6,
           initialSupply: 1e6,
         },
-        USDS: {
-          name: "USDS Stablecoin",
-          address: USDSDeployment?.address,
+        USDT: {
+          name: "Tether USD",
+          address: USDTDeployment?.address,
+          decimals: 6,
+          initialSupply: 1e6,
+        },
+        AUSD: {
+          name: "AUSD Stablecoin",
+          address: AUSDDeployment?.address,
           decimals: 18,
           initialSupply: 1e6,
         },
-        sUSDS: {
-          name: "Savings USDS",
-          address: sUSDSDeployment?.address,
+        yUSD: {
+          name: "Yield USD",
+          address: yUSDDeployment?.address,
           decimals: 18,
           initialSupply: 1e6,
         },
@@ -117,7 +124,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
       frxUSD: emptyStringIfUndefined(frxUSDDeployment?.address),
       sfrxUSD: emptyStringIfUndefined(sfrxUSDDeployment?.address),
       USDC: emptyStringIfUndefined(USDCDeployment?.address),
-      USDS: emptyStringIfUndefined(USDSDeployment?.address),
+      USDT: emptyStringIfUndefined(USDTDeployment?.address),
+      AUSD: emptyStringIfUndefined(AUSDDeployment?.address),
+      yUSD: emptyStringIfUndefined(yUSDDeployment?.address),
     },
     walletAddresses: {
       governanceMultisig: governanceAddress,
@@ -127,21 +136,23 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
       dUSD: {
         collaterals: [
           USDCDeployment?.address || ZeroAddress,
-          USDSDeployment?.address || ZeroAddress,
-          sUSDSDeployment?.address || ZeroAddress,
+          USDTDeployment?.address || ZeroAddress,
+          AUSDDeployment?.address || ZeroAddress,
           frxUSDDeployment?.address || ZeroAddress,
           sfrxUSDDeployment?.address || ZeroAddress,
+          yUSDDeployment?.address || ZeroAddress,
         ],
         initialFeeReceiver: deployer,
         initialRedemptionFeeBps: 0.4 * ONE_PERCENT_BPS, // Default for stablecoins
         collateralRedemptionFees: {
           // Stablecoins: 0.4%
           [USDCDeployment?.address || ZeroAddress]: 0.4 * ONE_PERCENT_BPS,
-          [USDSDeployment?.address || ZeroAddress]: 0.4 * ONE_PERCENT_BPS,
+          [USDTDeployment?.address || ZeroAddress]: 0.4 * ONE_PERCENT_BPS,
+          [AUSDDeployment?.address || ZeroAddress]: 0.4 * ONE_PERCENT_BPS,
           [frxUSDDeployment?.address || ZeroAddress]: 0.4 * ONE_PERCENT_BPS,
           // Yield bearing stablecoins: 0.5%
-          [sUSDSDeployment?.address || ZeroAddress]: 0.5 * ONE_PERCENT_BPS,
           [sfrxUSDDeployment?.address || ZeroAddress]: 0.5 * ONE_PERCENT_BPS,
+          [yUSDDeployment?.address || ZeroAddress]: 0.5 * ONE_PERCENT_BPS,
         },
       },
       dETH: {
@@ -173,6 +184,11 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
                   [dETHDeployment.address]: mockOracleNameToAddress["WETH_USD"], // Peg dETH to ETH
                 }
               : {}),
+            ...(yUSDDeployment?.address && mockOracleNameToAddress["yUSD_USD"]
+              ? {
+                  [yUSDDeployment.address]: mockOracleNameToAddress["yUSD_USD"],
+                }
+              : {}),
           },
           redstoneOracleWrappersWithThresholding: {
             ...(USDCDeployment?.address && mockOracleNameToAddress["USDC_USD"]
@@ -184,10 +200,19 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
                   },
                 }
               : {}),
-            ...(USDSDeployment?.address && mockOracleNameToAddress["USDS_USD"]
+            ...(USDTDeployment?.address && mockOracleNameToAddress["USDT_USD"]
               ? {
-                  [USDSDeployment.address]: {
-                    feed: mockOracleNameToAddress["USDS_USD"],
+                  [USDTDeployment.address]: {
+                    feed: mockOracleNameToAddress["USDT_USD"],
+                    lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                    fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                  },
+                }
+              : {}),
+            ...(AUSDDeployment?.address && mockOracleNameToAddress["AUSD_USD"]
+              ? {
+                  [AUSDDeployment.address]: {
+                    feed: mockOracleNameToAddress["AUSD_USD"],
                     lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
                     fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
                   },
@@ -204,19 +229,6 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
               : {}),
           },
           compositeRedstoneOracleWrappersWithThresholding: {
-            ...(sUSDSDeployment?.address && mockOracleNameToAddress["sUSDS_USDS"] && mockOracleNameToAddress["USDS_USD"]
-              ? {
-                  [sUSDSDeployment.address]: {
-                    feedAsset: sUSDSDeployment.address,
-                    feed1: mockOracleNameToAddress["sUSDS_USDS"],
-                    feed2: mockOracleNameToAddress["USDS_USD"],
-                    lowerThresholdInBase1: 0n,
-                    fixedPriceInBase1: 0n,
-                    lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                    fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                  },
-                }
-              : {}),
             ...(sfrxUSDDeployment?.address && mockOracleNameToAddress["sfrxUSD_frxUSD"] && mockOracleNameToAddress["frxUSD_USD"]
               ? {
                   [sfrxUSDDeployment.address]: {
