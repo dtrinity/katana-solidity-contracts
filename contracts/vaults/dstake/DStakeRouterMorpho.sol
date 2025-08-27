@@ -50,6 +50,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
     error NoLiquidityAvailable();
     error AllVaultsPaused();
     error InvalidMaxVaultCount(uint256 count);
+    error VaultMustHaveZeroAllocation(address vault, uint256 currentAllocation);
 
     // --- Structs ---
     
@@ -354,11 +355,18 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
     /**
      * @notice Removes a vault configuration
      * @dev Only callable by admin role. Does not automatically migrate funds.
+     *      Requires target allocation to be 0 to prevent asset stranding.
      * @param vault Address of the vault to remove
      */
     function removeVaultConfig(address vault) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!vaultExists[vault]) {
             revert AdapterNotFound(vault);
+        }
+        
+        // Check that target allocation is 0 before allowing removal
+        VaultConfig memory config = vaultConfigs[vaultToIndex[vault]];
+        if (config.targetBps != 0) {
+            revert VaultMustHaveZeroAllocation(vault, config.targetBps);
         }
         
         uint256 indexToRemove = vaultToIndex[vault];
