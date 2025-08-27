@@ -5,6 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { DStakeRouter } from "./DStakeRouter.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
 import { WeightedRandomSelector } from "./libraries/WeightedRandomSelector.sol";
@@ -25,7 +26,7 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
  *      - Natural convergence toward target allocations over time
  *      - Emergency collateral exchange for manual optimization
  */
-contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
+contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
     
     // --- Libraries ---
@@ -34,6 +35,9 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
 
     // --- Constants ---
     uint256 public constant MAX_VAULTS_PER_OPERATION = 3;
+    
+    // --- Roles ---
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     
     // --- State Variables ---
     uint256 public maxVaultCount = 10; // Governable limit for gas optimization
@@ -136,7 +140,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
      * @dev Overrides the base deposit function to implement multi-vault weighted routing
      * @param dStableAmount Amount of dStable to deposit
      */
-    function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant {
+    function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
         if (dStableAmount == 0) revert InvalidAmount();
         
         // Get active vaults and their current allocations
@@ -190,7 +194,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
         uint256 dStableAmount, 
         address receiver, 
         address owner
-    ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant {
+    ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
         if (dStableAmount == 0) revert InvalidAmount();
         
         // Get active vaults and their current allocations
@@ -430,6 +434,22 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
         maxVaultCount = _maxVaultCount;
         
         emit MaxVaultCountUpdated(oldMaxVaultCount, _maxVaultCount);
+    }
+
+    /**
+     * @notice Emergency pause function to halt deposits and withdrawals
+     * @dev Only callable by accounts with PAUSER_ROLE (typically admin or guardian)
+     */
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause function to resume normal operations
+     * @dev Only callable by accounts with PAUSER_ROLE (typically admin or guardian)
+     */
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
     }
 
     // --- View Functions ---
