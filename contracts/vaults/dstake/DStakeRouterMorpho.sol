@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { DStakeRouter } from "./DStakeRouter.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
 import { WeightedRandomSelector } from "./libraries/WeightedRandomSelector.sol";
@@ -24,7 +25,7 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
  *      - Natural convergence toward target allocations over time
  *      - Emergency collateral exchange for manual optimization
  */
-contract DStakeRouterMorpho is DStakeRouter {
+contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard {
     using SafeERC20 for IERC20;
     
     // --- Libraries ---
@@ -134,7 +135,7 @@ contract DStakeRouterMorpho is DStakeRouter {
      * @dev Overrides the base deposit function to implement multi-vault weighted routing
      * @param dStableAmount Amount of dStable to deposit
      */
-    function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) {
+    function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant {
         if (dStableAmount == 0) revert InvalidAmount();
         
         // Get active vaults and their current allocations
@@ -188,7 +189,7 @@ contract DStakeRouterMorpho is DStakeRouter {
         uint256 dStableAmount, 
         address receiver, 
         address owner
-    ) external override onlyRole(DSTAKE_TOKEN_ROLE) {
+    ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant {
         if (dStableAmount == 0) revert InvalidAmount();
         
         // Get active vaults and their current allocations
