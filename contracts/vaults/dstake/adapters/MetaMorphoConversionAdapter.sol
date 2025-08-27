@@ -286,8 +286,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   function emergencyWithdraw(address token, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
 
     if (token == address(0)) {
-      // Withdraw ETH
-      (bool success, ) = msg.sender.call{ value: amount }("");
+      // Withdraw ETH with gas limit to prevent reentrancy
+      (bool success, ) = msg.sender.call{ value: amount, gas: 2300 }("");
       require(success, "ETH transfer failed");
     } else {
       // Withdraw ERC20
