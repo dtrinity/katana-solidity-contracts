@@ -30,13 +30,13 @@ import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
  * 2. Handling vaults with fees (deposit/withdrawal fees)
  * 3. Protection during high-volatility periods where underlying Morpho positions may change
  * 4. Future-proofing against MetaMorpho vaults that may implement dynamic fees
+ * 5. Emergency situations where governance may need to allow higher slippage to prevent DoS
  */
 contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGuard, AccessControl {
   using SafeERC20 for IERC20;
   using Math for uint256;
 
   // --- Constants ---
-  uint256 private constant MAX_ALLOWED_SLIPPAGE_BPS = 50000; // 5% maximum allowed slippage
   uint256 private constant MIN_SHARES = 100; // Minimum shares to prevent dust attacks (100 wei)
 
   // --- Mutable State ---
@@ -286,12 +286,12 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
   /**
    * @notice Set the maximum slippage protection
-   * @dev Only callable by admin role. Cannot exceed MAX_ALLOWED_SLIPPAGE_BPS
+   * @dev Only callable by admin role. Cannot exceed 100% (10000 basis points)
    * @param newSlippageBps New slippage protection in basis points
    */
   function setMaxSlippage(uint256 newSlippageBps) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (newSlippageBps > MAX_ALLOWED_SLIPPAGE_BPS) {
-      revert SlippageTooHigh(newSlippageBps, MAX_ALLOWED_SLIPPAGE_BPS);
+    if (newSlippageBps > BasisPointConstants.ONE_HUNDRED_PERCENT_BPS) {
+      revert SlippageTooHigh(newSlippageBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
     }
 
     uint256 oldSlippage = maxSlippageBps;
@@ -332,13 +332,6 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     return maxSlippageBps;
   }
 
-  /**
-   * @notice Get the maximum allowed slippage protection
-   * @return maxAllowedBps Maximum allowed slippage in basis points (hardcoded to 5%)
-   */
-  function getMaxAllowedSlippage() external pure returns (uint256 maxAllowedBps) {
-    return MAX_ALLOWED_SLIPPAGE_BPS;
-  }
 
   /**
    * @notice Check if the vault is currently functional
