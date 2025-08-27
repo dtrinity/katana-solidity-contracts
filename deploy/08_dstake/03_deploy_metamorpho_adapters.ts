@@ -30,7 +30,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   // Register adapter with router
-  const sdUSDRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdUSDRouter.address);
+  const deployerSigner = await hre.ethers.getSigner(deployer);
+  const sdUSDRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdUSDRouter.address, deployerSigner);
 
   // Check if adapter is already registered
   const currentAdapter = await sdUSDRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdUSD.address);
@@ -69,7 +70,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   // Register adapter with router
-  const sdETHRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdETHRouter.address);
+  const sdETHRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdETHRouter.address, deployerSigner);
 
   const currentAdapterETH = await sdETHRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdETH.address);
 

@@ -106,6 +106,31 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       log: true,
     });
 
+    // Grant necessary roles to deployer for configuration scripts to work
+    const deployerSigner = await ethers.getSigner(deployer);
+    const morphoRouterContract = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
+
+    // Grant VAULT_MANAGER_ROLE, CONFIG_MANAGER_ROLE, and PAUSER_ROLE to deployer
+    const VAULT_MANAGER_ROLE = await morphoRouterContract.VAULT_MANAGER_ROLE();
+    const CONFIG_MANAGER_ROLE = await morphoRouterContract.CONFIG_MANAGER_ROLE();
+    const PAUSER_ROLE = await morphoRouterContract.PAUSER_ROLE();
+
+    const hasVaultRole = await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, deployer);
+    const hasConfigRole = await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, deployer);
+    const hasPauserRole = await morphoRouterContract.hasRole(PAUSER_ROLE, deployer);
+
+    if (!hasVaultRole) {
+      await morphoRouterContract.grantRole(VAULT_MANAGER_ROLE, deployer);
+    }
+
+    if (!hasConfigRole) {
+      await morphoRouterContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
+    }
+
+    if (!hasPauserRole) {
+      await morphoRouterContract.grantRole(PAUSER_ROLE, deployer);
+    }
+
     console.log(`✅ Deployed DStakeRouterMorpho for ${instanceKey} at ${morphoRouterDeployment.address}`);
   }
 

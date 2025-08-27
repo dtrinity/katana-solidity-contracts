@@ -59,6 +59,12 @@ async function runTestsForCurrency(
       const fixture = await getOracleAggregatorFixture(currency);
       fixtureResult = await fixture();
 
+      // Check if there are any threshold oracle assets configured for this currency
+      const thresholdAssetKeys = Object.keys(fixtureResult.assets.redstoneThresholdAssets);
+      if (thresholdAssetKeys.length === 0) {
+        this.skip();
+      }
+
       // Get contract instances from the fixture
       redstoneChainlinkWrapperWithThresholding =
         fixtureResult.contracts.redstoneChainlinkWrapperWithThresholding;
@@ -148,6 +154,13 @@ async function runTestsForCurrency(
       });
 
       it("should return fixed price when price is above threshold", async function () {
+        const thresholdAssetKeys = Object.keys(fixtureResult.assets.redstoneThresholdAssets);
+        
+        // Skip this test if no threshold assets are configured for this currency
+        if (thresholdAssetKeys.length === 0) {
+          this.skip();
+        }
+
         // Iterate over assets specifically configured with Redstone thresholds
         for (const [testAsset, assetData] of Object.entries(
           fixtureResult.assets.redstoneThresholdAssets,
@@ -197,6 +210,13 @@ async function runTestsForCurrency(
 
       // Add test for price below threshold (missing)
       it("should return original price when price is below threshold", async function () {
+        const thresholdAssetKeys = Object.keys(fixtureResult.assets.redstoneThresholdAssets);
+        
+        // Skip this test if no threshold assets are configured for this currency
+        if (thresholdAssetKeys.length === 0) {
+          this.skip();
+        }
+
         // Iterate over assets specifically configured with Redstone thresholds
         for (const [testAsset, assetData] of Object.entries(
           fixtureResult.assets.redstoneThresholdAssets,

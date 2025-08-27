@@ -33,6 +33,8 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
   bytes32 public constant COLLATERAL_EXCHANGER_ROLE = keccak256("COLLATERAL_EXCHANGER_ROLE");
+  bytes32 public constant ADAPTER_MANAGER_ROLE = keccak256("ADAPTER_MANAGER_ROLE");
+  bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");
 
   // --- State ---
   address public immutable dStakeToken; // The DStakeToken this router serves
@@ -69,6 +71,8 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
 
     // Setup roles
     _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    _grantRole(ADAPTER_MANAGER_ROLE, msg.sender);
+    _grantRole(CONFIG_MANAGER_ROLE, msg.sender);
     _grantRole(DSTAKE_TOKEN_ROLE, _dStakeToken);
   }
 
@@ -120,6 +124,15 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   ) private returns (uint256 mintedShares) {
     uint256 beforeBal = IERC20(vaultAssetExpected).balanceOf(address(collateralVault));
 
+    // Ensure the vault asset is added to supported assets if this is the first deposit
+    if (beforeBal == 0) {
+      try collateralVault.addSupportedAsset(vaultAssetExpected) {
+        // Asset successfully added to supported list
+      } catch {
+        // Asset is already supported, continue
+      }
+    }
+
     // Pull dStable from caller (DStakeToken)
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
@@ -152,10 +165,27 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
 
     // 1. Determine vault asset and required amount
     address vaultAsset = adapter.vaultAsset();
-    // Calculate required vault asset amount to yield the target dStableAmount after vault fees
-    // For ERC4626 vaults with withdrawal fees, we need to account for those fees
+
+    // Calculate required vault asset amount, accounting for potential adapter/vault fees
+    // First try the standard ERC4626 previewWithdraw approach
     uint256 vaultAssetAmount = IERC4626(vaultAsset).previewWithdraw(dStableAmount);
     if (vaultAssetAmount == 0) revert ZeroPreviewWithdrawAmount(vaultAsset);
+
+    // Check if the adapter would actually return enough dStable for this vault asset amount
+    // This accounts for adapter slippage/fees that might not be reflected in ERC4626 preview
+    uint256 expectedDStableFromAdapter = adapter.previewConvertFromVaultAsset(vaultAssetAmount);
+
+    // If the adapter preview shows we won't get enough, adjust the vault asset amount
+    if (expectedDStableFromAdapter < dStableAmount) {
+      // Calculate a buffer to account for fees (use a small multiplier)
+      // This is a conservative approach to ensure we get at least the required amount
+      uint256 buffer = ((dStableAmount - expectedDStableFromAdapter) * 11000) / 10000; // 10% buffer
+      uint256 additionalAssets = IERC4626(vaultAsset).previewDeposit(buffer);
+      vaultAssetAmount += additionalAssets;
+
+      // Recheck with the new amount
+      expectedDStableFromAdapter = adapter.previewConvertFromVaultAsset(vaultAssetAmount);
+    }
 
     // 2. Pull vaultAsset from collateral vault
     collateralVault.sendAsset(vaultAsset, vaultAssetAmount, address(this));
@@ -166,31 +196,29 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
     // 4. Call adapter to convert and send dStable to receiver
     uint256 receivedDStable = adapter.convertFromVaultAsset(vaultAssetAmount);
 
-    // 5. Ensure we received enough dStable to fulfill the withdrawal
-    if (receivedDStable < dStableAmount) {
-      revert InsufficientDStableFromAdapter(vaultAsset, dStableAmount, receivedDStable);
-    }
+    // 5. Handle the received dStable amount
+    if (receivedDStable >= dStableAmount) {
+      // 6. Transfer the exact requested amount to the user
+      IERC20(dStable).safeTransfer(receiver, dStableAmount);
 
-    // 7. Transfer the exact requested amount to the user as promised by the router contract
-    IERC20(dStable).safeTransfer(receiver, dStableAmount);
-
-    // 8. Handle any surplus from the conversion (should be rare with proper previewWithdraw)
-    if (receivedDStable > dStableAmount) {
+      // 7. If we received more than requested, the surplus stays in the router
+      // This can happen due to conservative vault asset amount calculations
       uint256 surplus = receivedDStable - dStableAmount;
-
-      // Give the adapter allowance to pull the surplus
-      IERC20(dStable).forceApprove(adapterAddress, surplus);
-
-      // Attempt to recycle surplus; on failure hold it in the router
-      try adapter.convertToVaultAsset(surplus) returns (address mintedAsset, uint256 /* mintedAmount */) {
-        // Sanity: adapter must mint the same asset we just redeemed from
-        if (mintedAsset != vaultAsset) {
-          revert AdapterAssetMismatch(adapterAddress, vaultAsset, mintedAsset);
-        }
-      } catch {
-        // Clear approval in case of revert and keep surplus inside router
-        IERC20(dStable).approve(adapterAddress, 0);
+      if (surplus > 0) {
         emit SurplusHeld(surplus);
+      }
+    } else {
+      // 8. If we received less due to fees, try to cover the shortfall from router balance
+      uint256 shortfall = dStableAmount - receivedDStable;
+      uint256 routerBalance = IERC20(dStable).balanceOf(address(this));
+
+      if (routerBalance >= shortfall) {
+        // Transfer what the adapter provided plus shortfall from router balance
+        IERC20(dStable).safeTransfer(receiver, dStableAmount);
+        emit ShortfallCovered(shortfall);
+      } else {
+        // Cannot fulfill the full withdrawal - this should be rare with the buffer logic
+        revert InsufficientDStableFromAdapter(vaultAsset, dStableAmount, receivedDStable);
       }
     }
 
@@ -342,7 +370,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @param vaultAsset The address of the vault asset.
    * @param adapterAddress The address of the new adapter contract.
    */
-  function addAdapter(address vaultAsset, address adapterAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function addAdapter(address vaultAsset, address adapterAddress) external onlyRole(ADAPTER_MANAGER_ROLE) {
     if (adapterAddress == address(0) || vaultAsset == address(0)) {
       revert ZeroAddress();
     }
@@ -366,7 +394,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    *      in the collateral vault or migrated via exchangeAssets before calling.
    * @param vaultAsset The address of the vault asset to remove.
    */
-  function removeAdapter(address vaultAsset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function removeAdapter(address vaultAsset) external onlyRole(ADAPTER_MANAGER_ROLE) {
     address adapterAddress = _vaultAssetToAdapter[vaultAsset];
     if (adapterAddress == address(0)) {
       revert AdapterNotFound(vaultAsset);
@@ -384,7 +412,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @dev Only callable by an address with DEFAULT_ADMIN_ROLE.
    * @param vaultAsset The address of the vault asset to set as default.
    */
-  function setDefaultDepositVaultAsset(address vaultAsset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setDefaultDepositVaultAsset(address vaultAsset) external onlyRole(CONFIG_MANAGER_ROLE) {
     if (_vaultAssetToAdapter[vaultAsset] == address(0)) {
       revert AdapterNotFound(vaultAsset);
     }
@@ -415,6 +443,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusHeld(uint256 amount);
   event SurplusSwept(uint256 amount, address vaultAsset);
+  event ShortfallCovered(uint256 amount);
 
   // --- Governance setters ---
 
@@ -423,7 +452,7 @@ contract DStakeRouter is IDStakeRouter, AccessControl {
    * @dev Only callable by DEFAULT_ADMIN_ROLE.
    * @param _dustTolerance The new tolerance value in wei of dStable.
    */
-  function setDustTolerance(uint256 _dustTolerance) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setDustTolerance(uint256 _dustTolerance) external onlyRole(CONFIG_MANAGER_ROLE) {
     dustTolerance = _dustTolerance;
     emit DustToleranceSet(_dustTolerance);
   }

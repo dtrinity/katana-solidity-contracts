@@ -111,6 +111,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       }
       routerSigner = deployer;
 
+      // Note: ADAPTER_MANAGER_ROLE is granted via deployment scripts, not in test fixtures
+
       expect(await collateralVault.dStakeToken()).to.equal(DStakeTokenAddress);
       expect(await collateralVault.dStable()).to.equal(dStableTokenAddress);
       expect(await collateralVault.hasRole(adminRole, user1.address)).to.be

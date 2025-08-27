@@ -112,12 +112,37 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         console.log(`  📄 ROUTER ROLES: ${routerId}`);
         const routerContract = await ethers.getContractAt("DStakeRouter", routerDeployment.address, deployerSigner);
         const DEFAULT_ADMIN_ROLE = ZERO_BYTES_32;
+        const ADAPTER_MANAGER_ROLE = await routerContract.ADAPTER_MANAGER_ROLE();
+        const CONFIG_MANAGER_ROLE = await routerContract.CONFIG_MANAGER_ROLE();
 
+        // Grant roles to configured addresses
         if (!(await routerContract.hasRole(DEFAULT_ADMIN_ROLE, instanceConfig.initialAdmin))) {
           await routerContract.grantRole(DEFAULT_ADMIN_ROLE, instanceConfig.initialAdmin);
           console.log(`    ➕ Granted DEFAULT_ADMIN_ROLE to ${instanceConfig.initialAdmin}`);
         }
 
+        if (!(await routerContract.hasRole(ADAPTER_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await routerContract.grantRole(ADAPTER_MANAGER_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted ADAPTER_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        if (!(await routerContract.hasRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await routerContract.grantRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        // Revoke non-admin roles from deployer first
+        if (await routerContract.hasRole(ADAPTER_MANAGER_ROLE, deployer)) {
+          await routerContract.revokeRole(ADAPTER_MANAGER_ROLE, deployer);
+          console.log(`    ➖ Revoked ADAPTER_MANAGER_ROLE from deployer`);
+        }
+
+        if (await routerContract.hasRole(CONFIG_MANAGER_ROLE, deployer)) {
+          await routerContract.revokeRole(CONFIG_MANAGER_ROLE, deployer);
+          console.log(`    ➖ Revoked CONFIG_MANAGER_ROLE from deployer`);
+        }
+
+        // Revoke DEFAULT_ADMIN_ROLE last
         if (await routerContract.hasRole(DEFAULT_ADMIN_ROLE, deployer)) {
           await routerContract.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
           console.log(`    ➖ Revoked DEFAULT_ADMIN_ROLE from deployer`);
@@ -127,6 +152,68 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       }
     } catch (error) {
       console.error(`  ❌ Failed to migrate ${routerId} roles: ${error}`);
+    }
+
+    // --- DStakeRouterMorpho roles ---
+    try {
+      const morphoRouterId = `DStakeRouterMorpho_${instanceKey}`;
+      const morphoRouterDeployment = await deployments.getOrNull(morphoRouterId);
+
+      if (morphoRouterDeployment) {
+        console.log(`  📄 MORPHO ROUTER ROLES: ${morphoRouterId}`);
+        const morphoRouterContract = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
+        const DEFAULT_ADMIN_ROLE = ZERO_BYTES_32;
+        const VAULT_MANAGER_ROLE = await morphoRouterContract.VAULT_MANAGER_ROLE();
+        const CONFIG_MANAGER_ROLE = await morphoRouterContract.CONFIG_MANAGER_ROLE();
+        const PAUSER_ROLE = await morphoRouterContract.PAUSER_ROLE();
+
+        // Grant roles to configured addresses
+        if (!(await morphoRouterContract.hasRole(DEFAULT_ADMIN_ROLE, instanceConfig.initialAdmin))) {
+          await morphoRouterContract.grantRole(DEFAULT_ADMIN_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted DEFAULT_ADMIN_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        if (!(await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await morphoRouterContract.grantRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted VAULT_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        if (!(await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await morphoRouterContract.grantRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        if (!(await morphoRouterContract.hasRole(PAUSER_ROLE, instanceConfig.initialAdmin))) {
+          await morphoRouterContract.grantRole(PAUSER_ROLE, instanceConfig.initialAdmin);
+          console.log(`    ➕ Granted PAUSER_ROLE to ${instanceConfig.initialAdmin}`);
+        }
+
+        // Revoke non-admin roles from deployer first
+        if (await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, deployer)) {
+          await morphoRouterContract.revokeRole(VAULT_MANAGER_ROLE, deployer);
+          console.log(`    ➖ Revoked VAULT_MANAGER_ROLE from deployer`);
+        }
+
+        if (await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, deployer)) {
+          await morphoRouterContract.revokeRole(CONFIG_MANAGER_ROLE, deployer);
+          console.log(`    ➖ Revoked CONFIG_MANAGER_ROLE from deployer`);
+        }
+
+        if (await morphoRouterContract.hasRole(PAUSER_ROLE, deployer)) {
+          await morphoRouterContract.revokeRole(PAUSER_ROLE, deployer);
+          console.log(`    ➖ Revoked PAUSER_ROLE from deployer`);
+        }
+
+        // Revoke DEFAULT_ADMIN_ROLE last
+        if (await morphoRouterContract.hasRole(DEFAULT_ADMIN_ROLE, deployer)) {
+          await morphoRouterContract.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
+          console.log(`    ➖ Revoked DEFAULT_ADMIN_ROLE from deployer`);
+        }
+      } else {
+        console.log(`  ⚠️ ${morphoRouterId} not deployed, skipping morpho router role transfer`);
+      }
+    } catch (error) {
+      console.error(`  ❌ Failed to migrate DStakeRouterMorpho_${instanceKey} roles: ${error}`);
     }
 
     console.log(`  ✅ Completed role migration for ${instanceKey}`);

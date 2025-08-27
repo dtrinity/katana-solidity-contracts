@@ -20,9 +20,9 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
  * @dev Inherits from DStakeRouter and extends functionality with multi-vault weighted routing.
  *
  *      Core Algorithm:
- *      - Deposits: Always split across exactly 3 vaults (or fewer if not enough active)
+ *      - Deposits: Split across up to maxVaultsPerOperation vaults (default 1, configurable)
  *      - Selection uses weighted randomness where weight = max(0, targetBps - currentBps)
- *      - Withdrawals: Select 3 overweight vaults where weight = max(0, currentBps - targetBps)
+ *      - Withdrawals: Select up to maxVaultsPerOperation overweight vaults where weight = max(0, currentBps - targetBps)
  *      - Natural convergence toward target allocations over time
  *      - Emergency collateral exchange for manual optimization
  */
@@ -34,10 +34,12 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   using AllocationCalculator for uint256[];
 
   // --- Constants ---
-  uint256 public maxVaultsPerOperation = 3;
+  uint256 public maxVaultsPerOperation = 1;
 
   // --- Roles ---
   bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+  bytes32 public constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
+  // Note: CONFIG_MANAGER_ROLE is inherited from DStakeRouter
 
   // --- State Variables ---
   uint256 public maxVaultCount = 10; // Governable limit for gas optimization
@@ -62,6 +64,8 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   error InvalidMaxVaultCount(uint256 count);
   error VaultMustHaveZeroAllocation(address vault, uint256 currentAllocation);
   error InvalidMaxVaultsPerOperation(uint256 count);
+  error MaxVaultsPerOperationTooHigh(uint256 requested, uint256 maxAllowed);
+  error InsufficientActiveVaultsForOperation(uint256 activeCount);
 
   // --- Structs ---
 
@@ -116,6 +120,10 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     // Base constructor handles all setup and validation
     // Initialize nonce with some entropy
     nonce = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, address(this))));
+
+    // Grant additional roles specific to DStakeRouterMorpho
+    _grantRole(VAULT_MANAGER_ROLE, msg.sender);
+    _grantRole(PAUSER_ROLE, msg.sender);
   }
 
   // --- Core Routing Functions (Override IDStakeRouter) ---
@@ -272,7 +280,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @dev Only callable by admin role
    * @param configs Array of vault configurations to add/update
    */
-  function setVaultConfigs(VaultConfig[] calldata configs) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setVaultConfigs(VaultConfig[] calldata configs) external onlyRole(VAULT_MANAGER_ROLE) {
     // Validate total allocations
     uint256 totalTargetBps = 0;
     for (uint256 i = 0; i < configs.length; i++) {
@@ -297,7 +305,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @dev Only callable by admin role
    * @param config Vault configuration to add
    */
-  function addVaultConfig(VaultConfig calldata config) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function addVaultConfig(VaultConfig calldata config) external onlyRole(VAULT_MANAGER_ROLE) {
     _addVaultConfig(config);
   }
 
@@ -309,7 +317,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @param targetBps New target allocation in basis points
    * @param isActive New active status
    */
-  function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
     if (!vaultExists[vault]) {
       revert AdapterNotFound(vault);
     }
@@ -333,11 +341,13 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @notice Removes a vault configuration
    * @dev Only callable by admin role. Does not automatically migrate funds.
    *      Requires target allocation to be 0 to prevent asset stranding.
+   *      This function is idempotent - it can be called multiple times safely.
    * @param vault Address of the vault to remove
    */
-  function removeVaultConfig(address vault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function removeVaultConfig(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
+    // Early return if vault doesn't exist (idempotent behavior)
     if (!vaultExists[vault]) {
-      revert AdapterNotFound(vault);
+      return;
     }
 
     // Check that target allocation is 0 before allowing removal
@@ -361,8 +371,11 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     delete vaultToIndex[vault];
     delete vaultExists[vault];
 
-    // Remove adapter from parent contract
-    this.removeAdapter(vault);
+    // Only remove adapter from parent contract if it exists to avoid revert
+    // This prevents inconsistent state and makes the function idempotent
+    if (this.vaultAssetToAdapter(vault) != address(0)) {
+      this.removeAdapter(vault);
+    }
 
     emit VaultConfigRemoved(vault);
   }
@@ -372,7 +385,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @dev Only callable by guardian role
    * @param vault Address of the vault to pause
    */
-  function emergencyPauseVault(address vault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function emergencyPauseVault(address vault) external onlyRole(PAUSER_ROLE) {
     if (!vaultExists[vault]) {
       revert AdapterNotFound(vault);
     }
@@ -385,12 +398,24 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
   /**
    * @notice Sets the maximum number of vaults per deposit/withdrawal operation
-   * @dev Only callable by admin role. Must be greater than 0 to ensure functionality
+   * @dev Only callable by admin role. Must be at least 1 and less than half of active vaults
+   *      to ensure weighted selection frequency matters. Special case: if 2 or fewer active
+   *      vaults, maximum allowed is 1.
    * @param _maxVaultsPerOperation New maximum vaults per operation
    */
-  function setMaxVaultsPerOperation(uint256 _maxVaultsPerOperation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setMaxVaultsPerOperation(uint256 _maxVaultsPerOperation) external onlyRole(CONFIG_MANAGER_ROLE) {
     if (_maxVaultsPerOperation == 0) {
       revert InvalidMaxVaultsPerOperation(_maxVaultsPerOperation);
+    }
+
+    uint256 activeVaultCount = _countActiveVaults();
+    if (activeVaultCount == 0) {
+      revert InsufficientActiveVaultsForOperation(activeVaultCount);
+    }
+
+    uint256 maxAllowed = activeVaultCount > 2 ? activeVaultCount / 2 : 1;
+    if (_maxVaultsPerOperation > maxAllowed) {
+      revert MaxVaultsPerOperationTooHigh(_maxVaultsPerOperation, maxAllowed);
     }
 
     uint256 oldMaxVaultsPerOperation = maxVaultsPerOperation;
@@ -404,7 +429,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @dev Only callable by admin role. Must be greater than 0 and at least the current vault count
    * @param _maxVaultCount New maximum vault count
    */
-  function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(CONFIG_MANAGER_ROLE) {
     if (_maxVaultCount == 0) {
       revert InvalidMaxVaultCount(_maxVaultCount);
     }
@@ -879,5 +904,19 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
     // Clear the array
     delete vaultConfigs;
+  }
+
+  /**
+   * @notice Counts the number of active vaults in the configuration
+   * @dev Efficiently iterates through vaultConfigs and counts isActive == true
+   * @return count Number of active vaults
+   */
+  function _countActiveVaults() internal view returns (uint256 count) {
+    for (uint256 i = 0; i < vaultConfigs.length; i++) {
+      if (vaultConfigs[i].isActive) {
+        count++;
+      }
+    }
+    return count;
   }
 }

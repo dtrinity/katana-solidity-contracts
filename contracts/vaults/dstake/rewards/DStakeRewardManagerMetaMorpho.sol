@@ -127,7 +127,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    * @notice Updates the Universal Rewards Distributor address
    * @param newURD The new URD address (can be 0 to disable)
    */
-  function setURD(address newURD) external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function setURD(address newURD) external onlyRole(REWARDS_MANAGER_ROLE) {
     // Validate URD interface if non-zero
     if (newURD != address(0)) {
       // Basic interface check - try to call a view function
@@ -147,7 +147,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    * @notice Sets this contract as the skim recipient for the MetaMorpho vault
    * @dev Only needed if rewards should flow through this contract first
    */
-  function becomeSkimRecipient() external onlyRole(DEFAULT_ADMIN_ROLE) {
+  function becomeSkimRecipient() external onlyRole(REWARDS_MANAGER_ROLE) {
     metaMorphoVault.setSkimRecipient(address(this));
   }
 

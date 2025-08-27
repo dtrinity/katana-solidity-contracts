@@ -110,15 +110,39 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     });
 
     const routerDeploymentName = `DStakeRouter_${instanceKey}`;
-    const _routerDeployment = await deploy(routerDeploymentName, {
+    const routerDeployment = await deploy(routerDeploymentName, {
       from: deployer,
       contract: "DStakeRouter",
       args: [DStakeTokenDeployment.address, collateralVaultDeployment.address],
       log: false,
     });
 
-    // NOTE: Governance permissions will be granted in the post-deployment
-    // role-migration script. No additional role grants are necessary here.
+    // Grant necessary roles to deployer for configuration scripts to work
+    const deployerSigner = await ethers.getSigner(deployer);
+    const routerContract = await ethers.getContractAt("DStakeRouter", routerDeployment.address, deployerSigner);
+
+    // Grant ADAPTER_MANAGER_ROLE and CONFIG_MANAGER_ROLE to deployer
+    const ADAPTER_MANAGER_ROLE = await routerContract.ADAPTER_MANAGER_ROLE();
+    const CONFIG_MANAGER_ROLE = await routerContract.CONFIG_MANAGER_ROLE();
+
+    const hasAdapterRole = await routerContract.hasRole(ADAPTER_MANAGER_ROLE, deployer);
+    const hasConfigRole = await routerContract.hasRole(CONFIG_MANAGER_ROLE, deployer);
+
+    if (!hasAdapterRole) {
+      await routerContract.grantRole(ADAPTER_MANAGER_ROLE, deployer);
+    }
+
+    if (!hasConfigRole) {
+      await routerContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
+    }
+
+    // Set up collateral vault <-> router connection
+    const collateralVault = await ethers.getContractAt("DStakeCollateralVault", collateralVaultDeployment.address, deployerSigner);
+    const currentRouter = await collateralVault.router();
+
+    if (currentRouter !== routerDeployment.address) {
+      await collateralVault.setRouter(routerDeployment.address);
+    }
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);

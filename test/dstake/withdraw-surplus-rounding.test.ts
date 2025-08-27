@@ -52,6 +52,9 @@ describe.skip("DStakeRouter – surplus < 1 share withdraw DoS", function () {
 
     // 2. Register adapter with router and set as default deposit asset
     vaultAssetAddress = await (adapter as any).vaultAsset();
+    
+    // Note: Required roles are granted via deployment scripts
+    
     await router.connect(user1).addAdapter(vaultAssetAddress, adapterAddress);
     await router.connect(user1).setDefaultDepositVaultAsset(vaultAssetAddress);
 
