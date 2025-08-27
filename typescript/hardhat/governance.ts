@@ -3,6 +3,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { SafeManager } from "../safe/SafeManager";
 import { SafeConfig, SafeTransactionBatch, SafeTransactionData } from "../safe/types";
+import { isMainnet } from "./deploy";
 
 /**
  * GovernanceExecutor decides whether to execute operations directly
@@ -27,10 +28,10 @@ export class GovernanceExecutor {
     this.signer = signer;
 
     const envForce = process.env.USE_SAFE?.toLowerCase() === "true";
-    const chainIdStr = String(hre.network.config.chainId ?? "");
-    const isKatanaMainnet = chainIdStr === "99999";
+    // Enable Safe governance on mainnet by default (using shared helper), or when forced via env
+    const isMainnetNetwork = isMainnet(hre.network.name);
 
-    this.useSafe = Boolean(safeConfig) && (isKatanaMainnet || envForce);
+    this.useSafe = Boolean(safeConfig) && (isMainnetNetwork || envForce);
 
     if (this.useSafe && safeConfig) {
       this.safeManager = new SafeManager(hre, signer, { safeConfig });
