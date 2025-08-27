@@ -183,8 +183,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     try metaMorphoVault.redeem(vaultAssetAmount, msg.sender, address(this)) returns (uint256 assets) {
       actualAssets = assets;
     } catch {
-      // If redeem fails, try to return shares to sender
-      IERC20(address(metaMorphoVault)).safeTransfer(msg.sender, vaultAssetAmount);
+      // If redeem fails, revert immediately without transferring shares
       revert VaultOperationFailed();
     }
 
@@ -200,8 +199,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
       try metaMorphoVault.redeem(remainingShares, msg.sender, address(this)) returns (uint256) {
         // Additional assets sent to caller
       } catch {
-        // If redemption fails, return shares to caller
-        IERC20(address(metaMorphoVault)).safeTransfer(msg.sender, remainingShares);
+        // If redemption fails, leave shares in contract (emergency withdrawal available)
+        // Don't transfer shares back to avoid inconsistent state
       }
     }
 
