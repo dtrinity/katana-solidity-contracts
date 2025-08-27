@@ -197,7 +197,7 @@ describe("MetaMorpho Integration", function () {
       
       describe("URD Integration", function () {
         beforeEach(async function () {
-          await urd.setPendingReward(collateralVault.target, rewardToken.target, ethers.parseEther("100"));
+          await urd.setPendingReward(rewardManager.target, rewardToken.target, ethers.parseEther("100"));
           // Approve URD to spend reward tokens
           await rewardToken.approve(urd.target, ethers.parseEther("100"));
           await urd.fund(rewardToken.target, ethers.parseEther("100"));

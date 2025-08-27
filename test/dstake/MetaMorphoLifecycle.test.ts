@@ -282,8 +282,8 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       // Skim rewards to URD
       await rewardManager.connect(manager).skimRewards([rewardToken.target]);
       
-      // Set up pending rewards in URD for the collateral vault
-      await urd.setPendingReward(collateralVault.target, rewardToken.target, rewardAmount);
+      // Set up pending rewards in URD for the reward manager contract
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, rewardAmount);
       
       // Claim rewards from URD
       const claimData = [{

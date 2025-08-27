@@ -258,9 +258,9 @@ describe("DStakeRewardManagerMetaMorpho", function () {
   
   describe("URD Reward Claiming", function () {
     beforeEach(async function () {
-      // Setup pending rewards in URD
-      await urd.setPendingReward(collateralVault.target, rewardToken.target, ethers.parseEther("100"));
-      await urd.setPendingReward(collateralVault.target, rewardToken2.target, ethers.parseEther("50"));
+      // Setup pending rewards in URD - now rewards go to the reward manager contract
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, ethers.parseEther("100"));
+      await urd.setPendingReward(rewardManager.target, rewardToken2.target, ethers.parseEther("50"));
       
       // Fund URD
       await rewardToken.mint(urd.target, ethers.parseEther("100"));
@@ -339,19 +339,53 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       }];
       
       // Remove pending rewards to cause failure
-      await urd.setPendingReward(collateralVault.target, rewardToken.target, 0);
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, 0);
       
-      // This should revert because URD has no pending rewards for the vault
+      // This should revert because URD has no pending rewards for this contract
       await expect(
         rewardManager.connect(manager).claimRewardsFromURD(claimData)
       ).to.be.revertedWithCustomError(rewardManager, "ClaimFailed");
+    });
+    
+    it("should verify rewards are received by the reward manager contract", async function () {
+      // This test demonstrates the fix for the Merkle proof bypass vulnerability
+      // Previously, claiming for collateralVault would send rewards to collateralVault
+      // Now, claiming sends rewards to the reward manager for proper processing
+      
+      const claimAmount = ethers.parseEther("100");
+      
+      // Setup pending rewards for the reward manager contract (not collateral vault)
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, claimAmount);
+      await rewardToken.mint(urd.target, claimAmount);
+      
+      const claimData = [{
+        rewardToken: rewardToken.target,
+        claimableAmount: claimAmount,
+        proof: []
+      }];
+      
+      // Verify initial balances
+      const rewardManagerBalanceBefore = await rewardToken.balanceOf(rewardManager.target);
+      const collateralVaultBalanceBefore = await rewardToken.balanceOf(collateralVault.target);
+      
+      // Claim rewards
+      await expect(rewardManager.connect(manager).claimRewardsFromURD(claimData))
+        .to.emit(rewardManager, "RewardsClaimed")
+        .withArgs(rewardToken.target, claimAmount);
+      
+      // Verify rewards went to the reward manager contract (not collateral vault)
+      const rewardManagerBalanceAfter = await rewardToken.balanceOf(rewardManager.target);
+      const collateralVaultBalanceAfter = await rewardToken.balanceOf(collateralVault.target);
+      
+      expect(rewardManagerBalanceAfter - rewardManagerBalanceBefore).to.equal(claimAmount);
+      expect(collateralVaultBalanceAfter - collateralVaultBalanceBefore).to.equal(0);
     });
   });
   
   describe("Reward Compounding", function () {
     beforeEach(async function () {
       // Setup: Claim rewards from URD first
-      await urd.setPendingReward(collateralVault.target, rewardToken.target, ethers.parseEther("100"));
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, ethers.parseEther("100"));
       await rewardToken.mint(urd.target, ethers.parseEther("100"));
       
       const claimData = [{
@@ -403,7 +437,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     
     it("should handle multiple reward tokens", async function () {
       // Setup second reward
-      await urd.setPendingReward(collateralVault.target, rewardToken2.target, ethers.parseEther("50"));
+      await urd.setPendingReward(rewardManager.target, rewardToken2.target, ethers.parseEther("50"));
       await rewardToken2.mint(urd.target, ethers.parseEther("50"));
       
       const claimData = [{
@@ -569,7 +603,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     
     it("should return claimed amounts from URD", async function () {
       // Setup and claim
-      await urd.setPendingReward(collateralVault.target, rewardToken.target, ethers.parseEther("100"));
+      await urd.setPendingReward(rewardManager.target, rewardToken.target, ethers.parseEther("100"));
       await rewardToken.mint(urd.target, ethers.parseEther("100"));
       
       const claimData = [{

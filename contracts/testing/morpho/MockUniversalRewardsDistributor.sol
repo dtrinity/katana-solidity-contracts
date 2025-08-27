@@ -68,8 +68,8 @@ contract MockUniversalRewardsDistributor {
     claimed[account][reward] = alreadyClaimed + toClaim;
     pendingRewards[account][reward] = pending - toClaim;
 
-    // Transfer tokens
-    IERC20(reward).safeTransfer(msg.sender, toClaim);
+    // Transfer tokens to the specified account (matches real URD behavior)
+    IERC20(reward).safeTransfer(account, toClaim);
 
     emit Claimed(account, reward, toClaim);
 

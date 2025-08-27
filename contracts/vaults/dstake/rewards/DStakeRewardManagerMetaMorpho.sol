@@ -176,6 +176,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    * @notice Claims rewards from the URD on behalf of the collateral vault
    * @param claimData Array of claim data including tokens, amounts, and proofs
    * @dev Claim data must be obtained from Morpho Rewards API
+   * @dev Claims rewards to this contract for processing and distribution
    */
   function claimRewardsFromURD(ClaimData[] calldata claimData) external onlyRole(REWARDS_MANAGER_ROLE) {
     if (address(urd) == address(0)) {
@@ -187,13 +188,21 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
       try
         urd.claim(
-          dStakeCollateralVault, // Claiming for the vault
+          address(this), // Claim rewards to this contract for processing
           claimData[i].rewardToken,
           claimData[i].claimableAmount,
           claimData[i].proof
         )
       returns (uint256 claimed) {
-        emit RewardsClaimed(claimData[i].rewardToken, claimed);
+        // Verify rewards were actually received
+        uint256 balanceAfter = IERC20(claimData[i].rewardToken).balanceOf(address(this));
+        uint256 actualReceived = balanceAfter - balanceBefore;
+        
+        if (actualReceived == 0 && claimed > 0) {
+          revert ClaimFailed(claimData[i].rewardToken);
+        }
+        
+        emit RewardsClaimed(claimData[i].rewardToken, actualReceived > 0 ? actualReceived : claimed);
       } catch {
         revert ClaimFailed(claimData[i].rewardToken);
       }
@@ -295,7 +304,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
   }
 
   /**
-   * @notice Checks how much of a reward token has been claimed for the vault
+   * @notice Checks how much of a reward token has been claimed by this contract
    * @param rewardToken The reward token to check
    * @return The amount already claimed
    */
@@ -303,6 +312,6 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     if (address(urd) == address(0)) {
       return 0;
     }
-    return urd.claimed(dStakeCollateralVault, rewardToken);
+    return urd.claimed(address(this), rewardToken);
   }
 }
