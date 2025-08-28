@@ -20,12 +20,13 @@ export const redstoneFeeds: OracleFeedConfig[] = [
   // USD price feeds - matching localhost.ts usage
   { name: "WETH_USD", symbol: "WETH", price: "2500" }, // ETH price feed
   { name: "USDC_USD", symbol: "USDC", price: "1" },
-  { name: "USDS_USD", symbol: "USDS", price: "1" },
+  { name: "USDT_USD", symbol: "USDT", price: "1" },
+  { name: "AUSD_USD", symbol: "AUSD", price: "1" },
   { name: "frxUSD_USD", symbol: "frxUSD", price: "1" },
 
   // Vault feeds for yield-bearing tokens
-  { name: "sUSDS_USDS", symbol: "sUSDS", price: "1.1" },
   { name: "sfrxUSD_frxUSD", symbol: "sfrxUSD", price: "1.1" },
+  { name: "yUSD_USD", symbol: "yUSD", price: "1.1" },
 
   // ETH-based feeds for dETH
   { name: "stETH_WETH", symbol: "stETH", price: "1.1" }, // stETH to WETH ratio
@@ -64,11 +65,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     });
 
     // Get the deployed mock oracle contract
-    const mockOracleContract = await hre.ethers.getContractAt(
-      "MockRedstoneChainlinkOracleAlwaysAlive",
-      mockOracle.address,
-      signer
-    );
+    const mockOracleContract = await hre.ethers.getContractAt("MockRedstoneChainlinkOracleAlwaysAlive", mockOracle.address, signer);
 
     // Convert price to int256 format expected by Redstone (8 decimals)
     const priceInWei = hre.ethers.parseUnits(feed.price, 8); // Redstone uses 8 decimals
@@ -78,9 +75,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     mockOracleNameToAddress[feed.name] = mockOracle.address;
     mockOracleNameToProvider[feed.name] = "REDSTONE"; // All are Redstone now
 
-    console.log(
-      `Deployed ${mockOracleName} at ${mockOracle.address} with price ${feed.price}`
-    );
+    console.log(`Deployed ${mockOracleName} at ${mockOracle.address} with price ${feed.price}`);
   }
 
   // Store the mock oracle deployments in JSON files for the config to use

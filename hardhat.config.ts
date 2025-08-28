@@ -22,8 +22,7 @@ const wrapSigner = (signer: any, hre: HardhatRuntimeEnvironment): any => {
     const result = await originalSendTransaction.apply(signer, [tx]);
 
     if (hre.network.live) {
-      const sleepTime = 15000; // 15 seconds to ensure at least 1 block
-      console.log(`\n>>> Waiting ${sleepTime}ms after transaction to ${result.to || "a new contract"}`);
+      const sleepTime = 1000; // 1 second to ensure RPC consistency
       await sleep(sleepTime);
     }
     return result;
