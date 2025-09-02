@@ -32,18 +32,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const WETHDeployment = await _hre.deployments.getOrNull("WETH");
   const stETHDeployment = await _hre.deployments.getOrNull("stETH");
 
-  // Fetch deployed dLend StaticATokenLM wrappers
-  const dLendATokenWrapperDUSDDeployment = await _hre.deployments.getOrNull("dLend_ATokenWrapper_dUSD");
-  const dLendATokenWrapperDSDeployment = await _hre.deployments.getOrNull("dLend_ATokenWrapper_dETH");
-
-  // Fetch deployed dLend RewardsController
-  const rewardsControllerDeployment = await _hre.deployments.getOrNull(INCENTIVES_PROXY_ID);
-
-  // Fetch deployed dLend aTokens
-  const aTokenDUSDDeployment = await _hre.deployments.getOrNull("dLEND-dUSD");
-
-  // Fetch deployed dSTAKE tokens for vesting
-  const sdUSDDeployment = await _hre.deployments.getOrNull(SDUSD_DSTAKE_TOKEN_ID);
+  // // Fetch deployed dSTAKE tokens for vesting
+  // const sdUSDDeployment = await _hre.deployments.getOrNull(SDUSD_DSTAKE_TOKEN_ID);
 
   // Get mock oracle deployments
   const mockOracleNameToAddress: Record<string, string> = {};
