@@ -15,11 +15,7 @@ import {
   SDUSD_ROUTER_ID,
 } from "../../typescript/deploy-ids";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
-import {
-  DETH_CONFIG,
-  DStableFixtureConfig,
-  DUSD_CONFIG,
-} from "../dstable/fixtures";
+import { DETH_CONFIG, DStableFixtureConfig, DUSD_CONFIG } from "../dstable/fixtures";
 
 export interface DStakeFixtureConfig {
   dStableSymbol: "dUSD" | "dETH";
@@ -60,21 +56,11 @@ export const SDETH_CONFIG: DStakeFixtureConfig = {
   routerContractId: SDETH_ROUTER_ID,
   defaultVaultAssetSymbol: "wdETH",
   underlyingDStableConfig: DETH_CONFIG,
-  deploymentTags: [
-    "local-setup",
-    "oracle",
-    "deth",
-    "dETH-aTokenWrapper",
-    "dlend",
-    "dStake",
-  ],
+  deploymentTags: ["local-setup", "oracle", "deth", "dETH-aTokenWrapper", "dlend", "dStake"],
 };
 
 // Array of all DStake configurations
-export const DSTAKE_CONFIGS: DStakeFixtureConfig[] = [
-  SDUSD_CONFIG,
-  SDETH_CONFIG,
-];
+export const DSTAKE_CONFIGS: DStakeFixtureConfig[] = [SDUSD_CONFIG, SDETH_CONFIG];
 
 // Core logic for fetching dStake components *after* deployments are done
 /**
@@ -99,13 +85,9 @@ async function fetchDStakeComponents(
   const { deployer } = await getNamedAccounts();
   const deployerSigner = await ethers.getSigner(deployer);
 
-  const { contract: dStableToken, tokenInfo: dStableInfo } =
-    await getTokenContractForSymbol(globalHre, deployer, config.dStableSymbol);
+  const { contract: dStableToken, tokenInfo: dStableInfo } = await getTokenContractForSymbol(globalHre, deployer, config.dStableSymbol);
 
-  const DStakeToken = await ethers.getContractAt(
-    "DStakeToken",
-    (await deployments.get(config.DStakeTokenContractId)).address
-  );
+  const DStakeToken = await ethers.getContractAt("DStakeToken", (await deployments.get(config.DStakeTokenContractId)).address);
 
   const collateralVault = await ethers.getContractAt(
     "DStakeCollateralVault",
@@ -153,10 +135,7 @@ async function fetchDStakeComponents(
   adapterAddress = await router.vaultAssetToAdapter(vaultAssetAddress);
 
   if (adapterAddress !== ethers.ZeroAddress) {
-    adapter = await ethers.getContractAt(
-      "IDStableConversionAdapter",
-      adapterAddress
-    );
+    adapter = await ethers.getContractAt("IDStableConversionAdapter", adapterAddress);
   } else {
     adapter = null;
   }
