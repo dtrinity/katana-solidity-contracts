@@ -30,8 +30,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const wstETHAddress = "0x7Fb4D0f51544F24F385a421Db6e7D4fC71Ad8e5C"; // Wrapped Lido Staked ETH
   const weETHAddress = "0x9893989433e7a383Cb313953e4c2365107dc19a7"; // Wrapped eETH
 
-  const frxUSDAddress = "0x0000000000000000000000000000000000000000"; // Frax USD
-  const sfrxUSDAddress = "0x0000000000000000000000000000000000000000"; // Staked Frax USD
+  const frxUSDAddress = "0xFB55A212Dd6187bc4B088a79F7ab9d1aeA86E50e"; // Frax USD
+  const sfrxUSDAddress = "0xBA2F8EA0A9e790ffC982F7241bEc17af949C71b3"; // Staked Frax USD
   const USDCAddress = "0x203A662b0BD271A6ed5a60EdFbd04bFce608FD36"; // Actually vbUSDC
   const USDTAddress = "0x2DCa96907fde857dd3D816880A0df407eeB2D2F2"; // Actually vbUSDT
   const AUSDAddress = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"; // Natively issued AUSD
@@ -124,6 +124,27 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         baseCurrency: ZeroAddress, // Note that USD is represented by the zero address, per Aave's convention
         hardDStablePeg: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {
+            [frxUSDAddress]: {
+              proxy: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
+              lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+              fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+            },
+          },
+          compositeApi3OracleWrappersWithThresholding: {
+            [sfrxUSDAddress]: {
+              feedAsset: sfrxUSDAddress,
+              proxy1: "0x0F546720261f447A8810A466269BCE6A66Cd1326", // sfrxUSD/frxUSD API3 feed
+              proxy2: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
+              lowerThresholdInBase1: 0n,
+              fixedPriceInBase1: 0n,
+              lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+              fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+            },
+          },
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             [yUSDAddress]: "0xe61b585418B92917771c89D4d3957707cfFE6154", // yUSD/USD Chainlink feed
@@ -144,23 +165,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
               lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
-            [frxUSDAddress]: {
-              feed: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
-              lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-              fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-            },
           },
-          compositeRedstoneOracleWrappersWithThresholding: {
-            [sfrxUSDAddress]: {
-              feedAsset: sfrxUSDAddress,
-              feed1: "0x0F546720261f447A8810A466269BCE6A66Cd1326", // sfrxUSD/frxUSD API3 feed
-              feed2: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
-              lowerThresholdInBase1: 0n,
-              fixedPriceInBase1: 0n,
-              lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-              fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-            },
-          },
+          compositeRedstoneOracleWrappersWithThresholding: {},
         },
         chainlinkCompositeAggregator: {},
       },
@@ -168,6 +174,11 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         hardDStablePeg: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
         baseCurrency: wETHAddress, // Using WETH as base currency for Katana
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {},
+          compositeApi3OracleWrappersWithThresholding: {},
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             // PLACEHOLDER: Update with actual Katana oracle addresses

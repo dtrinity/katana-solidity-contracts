@@ -169,6 +169,35 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         hardDStablePeg: 1n * ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
         baseCurrency: ZeroAddress,
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {
+            ...(frxUSDDeployment?.address && mockOracleNameToAddress["frxUSD_USD"]
+              ? {
+                  [frxUSDDeployment.address]: {
+                    proxy: mockOracleNameToAddress["frxUSD_USD"],
+                    lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                    fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                  },
+                }
+              : {}),
+          },
+          compositeApi3OracleWrappersWithThresholding: {
+            ...(sfrxUSDDeployment?.address && mockOracleNameToAddress["sfrxUSD_frxUSD"] && mockOracleNameToAddress["frxUSD_USD"]
+              ? {
+                  [sfrxUSDDeployment.address]: {
+                    feedAsset: sfrxUSDDeployment.address,
+                    proxy1: mockOracleNameToAddress["sfrxUSD_frxUSD"],
+                    proxy2: mockOracleNameToAddress["frxUSD_USD"],
+                    lowerThresholdInBase1: 0n,
+                    fixedPriceInBase1: 0n,
+                    lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                    fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                  },
+                }
+              : {}),
+          },
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             ...(WETHDeployment?.address && mockOracleNameToAddress["WETH_USD"]
@@ -215,30 +244,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
                   },
                 }
               : {}),
-            ...(frxUSDDeployment?.address && mockOracleNameToAddress["frxUSD_USD"]
-              ? {
-                  [frxUSDDeployment.address]: {
-                    feed: mockOracleNameToAddress["frxUSD_USD"],
-                    lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                    fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                  },
-                }
-              : {}),
           },
           compositeRedstoneOracleWrappersWithThresholding: {
-            ...(sfrxUSDDeployment?.address && mockOracleNameToAddress["sfrxUSD_frxUSD"] && mockOracleNameToAddress["frxUSD_USD"]
-              ? {
-                  [sfrxUSDDeployment.address]: {
-                    feedAsset: sfrxUSDDeployment.address,
-                    feed1: mockOracleNameToAddress["sfrxUSD_frxUSD"],
-                    feed2: mockOracleNameToAddress["frxUSD_USD"],
-                    lowerThresholdInBase1: 0n,
-                    fixedPriceInBase1: 0n,
-                    lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                    fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                  },
-                }
-              : {}),
             ...(stETHDeployment?.address && mockOracleNameToAddress["stETH_WETH"] && mockOracleNameToAddress["WETH_USD"]
               ? {
                   [stETHDeployment.address]: {
@@ -259,6 +266,11 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         hardDStablePeg: 1n * ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
         baseCurrency: WETHDeployment?.address || ZeroAddress, // Base currency is WETH
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {},
+          compositeApi3OracleWrappersWithThresholding: {},
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             ...(stETHDeployment?.address && mockOracleNameToAddress["stETH_WETH"]
