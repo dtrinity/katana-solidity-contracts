@@ -14,7 +14,7 @@ export interface Config {
   readonly dStables: {
     [key: string]: DStableConfig;
   };
-  readonly dLend: DLendConfig;
+  readonly dLend?: DLendConfig;
   readonly odos?: {
     readonly router: string;
   };

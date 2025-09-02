@@ -2,16 +2,9 @@ import { ZeroAddress } from "ethers";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
-import { DETH_TOKEN_ID, DUSD_TOKEN_ID, INCENTIVES_PROXY_ID } from "../../typescript/deploy-ids";
+import { DETH_TOKEN_ID, DUSD_TOKEN_ID } from "../../typescript/deploy-ids";
 import { ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, ORACLE_AGGREGATOR_PRICE_DECIMALS } from "../../typescript/oracle_aggregator/constants";
 import { fetchTokenInfo } from "../../typescript/token/utils";
-import {
-  rateStrategyHighLiquidityStable,
-  rateStrategyHighLiquidityVolatile,
-  rateStrategyMediumLiquidityStable,
-  rateStrategyMediumLiquidityVolatile,
-} from "../dlend/interest-rate-strategies";
-import { strategyDETH, strategyDUSD, strategySFRXUSD, strategySTETH, strategyWETH } from "../dlend/reserves-params";
 import { Config } from "../types";
 
 /**
@@ -24,8 +17,6 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const dUSDDeployment = await _hre.deployments.getOrNull(DUSD_TOKEN_ID);
   const dETHDeployment = await _hre.deployments.getOrNull(DETH_TOKEN_ID);
 
-  // IMPORTANT: All addresses below are placeholders (0x0000...)
-  // These MUST be replaced with actual Katana mainnet addresses before deployment
   const wETHAddress = "0xEE7D8BCFb72bC1880D0Cf19822eB0A2e6577aB62"; // Katana uses vbETH, which is their canonical WETH
   const wstETHAddress = "0x7Fb4D0f51544F24F385a421Db6e7D4fC71Ad8e5C"; // Wrapped Lido Staked ETH
   const weETHAddress = "0x9893989433e7a383Cb313953e4c2365107dc19a7"; // Wrapped eETH
@@ -37,20 +28,14 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const AUSDAddress = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"; // Natively issued AUSD
   const yUSDAddress = "0x4772D2e014F9fC3a820C444e3313968e9a5C8121"; // YieldFi yUSD
 
-  const governanceSafeMultisig = "0xE83c188a7BE46B90715C757A06cF917175f30262"; // Placeholder - set governance multisig
-
+  const governanceSafeMultisig = "0xE83c188a7BE46B90715C757A06cF917175f30262"; // Official Safe on Katana
   // Safe configuration for governance multisig
   const safeOwners = [
     "0x9E0c8376940aBE845A89b7304147a95c72644f59", // David
-    "0x0000000000000000000000000000000000000000", // Placeholder - set actual owners
-    "0x0000000000000000000000000000000000000000", // Placeholder - set actual owners
+    "0x0000000000000000000000000000000000000000", // TODO - set actual owners
+    "0x0000000000000000000000000000000000000000", // TODO - set actual owners
   ];
   const safeThreshold = 2; // 2 of 3 multisig
-
-  // Fetch deployed dLend StaticATokenLM wrapper, aToken and RewardsController (may be undefined prior to deployment)
-  const dLendATokenWrapperDUSDDeployment = await _hre.deployments.getOrNull("dLend_ATokenWrapper_dUSD");
-  const rewardsControllerDeployment = await _hre.deployments.getOrNull(INCENTIVES_PROXY_ID);
-  const aTokenDUSDDeployment = await _hre.deployments.getOrNull("dLEND-dUSD");
 
   // Fetch dUSD token decimals from the contract if deployed
   let dUSDDecimals = 0;
@@ -89,11 +74,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
     },
     walletAddresses: {
       governanceMultisig: governanceSafeMultisig,
-      incentivesVault: "0x0000000000000000000000000000000000000000", // Placeholder - set incentives vault
-    },
-    pendle: {
-      ptYtLpOracleAddress: "0x0000000000000000000000000000000000000000", // Placeholder - update when known
-      ptTokens: [],
+      incentivesVault: "0x4B4B5cC616be4cd1947B93f2304d36b3e80D3ef6", // Official Safe on Katana
     },
     dStables: {
       dUSD: {
@@ -181,7 +162,6 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
-            // PLACEHOLDER: Update with actual Katana oracle addresses
             [wstETHAddress]: "0xCB568C33EA2B0B81852655d722E3a52d9D44e7De", // wstETH/ETH Chainlink Feed
             [weETHAddress]: "0x3Eae75C0a2f9b1038C7c9993C1Da36281E838811", // weETH/ETH Chainlink Feed
           },
@@ -190,54 +170,56 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
       },
     },
-    dLend: {
-      providerID: 1, // Arbitrary as long as we don't repeat
-      flashLoanPremium: {
-        total: 0.0005e4, // 0.05%
-        protocol: 0.0004e4, // 0.04%
-      },
-      rateStrategies: [
-        rateStrategyHighLiquidityVolatile,
-        rateStrategyMediumLiquidityVolatile,
-        rateStrategyHighLiquidityStable,
-        rateStrategyMediumLiquidityStable,
-      ],
-      reservesConfig: {
-        dUSD: strategyDUSD,
-        dETH: strategyDETH,
-        stETH: strategySTETH,
-        sfrxUSD: strategySFRXUSD,
-        WETH: strategyWETH,
-      },
-    },
-    dStake: {
-      sdUSD: {
-        dStable: emptyStringIfUndefined(dUSDDeployment?.address),
-        name: "Staked dUSD",
-        symbol: "sdUSD",
-        initialAdmin: governanceSafeMultisig,
-        initialFeeManager: governanceSafeMultisig,
-        initialWithdrawalFeeBps: 0.1 * ONE_PERCENT_BPS, // 0.1%
-        adapters: [
-          {
-            vaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
-            adapterContract: "WrappedDLendConversionAdapter",
-          },
-        ],
-        defaultDepositVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
-        collateralVault: "DStakeCollateralVault_sdUSD", // Keep in sync with deploy ID constants
-        collateralExchangers: [governanceSafeMultisig],
-        dLendRewardManager: {
-          managedVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // StaticATokenLM wrapper
-          dLendAssetToClaimFor: emptyStringIfUndefined(aTokenDUSDDeployment?.address), // dLEND aToken for dUSD
-          dLendRewardsController: emptyStringIfUndefined(rewardsControllerDeployment?.address), // RewardsController proxy
-          treasury: governanceSafeMultisig,
-          maxTreasuryFeeBps: 20 * ONE_PERCENT_BPS, // 20%
-          initialTreasuryFeeBps: 0 * ONE_PERCENT_BPS, // 0%
-          initialExchangeThreshold: 100n * 10n ** BigInt(dUSDDecimals), // 100 sdUSD
-        },
-      },
-    },
+    // Not launching dSTAKE until later
+    // dStake: {
+    //   sdUSD: {
+    //     dStable: emptyStringIfUndefined(dUSDDeployment?.address),
+    //     name: "Staked dUSD",
+    //     symbol: "sdUSD",
+    //     initialAdmin: governanceSafeMultisig,
+    //     initialFeeManager: governanceSafeMultisig,
+    //     initialWithdrawalFeeBps: 0.1 * ONE_PERCENT_BPS, // 0.1%
+    //     adapters: [
+    //       {
+    //         vaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
+    //         adapterContract: "WrappedDLendConversionAdapter",
+    //       },
+    //     ],
+    //     defaultDepositVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
+    //     collateralVault: "DStakeCollateralVault_sdUSD", // Keep in sync with deploy ID constants
+    //     collateralExchangers: [governanceSafeMultisig],
+    //     dLendRewardManager: {
+    //       managedVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // StaticATokenLM wrapper
+    //       dLendAssetToClaimFor: emptyStringIfUndefined(aTokenDUSDDeployment?.address), // dLEND aToken for dUSD
+    //       dLendRewardsController: emptyStringIfUndefined(rewardsControllerDeployment?.address), // RewardsController proxy
+    //       treasury: governanceSafeMultisig,
+    //       maxTreasuryFeeBps: 20 * ONE_PERCENT_BPS, // 20%
+    //       initialTreasuryFeeBps: 0 * ONE_PERCENT_BPS, // 0%
+    //       initialExchangeThreshold: 100n * 10n ** BigInt(dUSDDecimals), // 100 sdUSD
+    //     },
+    //   },
+    //   sdETH: {
+    //     dStable: emptyStringIfUndefined(dETHDeployment?.address),
+    //     name: "Staked dETH",
+    //     symbol: "sdETH",
+    //     initialAdmin: governanceSafeMultisig,
+    //     initialFeeManager: governanceSafeMultisig,
+    //     initialWithdrawalFeeBps: 0.1 * ONE_PERCENT_BPS, // 0.1%
+    //     adapters: [],
+    //     defaultDepositVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
+    //     collateralVault: "DStakeCollateralVault_sdETH",
+    //     collateralExchangers: [governanceSafeMultisig],
+    //     dLendRewardManager: {
+    //       managedVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address), // StaticATokenLM wrapper
+    //       dLendAssetToClaimFor: emptyStringIfUndefined(aTokenDSDeployment?.address), // dLEND aToken for dETH
+    //       dLendRewardsController: emptyStringIfUndefined(rewardsControllerDeployment?.address), // RewardsController proxy
+    //       treasury: governanceSafeMultisig,
+    //       maxTreasuryFeeBps: 20 * ONE_PERCENT_BPS, // 20%
+    //       initialTreasuryFeeBps: 0 * ONE_PERCENT_BPS, // 0%
+    //       initialExchangeThreshold: 100n * 10n ** BigInt(dETHDecimals), // 100 sdETH
+    //     },
+    //   },
+    // },
     // Not launching dBOOST yet, so keep disabled for now
     // vesting: {
     //   name: "dBOOST sdUSD Season 1",

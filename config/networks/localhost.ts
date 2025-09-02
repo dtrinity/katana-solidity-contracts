@@ -4,13 +4,6 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
 import { DETH_TOKEN_ID, DUSD_TOKEN_ID, INCENTIVES_PROXY_ID, SDUSD_DSTAKE_TOKEN_ID } from "../../typescript/deploy-ids";
 import { ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, ORACLE_AGGREGATOR_PRICE_DECIMALS } from "../../typescript/oracle_aggregator/constants";
-import {
-  rateStrategyHighLiquidityStable,
-  rateStrategyHighLiquidityVolatile,
-  rateStrategyMediumLiquidityStable,
-  rateStrategyMediumLiquidityVolatile,
-} from "../dlend/interest-rate-strategies";
-import { strategyDETH, strategyDUSD, strategySFRXUSD, strategySTETH, strategyWETH } from "../dlend/reserves-params";
 import { Config } from "../types";
 
 /**
@@ -283,29 +276,6 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           compositeRedstoneOracleWrappersWithThresholding: {},
         },
       },
-    },
-    dLend: {
-      providerID: 1, // Arbitrary as long as we don't repeat
-      flashLoanPremium: {
-        total: 0.0005e4, // 0.05%
-        protocol: 0.0004e4, // 0.04%
-      },
-      rateStrategies: [
-        rateStrategyHighLiquidityVolatile,
-        rateStrategyMediumLiquidityVolatile,
-        rateStrategyHighLiquidityStable,
-        rateStrategyMediumLiquidityStable,
-      ],
-      reservesConfig: {
-        dUSD: strategyDUSD,
-        dETH: strategyDETH,
-        WETH: strategyWETH,
-        stETH: strategySTETH,
-        sfrxUSD: strategySFRXUSD,
-      },
-    },
-    odos: {
-      router: "", // Odos doesn't work on localhost
     },
     dStake: {
       sdUSD: {
