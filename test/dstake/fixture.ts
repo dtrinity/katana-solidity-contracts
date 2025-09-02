@@ -180,24 +180,22 @@ async function fetchDStakeComponents(
 // Use MetaMorpho reward management instead.
 
 export const createDStakeFixture = (config: DStakeFixtureConfig) => {
-  return deployments.createFixture(
-    async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
-      // Clean slate: run all default deployment scripts
-      await hreFixtureEnv.deployments.fixture();
-      // Run DStake-specific deployment tags
-      await hreFixtureEnv.deployments.fixture(config.deploymentTags);
-      // Fetch DStake components using fixture environment
-      return fetchDStakeComponents(
-        {
-          deployments: hreFixtureEnv.deployments,
-          getNamedAccounts: hreFixtureEnv.getNamedAccounts,
-          ethers: hreFixtureEnv.ethers,
-          globalHre: hreFixtureEnv,
-        },
-        config
-      );
-    }
-  );
+  return deployments.createFixture(async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
+    // Clean slate: run all default deployment scripts
+    await hreFixtureEnv.deployments.fixture();
+    // Run DStake-specific deployment tags
+    await hreFixtureEnv.deployments.fixture(config.deploymentTags);
+    // Fetch DStake components using fixture environment
+    return fetchDStakeComponents(
+      {
+        deployments: hreFixtureEnv.deployments,
+        getNamedAccounts: hreFixtureEnv.getNamedAccounts,
+        ethers: hreFixtureEnv.ethers,
+        globalHre: hreFixtureEnv,
+      },
+      config
+    );
+  });
 };
 
 // Note: dLEND reward fixtures have been removed.
