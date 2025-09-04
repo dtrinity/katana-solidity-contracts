@@ -89,13 +89,17 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
       },
       dETH: {
-        collaterals: [wETHAddress, wstETHAddress, weETHAddress], // Updated for Katana
+        collaterals: [
+          wETHAddress,
+          // wstETHAddress,
+          weETHAddress,
+        ], // Updated for Katana
         initialFeeReceiver: governanceSafeMultisig,
         initialRedemptionFeeBps: 0.4 * ONE_PERCENT_BPS, // Default for stablecoins
         collateralRedemptionFees: {
           // Default regular stablecoins to the default redemption fee
           // Yield bearing stablecoins: 0.5%
-          [wstETHAddress]: 0.5 * ONE_PERCENT_BPS,
+          // [wstETHAddress]: 0.5 * ONE_PERCENT_BPS,
           [weETHAddress]: 0.5 * ONE_PERCENT_BPS,
         },
       },
