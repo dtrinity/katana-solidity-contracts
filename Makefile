@@ -132,13 +132,13 @@ clean-deployments: ## Clean the deployments for a given network which matches at
 ## Block explorer ##
 ####################
 
-explorer.verify.ethereum_testnet:
-	@echo "Verifying contracts on Ethereum testnet (Sepolia)..."
-	@yarn hardhat --network ethereum_testnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api-sepolia.etherscan.io/api
+explorer.verify.katana_testnet:
+	@echo "Verifying contracts on Katana testnet (Bokuto)..."
+	@yarn hardhat --network katana_testnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api-bokuto.katanascan.com/api
 
-explorer.verify.ethereum_mainnet:
-	@echo "Verifying contracts on Ethereum mainnet..."
-	@yarn hardhat --network ethereum_mainnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api.etherscan.io/api
+explorer.verify.katana_mainnet:
+	@echo "Verifying contracts on Katana mainnet..."
+	@yarn hardhat --network katana_mainnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api.katanascan.io/api
 
 ##############
 ## Building ##
