@@ -113,7 +113,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           plainApi3OracleWrappers: {},
           api3OracleWrappersWithThresholding: {
             [frxUSDAddress]: {
-              proxy: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
+              proxy: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed 18 decimals
               lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
@@ -121,8 +121,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           compositeApi3OracleWrappersWithThresholding: {
             [sfrxUSDAddress]: {
               feedAsset: sfrxUSDAddress,
-              proxy1: "0x0F546720261f447A8810A466269BCE6A66Cd1326", // sfrxUSD/frxUSD API3 feed
-              proxy2: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed
+              proxy1: "0x0F546720261f447A8810A466269BCE6A66Cd1326", // sfrxUSD/frxUSD API3 feed 18 decimals
+              proxy2: "0x4Dc7AAd0DfA29565469172dcaAc33cEd6FFF56B6", // frxUSD/USD API3 feed 18 decimals
               lowerThresholdInBase1: 0n,
               fixedPriceInBase1: 0n,
               lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
@@ -132,7 +132,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
-            [yUSDAddress]: "0xe61b585418B92917771c89D4d3957707cfFE6154", // yUSD/USD Chainlink feed (18 decimals)
+            [yUSDAddress]: "0x951Ed02C90A0185575Dc82e94088b9d3016b7263", // Our yUSD/USD ChainlinkDecimalDownscaler feed to convert 18 decimals to 8 decimals
           },
           redstoneOracleWrappersWithThresholding: {
             [USDCAddress]: {
@@ -141,12 +141,12 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
             [USDTAddress]: {
-              feed: "0xF03E1566Fc6B0eBFA3dD3aA197759C4c6617ec78", // USDT/USD Chainlink feed
+              feed: "0xF03E1566Fc6B0eBFA3dD3aA197759C4c6617ec78", // USDT/USD Chainlink feed (8 decimals)
               lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
             [AUSDAddress]: {
-              feed: "0x3A49D4e23868222785f148BA2bd0bAEc80d36a2A", // AUSD/USD Chainlink feed
+              feed: "0x3A49D4e23868222785f148BA2bd0bAEc80d36a2A", // AUSD/USD Chainlink feed (8 decimals)
               lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
@@ -166,8 +166,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
-            [wstETHAddress]: "0xCB568C33EA2B0B81852655d722E3a52d9D44e7De", // wstETH/ETH Chainlink Feed
-            [weETHAddress]: "0x3Eae75C0a2f9b1038C7c9993C1Da36281E838811", // weETH/ETH Chainlink Feed
+            [wstETHAddress]: "0xCB568C33EA2B0B81852655d722E3a52d9D44e7De", // wstETH/ETH Chainlink Feed (8 decimals)
+            [weETHAddress]: "0x3Eae75C0a2f9b1038C7c9993C1Da36281E838811", // weETH/ETH Chainlink Feed (8 decimals)
           },
           redstoneOracleWrappersWithThresholding: {},
           compositeRedstoneOracleWrappersWithThresholding: {},
