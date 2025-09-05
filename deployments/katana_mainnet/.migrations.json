@@ -1,0 +1,16 @@
+{
+  "dETH": 1757051568,
+  "setup-s-api3-oracle-wrappers": 1757051584,
+  "setup-eth-redstone-oracle-wrappers": 1757051609,
+  "ETH_OracleAggregator": 1757051614,
+  "point-s-aggregator-to-api3-wrappers": 1757051614,
+  "point-eth-aggregator-to-redstone-wrappers": 1757051622,
+  "WETH_HardPegOracleWrapper": 1757051631,
+  "dETH_HardPegOracleWrapper": 1757051641,
+  "dETH_CollateralHolderVault": 1757051647,
+  "dETH_AmoManager": 1757051653,
+  "dETH_IssuerV2": 1757051709,
+  "dETH_Redeemer": 1757051748,
+  "deth-whitelist-collateral": 1757051757,
+  "dUSD": 1757051768
+}

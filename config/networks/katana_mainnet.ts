@@ -132,11 +132,11 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
-            [yUSDAddress]: "0xe61b585418B92917771c89D4d3957707cfFE6154", // yUSD/USD Chainlink feed
+            [yUSDAddress]: "0xe61b585418B92917771c89D4d3957707cfFE6154", // yUSD/USD Chainlink feed (18 decimals)
           },
           redstoneOracleWrappersWithThresholding: {
             [USDCAddress]: {
-              feed: "0xbe5CE90e16B9d9d988D64b0E1f6ed46EbAfb9606", // USDC/USD Chainlink feed
+              feed: "0xbe5CE90e16B9d9d988D64b0E1f6ed46EbAfb9606", // USDC/USD Chainlink feed (8 decimals)
               lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
               fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
             },
