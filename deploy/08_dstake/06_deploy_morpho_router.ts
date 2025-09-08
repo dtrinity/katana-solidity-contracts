@@ -25,10 +25,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // First, deploy the libraries that DStakeRouterMorpho depends on
   console.log("📚 Deploying DStakeRouterMorpho libraries...");
 
-  // Deploy WeightedRandomSelector library
-  const weightedRandomSelectorDeployment = await deploy("WeightedRandomSelector", {
+  // Deploy DeterministicVaultSelector library
+  const deterministicVaultSelectorDeployment = await deploy("DeterministicVaultSelector", {
     from: deployer,
-    contract: "WeightedRandomSelector",
+    contract: "DeterministicVaultSelector",
     log: true,
   });
 
@@ -100,7 +100,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       contract: "DStakeRouterMorpho",
       args: [dstakeTokenDeployment.address, collateralVaultDeployment.address],
       libraries: {
-        WeightedRandomSelector: weightedRandomSelectorDeployment.address,
+        DeterministicVaultSelector: deterministicVaultSelectorDeployment.address,
         AllocationCalculator: allocationCalculatorDeployment.address,
       },
       log: true,

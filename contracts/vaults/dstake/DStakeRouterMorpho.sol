@@ -8,21 +8,21 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { DStakeRouter } from "./DStakeRouter.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
-import { WeightedRandomSelector } from "./libraries/WeightedRandomSelector.sol";
+import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 
 /**
  * @title DStakeRouterMorpho
- * @notice Advanced DStakeRouter that uses weighted random selection to distribute deposits
+ * @notice Advanced DStakeRouter that uses deterministic selection to distribute deposits
  *         and withdrawals across multiple MetaMorpho vaults, achieving target allocations
  *         through natural convergence without explicit rebalancing.
- * @dev Inherits from DStakeRouter and extends functionality with multi-vault weighted routing.
+ * @dev Inherits from DStakeRouter and extends functionality with multi-vault deterministic routing.
  *
  *      Core Algorithm:
  *      - Deposits: Split across up to maxVaultsPerOperation vaults (default 1, configurable)
- *      - Selection uses weighted randomness where weight = max(0, targetBps - currentBps)
- *      - Withdrawals: Select up to maxVaultsPerOperation overweight vaults where weight = max(0, currentBps - targetBps)
+ *      - Selection uses deterministic top-X selection of most underallocated vaults
+ *      - Withdrawals: Select up to maxVaultsPerOperation most overallocated vaults
  *      - Natural convergence toward target allocations over time
  *      - Emergency collateral exchange for manual optimization
  */
@@ -30,7 +30,6 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
 
   // --- Libraries ---
-  using WeightedRandomSelector for address[];
   using AllocationCalculator for uint256[];
 
   // --- Constants ---
@@ -94,9 +93,6 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   /// @notice Mapping to track which vault addresses exist (for duplicate prevention)
   mapping(address => bool) public vaultExists;
 
-  /// @notice Nonce for pseudo-random number generation
-  uint256 private nonce;
-
   // --- Events ---
 
   event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps);
@@ -118,8 +114,6 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    */
   constructor(address _dStakeToken, address _collateralVault) DStakeRouter(_dStakeToken, _collateralVault) {
     // Base constructor handles all setup and validation
-    // Initialize nonce with some entropy
-    nonce = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, address(this))));
 
     // Grant additional roles specific to DStakeRouterMorpho
     _grantRole(VAULT_MANAGER_ROLE, msg.sender);
@@ -129,8 +123,8 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   // --- Core Routing Functions (Override IDStakeRouter) ---
 
   /**
-   * @notice Handles deposits with weighted random vault selection
-   * @dev Overrides the base deposit function to implement multi-vault weighted routing
+   * @notice Handles deposits with deterministic vault selection
+   * @dev Overrides the base deposit function to implement multi-vault deterministic routing
    * @param dStableAmount Amount of dStable to deposit
    */
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
@@ -147,20 +141,14 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
       revert InsufficientActiveVaults();
     }
 
-    // Calculate deposit weights (weight = max(0, target - current))
-    uint256[] memory depositWeights = WeightedRandomSelector.calculateDepositWeights(currentAllocations, targetAllocations);
-
-    // Generate pseudo-random seed
-    uint256 randomSeed = WeightedRandomSelector.generateRandomSeed(msg.sender, nonce++);
-
-    // Select vaults for deposit (up to 3, or fewer if not enough active)
+    // Select vaults for deposit (up to maxVaultsPerOperation, or fewer if not enough active)
     uint256 selectCount = activeVaults.length < maxVaultsPerOperation ? activeVaults.length : maxVaultsPerOperation;
 
-    (address[] memory selectedVaults, ) = WeightedRandomSelector.selectWeightedRandom(
+    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
       activeVaults,
-      depositWeights,
-      selectCount,
-      randomSeed
+      currentAllocations,
+      targetAllocations,
+      selectCount
     );
 
     // Split deposit amount evenly among selected vaults
@@ -169,12 +157,12 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     // Execute deposits to selected vaults
     _executeMultiVaultDeposits(selectedVaults, depositAmounts, dStableAmount);
 
-    emit WeightedDeposit(selectedVaults, depositAmounts, dStableAmount, randomSeed);
+    emit WeightedDeposit(selectedVaults, depositAmounts, dStableAmount, 0);
   }
 
   /**
-   * @notice Handles withdrawals with weighted random vault selection from overweight vaults
-   * @dev Overrides the base withdrawal function to implement multi-vault weighted routing
+   * @notice Handles withdrawals with deterministic vault selection from overweight vaults
+   * @dev Overrides the base withdrawal function to implement multi-vault deterministic routing
    * @param dStableAmount Amount of dStable to withdraw
    * @param receiver Address to receive the withdrawn dStable
    * @param owner Owner initiating the withdrawal
@@ -197,18 +185,14 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
       revert InsufficientActiveVaults();
     }
 
-    // Calculate withdrawal weights (weight = max(0, current - target) for overweight vaults)
-    uint256[] memory withdrawalWeights = WeightedRandomSelector.calculateWithdrawalWeights(currentAllocations, targetAllocations);
+    // Select vaults for withdrawal (up to maxVaultsPerOperation, prioritizing overweight vaults)
+    uint256 selectCount = activeVaults.length < maxVaultsPerOperation ? activeVaults.length : maxVaultsPerOperation;
 
-    // Generate pseudo-random seed
-    uint256 randomSeed = WeightedRandomSelector.generateRandomSeed(msg.sender, nonce++);
-
-    // Select vaults for withdrawal (up to 3, prioritizing overweight vaults)
-    (address[] memory selectedVaults, uint256[] memory selectedIndices) = WeightedRandomSelector.selectWeightedRandom(
+    (address[] memory selectedVaults, uint256[] memory selectedIndices) = DeterministicVaultSelector.selectTopOverallocated(
       activeVaults,
-      withdrawalWeights,
-      activeVaults.length < maxVaultsPerOperation ? activeVaults.length : maxVaultsPerOperation,
-      randomSeed
+      currentAllocations,
+      targetAllocations,
+      selectCount
     );
 
     // Calculate withdrawal amounts proportionally based on available liquidity
@@ -217,7 +201,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     // Execute withdrawals from selected vaults
     _executeMultiVaultWithdrawals(selectedVaults, withdrawalAmounts, dStableAmount, receiver);
 
-    emit WeightedWithdrawal(selectedVaults, withdrawalAmounts, dStableAmount, randomSeed);
+    emit WeightedWithdrawal(selectedVaults, withdrawalAmounts, dStableAmount, 0);
     // Note: owner parameter not emitted to avoid stack too deep
   }
 

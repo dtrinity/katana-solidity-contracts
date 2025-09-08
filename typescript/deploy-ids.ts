@@ -105,7 +105,7 @@ export const DSTAKE_ROUTER_ID_PREFIX = "DStakeRouter";
 export const DSTAKE_ROUTER_MORPHO_ID_PREFIX = "DStakeRouterMorpho";
 
 // dSTAKE Libraries
-export const WEIGHTED_RANDOM_SELECTOR_LIB_ID = "WeightedRandomSelector";
+export const DETERMINISTIC_VAULT_SELECTOR_LIB_ID = "DeterministicVaultSelector";
 export const ALLOCATION_CALCULATOR_LIB_ID = "AllocationCalculator";
 
 // dSTAKE specific instance IDs
