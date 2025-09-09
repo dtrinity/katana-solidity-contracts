@@ -134,11 +134,11 @@ clean-deployments: ## Clean the deployments for a given network which matches at
 
 explorer.verify.katana_testnet:
 	@echo "Verifying contracts on Katana testnet (Bokuto)..."
-	@yarn hardhat --network katana_testnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api-bokuto.katanascan.com/api
+	@yarn hardhat --network katana_testnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api.etherscan.io/v2/api
 
 explorer.verify.katana_mainnet:
 	@echo "Verifying contracts on Katana mainnet..."
-	@yarn hardhat --network katana_mainnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api.katanascan.io/api
+	@yarn hardhat --network katana_mainnet etherscan-verify --api-key $${ETHERSCAN_API_KEY} --api-url https://api.etherscan.io/v2/api
 
 ##############
 ## Building ##
