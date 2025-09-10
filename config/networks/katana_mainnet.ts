@@ -3,7 +3,11 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
 import { DETH_TOKEN_ID, DUSD_TOKEN_ID } from "../../typescript/deploy-ids";
-import { ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, ORACLE_AGGREGATOR_PRICE_DECIMALS } from "../../typescript/oracle_aggregator/constants";
+import {
+  MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+  ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+  ORACLE_AGGREGATOR_PRICE_DECIMALS,
+} from "../../typescript/oracle_aggregator/constants";
 import { fetchTokenInfo } from "../../typescript/token/utils";
 import { Config } from "../types";
 
@@ -27,6 +31,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const USDTAddress = "0x2DCa96907fde857dd3D816880A0df407eeB2D2F2"; // Actually vbUSDT
   const AUSDAddress = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"; // Natively issued AUSD
   const yUSDAddress = "0x4772D2e014F9fC3a820C444e3313968e9a5C8121"; // YieldFi yUSD
+  const yvvbUSDCAddress = "0x80c34BD3A3569E126e7055831036aa7b212cB159"; // vbUSDC yVault
+  const yvvbUSDTAddress = "0x9A6bd7B6Fd5C4F87eb66356441502fc7dCdd185B"; // vbUSDT yVault
+  const yvvbETHAddress = "0xE007CA01894c863d7898045ed5A3B4Abf0b18f37"; // vbETH yVault
 
   const governanceSafeMultisig = "0xE83c188a7BE46B90715C757A06cF917175f30262"; // Official Safe on Katana
   // Safe configuration for governance multisig
@@ -153,7 +160,39 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
           compositeRedstoneOracleWrappersWithThresholding: {},
         },
+        morphoOracleAssets: {
+          plainMorphoOracleWrappers: {
+            [yvvbUSDCAddress]: {
+              baseAsset: yvvbUSDCAddress,
+              quoteAsset: USDTAddress,
+              baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+              feed: "0x6d736e00AcD96032d8151b9989E61b5cF090c98c", // yvvbUSDC MorphoChainlinkOracleV2 address
+            },
+            [yvvbUSDTAddress]: {
+              baseAsset: yvvbUSDTAddress,
+              quoteAsset: USDCAddress,
+              baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+              feed: "0xD978CE03d8BB0eb3f09cB2a469DbbC25DB42F3Ae", // yvvbUSDT MorphoChainlinkOracleV2 address (to be set)
+            },
+          },
+        },
         chainlinkCompositeAggregator: {},
+        oracleWrapperAggregators: {
+          [yvvbUSDCAddress]: {
+            baseAsset: yvvbUSDCAddress,
+            quoteAsset: ZeroAddress, // USD is represented by the zero address
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+            baseFeed: "0x0000000000000000000000000000000000000000", // our yvvbUSDC/USDT MorphoChainlinkOracleV2Wrapper (to be set)
+            quoteFeed: "0x0000000000000000000000000000000000000000", // our USDT/USD RedstoneChainlinkOracleWrapper
+          },
+          [yvvbUSDTAddress]: {
+            baseAsset: yvvbUSDTAddress,
+            quoteAsset: ZeroAddress, // USD is represented by the zero address
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+            baseFeed: "0x0000000000000000000000000000000000000000", // our yvvbUSDT/USDC MorphoChainlinkOracleV2Wrapper (to be set)
+            quoteFeed: "0x0000000000000000000000000000000000000000", // our USDC/USD RedstoneChainlinkOracleWrapper
+          },
+        },
       },
       ETH: {
         hardDStablePeg: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
@@ -171,6 +210,25 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
           redstoneOracleWrappersWithThresholding: {},
           compositeRedstoneOracleWrappersWithThresholding: {},
+        },
+        morphoOracleAssets: {
+          plainMorphoOracleWrappers: {
+            [yvvbETHAddress]: {
+              baseAsset: yvvbETHAddress,
+              quoteAsset: USDCAddress,
+              baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+              feed: "0xaa9853c78B92606b21cE57Da7F04F301f031Aba4", // yvvbETH/USDC MorphoChainlinkOracleV2 address
+            },
+          },
+        },
+        oracleWrapperAggregators: {
+          [yvvbETHAddress]: {
+            baseAsset: yvvbETHAddress,
+            quoteAsset: ZeroAddress, // USD is represented by the zero address
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+            baseFeed: "0x0000000000000000000000000000000000000000", // our yvvbETH/USDC MorphoChainlinkOracleV2Wrapper (to be set)
+            quoteFeed: "0x0000000000000000000000000000000000000000", // our USDC/USD RedstoneChainlinkOracleWrapper
+          },
         },
       },
     },

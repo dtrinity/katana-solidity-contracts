@@ -163,8 +163,27 @@ export interface OracleAggregatorConfig {
       };
     };
   };
+  readonly morphoOracleAssets?: {
+    plainMorphoOracleWrappers: {
+      [key: string]: {
+        baseAsset: string;
+        quoteAsset: string;
+        baseCurrencyUnit: bigint;
+        feed: string;
+      };
+    };
+  };
   readonly chainlinkCompositeAggregator?: {
     [assetAddress: string]: ChainlinkCompositeAggregatorConfig;
+  };
+  readonly oracleWrapperAggregators?: {
+    [assetAddress: string]: {
+      baseAsset: string;
+      quoteAsset: string;
+      baseCurrencyUnit: bigint;
+      baseFeed: string;
+      quoteFeed: string;
+    };
   };
 }
 

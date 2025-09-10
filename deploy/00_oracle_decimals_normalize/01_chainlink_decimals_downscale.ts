@@ -2,8 +2,14 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 
 import { getConfig } from "../../config/networks/katana_mainnet";
+import { isMainnet } from "../../typescript/hardhat/deploy";
 
 const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  if (!isMainnet(hre.network.name)) {
+    console.warn("SKIPPING - should not deploy ChainlinkDecimalDownscaler on other networks than mainnet");
+    return;
+  }
+
   const { deployments, getNamedAccounts, ethers } = hre;
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
