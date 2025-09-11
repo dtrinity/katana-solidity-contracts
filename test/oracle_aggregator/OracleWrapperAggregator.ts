@@ -252,8 +252,8 @@ describe("OracleWrapperAggregator", () => {
     });
 
     it("should revert getAssetPrice when feeds are not alive", async () => {
-      // Make base oracle fail
-      await mockBaseOracle.setRevertBehavior(true);
+      // Make base oracle fail - explicitly specify function signature due to overloading
+      await mockBaseOracle["setRevertBehavior(bool)"](true);
 
       await expect(aggregator.getAssetPrice(TEST_ASSET))
         .to.be.revertedWithCustomError(aggregator, "OracleWrapperCallFailed");
