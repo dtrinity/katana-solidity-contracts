@@ -21,7 +21,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
 
   // Get yUSD feed address from config
   const yUSDAddress = config.tokenAddresses.yUSD;
-  const yUSDFeedAddress = config.oracleAggregators.USD.redstoneOracleAssets.plainRedstoneOracleWrappers[yUSDAddress];
+  const yUSDFeedAddress = config.oracleAggregators.USD?.redstoneOracleAssets?.plainRedstoneOracleWrappers[yUSDAddress];
 
   if (!yUSDFeedAddress) {
     throw new Error("yUSD Chainlink feed not found in configuration");

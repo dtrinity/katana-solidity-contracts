@@ -114,10 +114,10 @@ export interface WalletAddresses {
 }
 
 export interface OracleAggregatorConfig {
-  readonly priceDecimals: number;
-  readonly hardDStablePeg: bigint;
-  readonly baseCurrency: string;
-  readonly api3OracleAssets: {
+  readonly priceDecimals?: number;
+  readonly hardDStablePeg?: bigint;
+  readonly baseCurrency?: string;
+  readonly api3OracleAssets?: {
     plainApi3OracleWrappers: {
       [key: string]: string;
     };
@@ -140,7 +140,7 @@ export interface OracleAggregatorConfig {
       };
     };
   };
-  readonly redstoneOracleAssets: {
+  readonly redstoneOracleAssets?: {
     plainRedstoneOracleWrappers: {
       [key: string]: string;
     };
@@ -179,10 +179,20 @@ export interface OracleAggregatorConfig {
   readonly oracleWrapperAggregators?: {
     [assetAddress: string]: {
       baseAsset: string;
-      quoteAsset: string;
+      quoteAsset: string; // base currency
       baseCurrencyUnit: bigint;
       baseFeed: string;
       quoteFeed: string;
+    };
+  };
+  readonly erc4626OracleWrapper?: {
+    [assetAddress: string]: {
+      vaultName: string;
+      vaultAddress: string;
+      initialMaxDeviation: number;
+      minShareSupply: bigint;
+      underlyingAsset: string;
+      baseCurrencyUnit: bigint;
     };
   };
 }
