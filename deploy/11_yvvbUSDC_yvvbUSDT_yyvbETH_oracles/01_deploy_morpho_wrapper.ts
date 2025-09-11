@@ -115,6 +115,7 @@ async function performOracleSanityChecks(
 
       // Additional sanity check: Compare wrapper price with raw Morpho feed price
       console.log(`    🔍 Verifying price conversion accuracy for ${displayName}...`);
+
       try {
         const MORPHO_FEED_ABI = ["function price() view returns (uint256)"];
         const morphoFeed = await hre.ethers.getContractAt(MORPHO_FEED_ABI, typedFeedConfig.feed);
@@ -164,7 +165,7 @@ async function performOracleSanityChecks(
       } else {
         console.log(
           `Sanity check passed for ${displayName}/${quoteAssetName}: ` +
-          `Price ${normalizedPrice.toFixed(6)} ${quoteAssetName} (range: [${minPrice}, ${maxPrice}])`
+            `Price ${normalizedPrice.toFixed(6)} ${quoteAssetName} (range: [${minPrice}, ${maxPrice}])`
         );
       }
     } catch (error) {
