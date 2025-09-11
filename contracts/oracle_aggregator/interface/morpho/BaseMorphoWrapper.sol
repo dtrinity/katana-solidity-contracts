@@ -19,6 +19,7 @@ pragma solidity ^0.8.20;
 
 import "../IOracleWrapper.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title BaseMorphoWrapper
@@ -26,6 +27,8 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
  * Provides common functionality for all Morpho oracle wrappers
  */
 abstract contract BaseMorphoWrapper is IOracleWrapper, AccessControl {
+  using Math for uint256;
+
   /* Core state */
 
   /// @notice Morpho Blue oracle price scaling factor (1e36)
@@ -94,6 +97,6 @@ abstract contract BaseMorphoWrapper is IOracleWrapper, AccessControl {
    * @return The price in base currency decimals
    */
   function _convertFromMorphoScale(uint256 morphoPrice) internal view returns (uint256) {
-    return (morphoPrice * BASE_CURRENCY_UNIT) / MORPHO_PRICE_SCALE;
+    return morphoPrice.mulDiv(BASE_CURRENCY_UNIT, MORPHO_PRICE_SCALE);
   }
 }
