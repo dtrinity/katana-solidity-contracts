@@ -54,106 +54,91 @@ async function performGroupSanityChecks(
   config: any,
   groupName: string
 ): Promise<void> {
-  console.log(`    🔍 Performing comprehensive sanity checks for ${groupName}...`);
+  console.log(`  🔍 Sanity checking ${groupName}...`);
 
   // Test each asset in the group
   for (const assetAddress of groupConfig.assets) {
     const assetName = getAssetSymbol(assetAddress, config);
-    console.log(`\n    🧪 Testing ${assetName} (${assetAddress}):`);
 
     try {
-      // 1. Get aggregated result
+      // Check prerequisites
+      const WRAPPER_ABI = [
+        "function getPriceInfo(address) view returns (uint256, bool)",
+        "function BASE_CURRENCY() view returns (address)",
+        "function BASE_CURRENCY_UNIT() view returns (uint256)",
+        "function assetToOracle(address) view returns (address)",
+      ];
+
+      const baseWrapper = await hre.ethers.getContractAt(WRAPPER_ABI, baseWrapperAddress);
+
+      // Verify asset is configured in base wrapper
+      const configuredOracle = await baseWrapper.assetToOracle(assetAddress).catch(() => hre.ethers.ZeroAddress);
+
+      if (configuredOracle === hre.ethers.ZeroAddress) {
+        throw new Error(
+          `Asset ${assetName} not configured in base wrapper ${groupConfig.baseWrapperDeploymentId}. Run Morpho oracle deployment first.`
+        );
+      }
+
+      // Verify quote wrapper can price the intermediate currency
+      const baseWrapperBaseCurrency = await baseWrapper.BASE_CURRENCY();
+      const quoteWrapperTest = await hre.ethers.getContractAt(WRAPPER_ABI, quoteWrapperAddress);
+
+      try {
+        await quoteWrapperTest.getPriceInfo(baseWrapperBaseCurrency);
+      } catch {
+        const intermediateCurrencySymbol = getAssetSymbol(baseWrapperBaseCurrency, config);
+        throw new Error(
+          `Quote wrapper ${groupConfig.quoteWrapperDeploymentId} cannot price intermediate currency ${intermediateCurrencySymbol}. Run USD Redstone wrapper setup first.`
+        );
+      }
+
+      // Get aggregated result
       const { price: aggregatedPrice, isAlive } = await aggregator.getPriceInfo(assetAddress);
       const normalizedAggregatedPrice = Number(aggregatedPrice) / Number(groupConfig.baseCurrencyUnit);
-
-      console.log(`       📊 Aggregated Result: ${aggregatedPrice} (${normalizedAggregatedPrice.toFixed(8)} USD)`);
-      console.log(`       🟢 Is Alive: ${isAlive}`);
 
       if (!isAlive || aggregatedPrice === 0n) {
         throw new Error(`Aggregator returned invalid price (${aggregatedPrice}) or not alive (${isAlive})`);
       }
 
-      // 2. Check base wrapper (e.g., Morpho wrapper providing asset/stablecoin price)
-      console.log(`       🔍 Base Feed Check (${groupConfig.baseWrapperDeploymentId}):`);
-      const WRAPPER_ABI = [
-        "function getPriceInfo(address) view returns (uint256, bool)",
-        "function BASE_CURRENCY() view returns (address)",
-        "function BASE_CURRENCY_UNIT() view returns (uint256)",
-      ];
-      const baseWrapper = await hre.ethers.getContractAt(WRAPPER_ABI, baseWrapperAddress);
-
+      // Validate source feeds and calculate expected result
       const [basePrice, baseIsAlive] = await baseWrapper.getPriceInfo(assetAddress);
       const baseUnit = await baseWrapper.BASE_CURRENCY_UNIT();
-      const baseCurrency = await baseWrapper.BASE_CURRENCY();
-      const normalizedBasePrice = Number(basePrice) / Number(baseUnit);
-
-      console.log(`         Raw Price: ${basePrice}`);
-      console.log(`         Unit: ${baseUnit}`);
-      console.log(`         Normalized: ${normalizedBasePrice.toFixed(8)} ${getAssetSymbol(baseCurrency, config)}`);
-      console.log(`         Is Alive: ${baseIsAlive}`);
 
       if (!baseIsAlive || basePrice === 0n) {
         throw new Error(`Base wrapper returned invalid price or not alive`);
       }
 
-      // 3. Check quote wrapper (e.g., Redstone wrapper providing stablecoin/USD price)
-      console.log(`       🔍 Quote Feed Check (${groupConfig.quoteWrapperDeploymentId}):`);
-      const quoteWrapper = await hre.ethers.getContractAt(WRAPPER_ABI, quoteWrapperAddress);
-
-      // CRITICAL: Get the intermediate currency from the base wrapper's base currency
-      // This is what we need to query the quote wrapper with
-      // Example: yvvbUSDT/USDC base wrapper has BASE_CURRENCY = USDC
-      // So we query quote wrapper with USDC to get USDC/USD
       const intermediateCurrency = await baseWrapper.BASE_CURRENCY();
-
-      const [quotePrice, quoteIsAlive] = await quoteWrapper.getPriceInfo(intermediateCurrency);
-      const quoteUnit = await quoteWrapper.BASE_CURRENCY_UNIT();
-      const quoteCurrency = await quoteWrapper.BASE_CURRENCY();
-      const normalizedQuotePrice = Number(quotePrice) / Number(quoteUnit);
-
-      const intermediateCurrencySymbol = getAssetSymbol(intermediateCurrency, config);
-      const quoteCurrencySymbol = getAssetSymbol(quoteCurrency, config);
-
-      console.log(`         Asset Queried: ${intermediateCurrencySymbol} (${intermediateCurrency})`);
-      console.log(`         Raw Price: ${quotePrice}`);
-      console.log(`         Unit: ${quoteUnit}`);
-      console.log(`         Normalized: ${normalizedQuotePrice.toFixed(8)} ${quoteCurrencySymbol}`);
-      console.log(`         Is Alive: ${quoteIsAlive}`);
-      console.log(`         Flow: ${intermediateCurrencySymbol} → ${quoteCurrencySymbol}`);
+      const quoteWrapperDetailed = await hre.ethers.getContractAt(WRAPPER_ABI, quoteWrapperAddress);
+      const [quotePrice, quoteIsAlive] = await quoteWrapperDetailed.getPriceInfo(intermediateCurrency);
+      const quoteUnit = await quoteWrapperDetailed.BASE_CURRENCY_UNIT();
 
       if (!quoteIsAlive || quotePrice === 0n) {
         throw new Error(`Quote wrapper returned invalid price or not alive`);
       }
 
-      // 4. Calculate expected result manually and compare with aggregator
-      // Expected calculation: (basePrice / baseUnit) / (quotePrice / quoteUnit) * baseCurrencyUnit
+      // Calculate expected result and verify accuracy
       const manualCalculation =
         (Number(basePrice) / Number(baseUnit) / (Number(quotePrice) / Number(quoteUnit))) * Number(groupConfig.baseCurrencyUnit);
       const calculationDifference = Math.abs(normalizedAggregatedPrice - manualCalculation);
       const calculationPercentDiff = (calculationDifference / manualCalculation) * 100;
 
-      console.log(`       🧮 Manual Calculation: ${manualCalculation.toFixed(8)} USD`);
-      console.log(`       📊 Difference: ${calculationDifference.toFixed(8)} USD (${calculationPercentDiff.toFixed(6)}%)`);
-
       if (calculationPercentDiff > 0.01) {
-        // 0.01% tolerance for calculation accuracy
         throw new Error(`Aggregator calculation mismatch: ${calculationPercentDiff.toFixed(6)}% difference (>0.01%)`);
       }
 
-      // 5. USD price range sanity check
+      // Price range sanity check
       let expectedMinPrice: number;
       let expectedMaxPrice: number;
 
       if (assetName.includes("USD") || assetName.includes("USDC") || assetName.includes("USDT")) {
-        // Stablecoin-based vault should be close to 1.0 USD
         expectedMinPrice = 0.8;
         expectedMaxPrice = 1.5;
       } else if (assetName.includes("ETH")) {
-        // ETH-based vault - wide range due to ETH volatility
         expectedMinPrice = 500;
         expectedMaxPrice = 10000;
       } else {
-        // Conservative range for unknown assets
         expectedMinPrice = 0.01;
         expectedMaxPrice = 100000;
       }
@@ -164,12 +149,10 @@ async function performGroupSanityChecks(
         );
       }
 
-      console.log(
-        `       ✅ ${assetName}: ${normalizedAggregatedPrice.toFixed(8)} USD (range: [${expectedMinPrice}, ${expectedMaxPrice}]) ✅`
-      );
+      console.log(`    ✅ ${assetName}: ${normalizedAggregatedPrice.toFixed(6)} USD (±${calculationPercentDiff.toFixed(4)}%)`);
     } catch (error) {
-      console.error(`       ❌ ${assetName} sanity check failed:`, error);
-      throw new Error(`Sanity check failed for ${assetName}: ${(error as Error).message}`);
+      console.error(`    ❌ ${assetName} failed: ${(error as Error).message}`);
+      throw error;
     }
   }
 }
@@ -203,10 +186,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
     // Derive display name from group key (e.g., "USDT" → "USDT_to_USD")
     const displayName = `${groupKey}_to_USD`;
 
-    console.log(`\n🚀 Deploying group: ${groupKey} (${displayName})`);
-    console.log(
-      `   Assets: ${typedGroupConfig.assets.length} (${typedGroupConfig.assets.map((addr) => getAssetSymbol(addr, config)).join(", ")})`
-    );
+    console.log(`\nDeploying OracleWrapperAggregator: ${displayName}`);
+    console.log(`  Assets: ${typedGroupConfig.assets.map((addr) => getAssetSymbol(addr, config)).join(", ")}`);
 
     // Resolve deployment IDs to actual addresses
     let baseWrapperAddress: string;
@@ -215,25 +196,19 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
     try {
       const baseWrapperDeployment = await hre.deployments.get(typedGroupConfig.baseWrapperDeploymentId);
       baseWrapperAddress = baseWrapperDeployment.address;
-      console.log(`   📍 Base Wrapper: ${typedGroupConfig.baseWrapperDeploymentId} → ${baseWrapperAddress}`);
     } catch {
-      console.error(`❌ Base wrapper deployment not found: ${typedGroupConfig.baseWrapperDeploymentId}`);
       throw new Error(`Base wrapper deployment not found: ${typedGroupConfig.baseWrapperDeploymentId}`);
     }
 
     try {
       const quoteWrapperDeployment = await hre.deployments.get(typedGroupConfig.quoteWrapperDeploymentId);
       quoteWrapperAddress = quoteWrapperDeployment.address;
-      console.log(`   📍 Quote Wrapper: ${typedGroupConfig.quoteWrapperDeploymentId} → ${quoteWrapperAddress}`);
     } catch {
-      console.error(`❌ Quote wrapper deployment not found: ${typedGroupConfig.quoteWrapperDeploymentId}`);
       throw new Error(`Quote wrapper deployment not found: ${typedGroupConfig.quoteWrapperDeploymentId}`);
     }
 
-    // Generate deployment ID for the aggregator
+    // Deploy the aggregator
     const dynamicDeploymentId = `OracleWrapperAggregator_${displayName}`;
-
-    console.log(`   📦 Deploying: ${dynamicDeploymentId}`);
 
     // Deploy OracleWrapperAggregator for this group
     const aggregatorDeployment = await hre.deployments.deploy(dynamicDeploymentId, {
@@ -251,15 +226,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
 
     const aggregator = await hre.ethers.getContractAt("OracleWrapperAggregator", aggregatorDeployment.address);
 
-    console.log(`   ✅ Deployed at ${aggregatorDeployment.address}`);
-    console.log(`   🔧 Configuration:`);
-    console.log(`      Result: ${displayName} → USD`);
-    console.log(`      Base Currency Unit: ${typedGroupConfig.baseCurrencyUnit}`);
+    console.log(`  ✅ Deployed at ${aggregatorDeployment.address}`);
 
-    // Perform comprehensive sanity checks for the entire group
+    // Perform sanity checks
     await performGroupSanityChecks(hre, aggregator, typedGroupConfig, baseWrapperAddress, quoteWrapperAddress, config, displayName);
 
-    console.log(`   🎯 ${displayName} OracleWrapperAggregator deployment completed successfully\n`);
+    console.log(`  🎯 ${displayName} deployment completed successfully`);
   }
 
   console.log(`🔮 ${__filename.split("/").slice(-2).join("/")}: ✅`);
@@ -267,7 +239,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
 };
 
 func.tags = ["oracle-wrapper-aggregator", "usd-aggregator", "oracle-aggregator"];
-func.dependencies = ["deploy-morpho-wrappers", "dusd-redstone-oracle-wrapper"];
+func.dependencies = ["deploy-yvvbUSDC-yvvbUSDT-morpho-wrappers", "setup-usd-redstone-oracle-wrappers"];
 func.id = "deploy-usd-oracle-wrapper-aggregators";
 
 export default func;

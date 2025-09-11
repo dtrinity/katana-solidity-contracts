@@ -5,6 +5,7 @@ import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
 import { DETH_TOKEN_ID, DUSD_TOKEN_ID } from "../../typescript/deploy-ids";
 import {
   MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+  MORPHO_CHAINLINK_DATA_FEED_DECIMALS,
   ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
   ORACLE_AGGREGATOR_PRICE_DECIMALS,
 } from "../../typescript/oracle_aggregator/constants";
@@ -163,13 +164,13 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         oracleWrapperAggregators: {
           USDT: {
             baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDT",
-            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapper",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapperWithThresholding",
             baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
             assets: [yvvbUSDCAddress], // Assets handled by USDT Morpho wrapper (yvvbUSDC/USDT)
           },
           USDC: {
             baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDC",
-            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapper",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapperWithThresholding",
             baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
             assets: [yvvbUSDTAddress], // Assets handled by USDC Morpho wrapper (yvvbUSDT/USDC)
           },
@@ -207,6 +208,13 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
       // Since Morpho based oracles are not always returned USD-denominated price, but based on the quote asset
       // we need to set the baseCurrency and baseCurrencyUnit for the Morpho based oracles
       MORPHO: {
+        priceDecimals: MORPHO_CHAINLINK_DATA_FEED_DECIMALS,
+        baseCurrency: ZeroAddress, // Dummy address to bypass type check, this is not used for Morpho oracles
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {},
+          compositeApi3OracleWrappersWithThresholding: {},
+        },
         morphoOracleAssets: {
           plainMorphoOracleWrappers: {
             [yvvbUSDCAddress]: {
