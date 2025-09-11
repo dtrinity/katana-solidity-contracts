@@ -199,10 +199,10 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           [yvvbETHAddress]: {
             vaultAddress: yvvbETHAddress,
             vaultName: "yvvbETH",
-            initialMaxDeviation: 500, // 5% in basis points
-            minShareSupply: ethers.parseEther("100"), // 100 yvvbETH minimum shares
+            initialMaxDeviation: 500, // 5% in basis points (matches contract default)
+            minShareSupply: ethers.parseEther("10"), // 10 yvvbETH minimum shares (~$20k minimum for donation attack protection)
             underlyingAsset: wETHAddress, // The vault's underlying asset (WETH)
-            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e8 for ETH
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for ETH (must match ETH OracleAggregator)
           },
         },
       },
@@ -216,12 +216,16 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
               quoteAsset: USDTAddress,
               baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
               feed: "0x6d736e00AcD96032d8151b9989E61b5cF090c98c", // yvvbUSDC/USDT MorphoChainlinkOracleV2 address
+              vaultName: "yvvbUSDC",
+              expectedPriceRange: [0.8, 1.5] as [number, number], // Stablecoin-to-stablecoin expected range
             },
             [yvvbUSDTAddress]: {
               baseAsset: yvvbUSDTAddress,
               quoteAsset: USDCAddress,
               baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
               feed: "0xD978CE03d8BB0eb3f09cB2a469DbbC25DB42F3Ae", // yvvbUSDT/USDC MorphoChainlinkOracleV2 address
+              vaultName: "yvvbUSDT",
+              expectedPriceRange: [0.8, 1.5] as [number, number], // Stablecoin-to-stablecoin expected range
             },
           },
         },

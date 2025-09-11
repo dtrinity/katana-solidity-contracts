@@ -163,16 +163,7 @@ export interface OracleAggregatorConfig {
       };
     };
   };
-  readonly morphoOracleAssets?: {
-    plainMorphoOracleWrappers: {
-      [key: string]: {
-        baseAsset: string;
-        quoteAsset: string;
-        baseCurrencyUnit: bigint;
-        feed: string;
-      };
-    };
-  };
+  readonly morphoOracleAssets?: MorphoOracleAssetsConfig;
   readonly chainlinkCompositeAggregator?: {
     [assetAddress: string]: ChainlinkCompositeAggregatorConfig;
   };
@@ -195,6 +186,26 @@ export interface OracleAggregatorConfig {
       baseCurrencyUnit: bigint;
     };
   };
+}
+
+// Morpho Oracle Configuration Types
+export interface MorphoOracleConfig {
+  readonly baseAsset: string;
+  readonly quoteAsset: string;
+  readonly baseCurrencyUnit: bigint;
+  readonly feed: string;
+  readonly vaultName?: string;
+  readonly expectedPriceRange?: [number, number];
+}
+
+export interface MorphoOracleAssetsConfig {
+  readonly plainMorphoOracleWrappers?: {
+    [assetAddress: string]: MorphoOracleConfig;
+  };
+}
+
+export interface MorphoConfig {
+  readonly morphoOracleAssets?: MorphoOracleAssetsConfig;
 }
 
 export interface IInterestRateStrategyParams {

@@ -2,17 +2,71 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 
 import { getConfig } from "../../config/config";
-import { MORPHO_USDC_ORACLE_WRAPPER_ID, MORPHO_USDT_ORACLE_WRAPPER_ID } from "../../typescript/deploy-ids";
+
+/**
+ * Get quote asset symbol and default price range from configuration
+ *
+ * @param quoteAssetAddress The address of the quote asset to look up
+ * @param config The network configuration containing token addresses
+ * @returns Object containing symbol and default price range for the asset
+ */
+function getQuoteAssetInfo(quoteAssetAddress: string, config: any): { symbol: string; defaultRange: [number, number] } {
+  // Check if it's a known token address
+  const tokenAddresses = config.tokenAddresses || {};
+
+  for (const [symbol, address] of Object.entries(tokenAddresses)) {
+    if (address === quoteAssetAddress) {
+      // Default ranges for known assets
+      if (symbol.includes("USD") || symbol.includes("USDC") || symbol.includes("USDT")) {
+        return { symbol, defaultRange: [0.8, 1.5] }; // Stablecoin range
+      } else if (symbol.includes("ETH") || symbol.includes("WETH")) {
+        return { symbol, defaultRange: [0.001, 100] }; // ETH range
+      }
+      return { symbol, defaultRange: [0.01, 100] }; // Generic range
+    }
+  }
+
+  return { symbol: "Unknown", defaultRange: [0.001, 1e6] }; // Fallback range
+}
+
+/**
+ * Determine vault type from configuration or address patterns
+ *
+ * @param baseAssetAddress The address of the base asset/vault to classify
+ * @param config The network configuration containing morpho oracle settings
+ * @returns The vault type classification: 'stablecoin', 'eth', or 'unknown'
+ */
+function getVaultType(baseAssetAddress: string, config: any): "stablecoin" | "eth" | "unknown" {
+  // Try to get vault info from morpho config first
+  const morphoConfig = config.oracleAggregators?.MORPHO?.morphoOracleAssets?.plainMorphoOracleWrappers;
+
+  if (morphoConfig && morphoConfig[baseAssetAddress]) {
+    // Check if the baseAsset name suggests a stablecoin vault
+    const baseAssetName = baseAssetAddress.toLowerCase();
+
+    if (baseAssetName.includes("usdc") || baseAssetName.includes("usdt") || baseAssetName.includes("usd")) {
+      return "stablecoin";
+    }
+
+    // Check if it's an ETH vault
+    if (baseAssetName.includes("eth") || baseAssetName.includes("weth")) {
+      return "eth";
+    }
+  }
+
+  return "unknown";
+}
 
 /**
  * Performs sanity checks on oracle wrapper feeds by verifying normalized prices are within a reasonable range
- * based on the quote asset type.
+ * based on the quote asset type and vault configuration.
  *
- * @param wrapper The oracle wrapper contract instance.
- * @param feeds A record mapping asset addresses to oracle configurations.
- * @param baseCurrencyUnit The base currency unit for price calculations.
- * @param wrapperName The name of the wrapper for logging purposes.
- * @param config Network configuration to get quote asset information.
+ * @param wrapper The deployed oracle wrapper contract instance
+ * @param feeds Record mapping asset addresses to their oracle feed configurations
+ * @param baseCurrencyUnit The base currency unit for price normalization calculations
+ * @param wrapperName The name of the wrapper for logging purposes
+ * @param config The network configuration containing token addresses and settings
+ * @returns Promise that resolves when all sanity checks pass or rejects on failure
  */
 async function performOracleSanityChecks(
   wrapper: any,
@@ -28,60 +82,45 @@ async function performOracleSanityChecks(
         quoteAsset: string;
         baseCurrencyUnit: bigint;
         feed: string;
+        vaultName?: string;
+        expectedPriceRange?: [number, number];
       };
 
       const price = await wrapper.getAssetPrice(assetAddress);
       const normalizedPrice = Number(price) / Number(baseCurrencyUnit);
 
-      // Determine expected price range based on quote asset and base asset type
-      let minPrice: number;
-      let maxPrice: number;
-      let quoteAssetName: string;
+      // Get quote asset information
+      const { symbol: quoteAssetName, defaultRange } = getQuoteAssetInfo(typedFeedConfig.quoteAsset, config);
 
-      // Map quote asset addresses to names and expected ranges
-      if (typedFeedConfig.quoteAsset === config.tokenAddresses.USDT) {
-        quoteAssetName = "USDT";
-        // Stablecoin yield vaults should be close to 1.0 in their quote stablecoin
-        minPrice = 0.8; // Allow 20% deviation below
-        maxPrice = 1.5; // Allow 50% deviation above
-      } else if (typedFeedConfig.quoteAsset === config.tokenAddresses.USDC) {
-        quoteAssetName = "USDC";
+      // Determine vault type for more specific price ranges
+      const vaultType = getVaultType(typedFeedConfig.baseAsset, config);
 
-        // Determine asset type by checking addresses
-        const yvvbUSDCAddress = "0x80c34BD3A3569E126e7055831036aa7b212cB159";
-        const yvvbUSDTAddress = "0x9A6bd7B6Fd5C4F87eb66356441502fc7dCdd185B";
+      // Use configured price range if available, otherwise use type-based defaults
+      let [minPrice, maxPrice] = typedFeedConfig.expectedPriceRange || defaultRange;
 
-        const isStablecoinVault = typedFeedConfig.baseAsset === yvvbUSDTAddress || typedFeedConfig.baseAsset === yvvbUSDCAddress;
-
-        if (isStablecoinVault) {
-          // Stablecoin yield vaults should be close to 1.0 in their quote asset
-          minPrice = 0.8; // Allow 20% deviation below
-          maxPrice = 1.5; // Allow 50% deviation above
-        } else {
-          // Unknown vault type - use conservative range
-          minPrice = 0.1;
-          maxPrice = 10000;
+      // Adjust ranges based on vault type if no specific range is configured
+      if (!typedFeedConfig.expectedPriceRange) {
+        if (vaultType === "stablecoin" && quoteAssetName.includes("USD")) {
+          [minPrice, maxPrice] = [0.8, 1.5]; // Stablecoin-to-stablecoin should be close to 1:1
+        } else if (vaultType === "stablecoin") {
+          [minPrice, maxPrice] = [0.5, 2.0]; // Slightly wider range for cross-asset
+        } else if (vaultType === "eth") {
+          [minPrice, maxPrice] = [1e-6, 1e6]; // Very wide range for ETH vaults due to scaling
         }
-      } else {
-        // Fallback for unknown quote assets
-        quoteAssetName = "Unknown";
-        minPrice = 0.001;
-        maxPrice = 1e6;
       }
 
+      const displayName = typedFeedConfig.vaultName || typedFeedConfig.baseAsset;
+
       if (normalizedPrice < minPrice || normalizedPrice > maxPrice) {
-        console.error(
-          `Sanity check failed for ${typedFeedConfig.baseAsset}/${quoteAssetName} (${assetAddress}): ` +
-            `Price ${normalizedPrice} is outside expected range [${minPrice}, ${maxPrice}]`
-        );
-        throw new Error(
-          `Sanity check failed for ${typedFeedConfig.baseAsset}/${quoteAssetName}: ` +
-            `Price ${normalizedPrice} outside range [${minPrice}, ${maxPrice}]`
-        );
+        const errorMsg =
+          `Sanity check failed for ${displayName}/${quoteAssetName} (${assetAddress}): ` +
+          `Price ${normalizedPrice.toFixed(6)} is outside expected range [${minPrice}, ${maxPrice}]`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
       } else {
         console.log(
-          `Sanity check passed for ${typedFeedConfig.baseAsset}/${quoteAssetName}: ` +
-            `Price ${normalizedPrice} ${quoteAssetName} (expected range: [${minPrice}, ${maxPrice}])`
+          `Sanity check passed for ${displayName}/${quoteAssetName}: ` +
+            `Price ${normalizedPrice.toFixed(6)} ${quoteAssetName} (range: [${minPrice}, ${maxPrice}])`
         );
       }
     } catch (error) {
@@ -138,22 +177,21 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
       quoteAsset: string;
       baseCurrencyUnit: bigint;
       feed: string;
+      vaultName?: string;
     };
 
-    // Determine wrapper ID based on quote asset
-    let wrapperDeploymentId: string;
-    let wrapperName: string;
+    // Generate dynamic wrapper ID and name based on quote asset
+    const { symbol: quoteAssetSymbol } = getQuoteAssetInfo(quoteAsset, config);
 
-    if (quoteAsset === config.tokenAddresses.USDC) {
-      wrapperDeploymentId = MORPHO_USDC_ORACLE_WRAPPER_ID;
-      wrapperName = "USDC-denominated Morpho";
-    } else if (quoteAsset === config.tokenAddresses.USDT) {
-      wrapperDeploymentId = MORPHO_USDT_ORACLE_WRAPPER_ID;
-      wrapperName = "USDT-denominated Morpho";
-    } else {
-      console.error(`Unsupported quote asset: ${quoteAsset}`);
-      throw new Error(`Unsupported quote asset: ${quoteAsset}`);
-    }
+    // Use symbol for cleaner naming, fallback to address suffix
+    const quoteAssetIdentifier = quoteAssetSymbol !== "Unknown" ? quoteAssetSymbol : `0x${quoteAsset.slice(-8)}`;
+
+    const wrapperDeploymentId = `MorphoChainlinkOracleV2Wrapper_${quoteAssetIdentifier}`;
+    const wrapperName = `${quoteAssetIdentifier}-denominated Morpho`;
+
+    console.log(`\nDeploying ${wrapperName} oracle wrapper...`);
+    console.log(`  Quote asset: ${quoteAsset} (${quoteAssetSymbol})`);
+    console.log(`  Feeds to configure: ${groupedFeeds.length}`);
 
     // Deploy wrapper with quote asset as base currency
     const morphoWrapperDeployment = await hre.deployments.deploy(wrapperDeploymentId, {
@@ -180,6 +218,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
         quoteAsset: string;
         baseCurrencyUnit: bigint;
         feed: string;
+        vaultName?: string;
       };
 
       // Skip zero addresses (placeholder values)
@@ -194,7 +233,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
       }
 
       await morphoWrapper.setOracle(assetAddress, typedFeedConfig.feed);
-      console.log(`  Set oracle for ${typedFeedConfig.baseAsset} to ${typedFeedConfig.feed}`);
+      const displayName = typedFeedConfig.vaultName || `Asset ${assetAddress.slice(-8)}`;
+      console.log(`  ✅ Set oracle for ${displayName} to ${typedFeedConfig.feed}`);
     }
 
     // Sanity check for this group's oracles (only for configured non-placeholder oracles)
