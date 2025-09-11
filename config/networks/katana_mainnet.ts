@@ -161,19 +161,17 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           compositeRedstoneOracleWrappersWithThresholding: {},
         },
         oracleWrapperAggregators: {
-          [yvvbUSDCAddress]: {
-            baseAsset: yvvbUSDCAddress,
-            quoteAsset: ZeroAddress, // USD is represented by the zero address
-            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-            baseFeed: "0x0000000000000000000000000000000000000000", // our yvvbUSDC/USDT MorphoChainlinkOracleV2Wrapper (to be set)
-            quoteFeed: "0x0000000000000000000000000000000000000000", // our USDT/USD RedstoneChainlinkOracleWrapper
+          USDT: {
+            baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDT",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapper",
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
+            assets: [yvvbUSDCAddress], // Assets handled by USDT Morpho wrapper (yvvbUSDC/USDT)
           },
-          [yvvbUSDTAddress]: {
-            baseAsset: yvvbUSDTAddress,
-            quoteAsset: ZeroAddress, // USD is represented by the zero address
-            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-            baseFeed: "0x0000000000000000000000000000000000000000", // our yvvbUSDT/USDC MorphoChainlinkOracleV2Wrapper (to be set)
-            quoteFeed: "0x0000000000000000000000000000000000000000", // our USDC/USD RedstoneChainlinkOracleWrapper
+          USDC: {
+            baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDC",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapper",
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
+            assets: [yvvbUSDTAddress], // Assets handled by USDC Morpho wrapper (yvvbUSDT/USDC)
           },
         },
       },

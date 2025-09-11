@@ -168,12 +168,11 @@ export interface OracleAggregatorConfig {
     [assetAddress: string]: ChainlinkCompositeAggregatorConfig;
   };
   readonly oracleWrapperAggregators?: {
-    [assetAddress: string]: {
-      baseAsset: string;
-      quoteAsset: string; // base currency
-      baseCurrencyUnit: bigint;
-      baseFeed: string;
-      quoteFeed: string;
+    [groupName: string]: {
+      baseWrapperDeploymentId: string;
+      quoteWrapperDeploymentId: string;
+      baseCurrencyUnit: bigint; // Base currency unit (e.g., 1e18)
+      assets: string[]; // Asset addresses handled by this aggregator
     };
   };
   readonly erc4626OracleWrapper?: {
