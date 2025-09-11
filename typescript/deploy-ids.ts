@@ -23,6 +23,13 @@ export const ETH_REDSTONE_ORACLE_WRAPPER_ID = "ETH_RedstoneWrapper";
 export const ETH_REDSTONE_WRAPPER_WITH_THRESHOLDING_ID = "ETH_RedstoneWrapperWithThresholding";
 export const ETH_REDSTONE_COMPOSITE_WRAPPER_WITH_THRESHOLDING_ID = "ETH_RedstoneCompositeWrapperWithThresholding";
 
+// Morpho Oracles (Quote-Asset Denominated)
+export const MORPHO_USDC_ORACLE_WRAPPER_ID = "MorphoChainlinkOracleV2Wrapper_USDC";
+export const MORPHO_USDT_ORACLE_WRAPPER_ID = "MorphoChainlinkOracleV2Wrapper_USDT";
+
+// ERC4626 Oracle Wrappers (Dynamic IDs based on vault names)
+// Note: Actual deployment IDs are generated dynamically as "ERC4626OracleWrapper_{vaultName}_{baseCurrency}"
+
 // dUSD
 export const DUSD_TOKEN_ID = "dUSD";
 export const DUSD_ISSUER_CONTRACT_ID = "dUSD_Issuer";

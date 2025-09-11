@@ -1,9 +1,14 @@
-import { ZeroAddress } from "ethers";
+import { ethers, ZeroAddress } from "ethers";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
 import { DETH_TOKEN_ID, DUSD_TOKEN_ID } from "../../typescript/deploy-ids";
-import { ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, ORACLE_AGGREGATOR_PRICE_DECIMALS } from "../../typescript/oracle_aggregator/constants";
+import {
+  MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+  MORPHO_CHAINLINK_DATA_FEED_DECIMALS,
+  ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+  ORACLE_AGGREGATOR_PRICE_DECIMALS,
+} from "../../typescript/oracle_aggregator/constants";
 import { fetchTokenInfo } from "../../typescript/token/utils";
 import { Config } from "../types";
 
@@ -27,6 +32,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const USDTAddress = "0x2DCa96907fde857dd3D816880A0df407eeB2D2F2"; // Actually vbUSDT
   const AUSDAddress = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"; // Natively issued AUSD
   const yUSDAddress = "0x4772D2e014F9fC3a820C444e3313968e9a5C8121"; // YieldFi yUSD
+  const yvvbUSDCAddress = "0x80c34BD3A3569E126e7055831036aa7b212cB159"; // vbUSDC yVault
+  const yvvbUSDTAddress = "0x9A6bd7B6Fd5C4F87eb66356441502fc7dCdd185B"; // vbUSDT yVault
+  const yvvbETHAddress = "0xE007CA01894c863d7898045ed5A3B4Abf0b18f37"; // vbETH yVault
 
   const governanceSafeMultisig = "0xE83c188a7BE46B90715C757A06cF917175f30262"; // Official Safe on Katana
   // Safe configuration for governance multisig
@@ -153,7 +161,20 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
           compositeRedstoneOracleWrappersWithThresholding: {},
         },
-        chainlinkCompositeAggregator: {},
+        oracleWrapperAggregators: {
+          USDT: {
+            baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDT",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapperWithThresholding",
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
+            assets: [yvvbUSDCAddress], // Assets handled by USDT Morpho wrapper (yvvbUSDC/USDT)
+          },
+          USDC: {
+            baseWrapperDeploymentId: "MorphoChainlinkOracleV2Wrapper_USDC",
+            quoteWrapperDeploymentId: "USD_RedstoneChainlinkWrapperWithThresholding",
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for USD result
+            assets: [yvvbUSDTAddress], // Assets handled by USDC Morpho wrapper (yvvbUSDT/USDC)
+          },
+        },
       },
       ETH: {
         hardDStablePeg: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
@@ -171,6 +192,48 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
           redstoneOracleWrappersWithThresholding: {},
           compositeRedstoneOracleWrappersWithThresholding: {},
+        },
+        oracleWrapperAggregators: {},
+        erc4626OracleWrapper: {
+          [yvvbETHAddress]: {
+            vaultAddress: yvvbETHAddress,
+            vaultName: "yvvbETH",
+            initialMaxDeviation: 500, // 5% in basis points (matches contract default)
+            minShareSupply: ethers.parseEther("10"), // 10 yvvbETH minimum shares (~$20k minimum for donation attack protection)
+            underlyingAsset: wETHAddress, // The vault's underlying asset (WETH)
+            baseCurrencyUnit: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, // 1e18 for ETH (must match ETH OracleAggregator)
+          },
+        },
+      },
+      // Since Morpho based oracles are not always returned USD-denominated price, but based on the quote asset
+      // we need to set the baseCurrency and baseCurrencyUnit for the Morpho based oracles
+      MORPHO: {
+        priceDecimals: MORPHO_CHAINLINK_DATA_FEED_DECIMALS,
+        baseCurrency: ZeroAddress, // Dummy address to bypass type check, this is not used for Morpho oracles
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {},
+          compositeApi3OracleWrappersWithThresholding: {},
+        },
+        morphoOracleAssets: {
+          plainMorphoOracleWrappers: {
+            [yvvbUSDCAddress]: {
+              baseAsset: yvvbUSDCAddress,
+              quoteAsset: USDTAddress,
+              baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+              feed: "0x6d736e00AcD96032d8151b9989E61b5cF090c98c", // yvvbUSDC/USDT MorphoChainlinkOracleV2 address
+              vaultName: "yvvbUSDC",
+              expectedPriceRange: [0.8, 1.5] as [number, number], // Stablecoin-to-stablecoin expected range
+            },
+            [yvvbUSDTAddress]: {
+              baseAsset: yvvbUSDTAddress,
+              quoteAsset: USDCAddress,
+              baseCurrencyUnit: MORPHO_CHAINLINK_DATA_BASE_CURRENCY_UNIT,
+              feed: "0xD978CE03d8BB0eb3f09cB2a469DbbC25DB42F3Ae", // yvvbUSDT/USDC MorphoChainlinkOracleV2 address
+              vaultName: "yvvbUSDT",
+              expectedPriceRange: [0.8, 1.5] as [number, number], // Stablecoin-to-stablecoin expected range
+            },
+          },
         },
       },
     },

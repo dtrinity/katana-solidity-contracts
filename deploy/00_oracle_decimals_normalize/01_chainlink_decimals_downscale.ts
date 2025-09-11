@@ -2,8 +2,14 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 
 import { getConfig } from "../../config/networks/katana_mainnet";
+import { isMainnet } from "../../typescript/hardhat/deploy";
 
 const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  if (!isMainnet(hre.network.name)) {
+    console.warn("SKIPPING - should not deploy ChainlinkDecimalDownscaler on other networks than mainnet");
+    return;
+  }
+
   const { deployments, getNamedAccounts, ethers } = hre;
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
@@ -15,7 +21,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
 
   // Get yUSD feed address from config
   const yUSDAddress = config.tokenAddresses.yUSD;
-  const yUSDFeedAddress = config.oracleAggregators.USD.redstoneOracleAssets.plainRedstoneOracleWrappers[yUSDAddress];
+  const yUSDFeedAddress = config.oracleAggregators.USD?.redstoneOracleAssets?.plainRedstoneOracleWrappers[yUSDAddress];
 
   if (!yUSDFeedAddress) {
     throw new Error("yUSD Chainlink feed not found in configuration");

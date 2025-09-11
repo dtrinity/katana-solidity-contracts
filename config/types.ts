@@ -115,7 +115,7 @@ export interface WalletAddresses {
 
 export interface OracleAggregatorConfig {
   readonly priceDecimals: number;
-  readonly hardDStablePeg: bigint;
+  readonly hardDStablePeg?: bigint;
   readonly baseCurrency: string;
   readonly api3OracleAssets: {
     plainApi3OracleWrappers: {
@@ -140,7 +140,7 @@ export interface OracleAggregatorConfig {
       };
     };
   };
-  readonly redstoneOracleAssets: {
+  readonly redstoneOracleAssets?: {
     plainRedstoneOracleWrappers: {
       [key: string]: string;
     };
@@ -163,9 +163,48 @@ export interface OracleAggregatorConfig {
       };
     };
   };
+  readonly morphoOracleAssets?: MorphoOracleAssetsConfig;
   readonly chainlinkCompositeAggregator?: {
     [assetAddress: string]: ChainlinkCompositeAggregatorConfig;
   };
+  readonly oracleWrapperAggregators?: {
+    [groupName: string]: {
+      baseWrapperDeploymentId: string;
+      quoteWrapperDeploymentId: string;
+      baseCurrencyUnit: bigint; // Base currency unit (e.g., 1e18)
+      assets: string[]; // Asset addresses handled by this aggregator
+    };
+  };
+  readonly erc4626OracleWrapper?: {
+    [assetAddress: string]: {
+      vaultName: string;
+      vaultAddress: string;
+      initialMaxDeviation: number;
+      minShareSupply: bigint;
+      underlyingAsset: string;
+      baseCurrencyUnit: bigint;
+    };
+  };
+}
+
+// Morpho Oracle Configuration Types
+export interface MorphoOracleConfig {
+  readonly baseAsset: string;
+  readonly quoteAsset: string;
+  readonly baseCurrencyUnit: bigint;
+  readonly feed: string;
+  readonly vaultName?: string;
+  readonly expectedPriceRange?: [number, number];
+}
+
+export interface MorphoOracleAssetsConfig {
+  readonly plainMorphoOracleWrappers?: {
+    [assetAddress: string]: MorphoOracleConfig;
+  };
+}
+
+export interface MorphoConfig {
+  readonly morphoOracleAssets?: MorphoOracleAssetsConfig;
 }
 
 export interface IInterestRateStrategyParams {
