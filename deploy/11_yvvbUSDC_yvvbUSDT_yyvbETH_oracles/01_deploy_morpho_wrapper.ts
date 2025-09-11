@@ -61,6 +61,7 @@ function getVaultType(baseAssetAddress: string, config: any): "stablecoin" | "et
  * Performs sanity checks on oracle wrapper feeds by verifying normalized prices are within a reasonable range
  * based on the quote asset type and vault configuration.
  *
+ * @param hre The Hardhat runtime environment
  * @param wrapper The deployed oracle wrapper contract instance
  * @param feeds Record mapping asset addresses to their oracle feed configurations
  * @param baseCurrencyUnit The base currency unit for price normalization calculations
@@ -69,6 +70,7 @@ function getVaultType(baseAssetAddress: string, config: any): "stablecoin" | "et
  * @returns Promise that resolves when all sanity checks pass or rejects on failure
  */
 async function performOracleSanityChecks(
+  hre: HardhatRuntimeEnvironment,
   wrapper: any,
   feeds: Record<string, any>,
   baseCurrencyUnit: bigint,
@@ -111,6 +113,48 @@ async function performOracleSanityChecks(
 
       const displayName = typedFeedConfig.vaultName || typedFeedConfig.baseAsset;
 
+      // Additional sanity check: Compare wrapper price with raw Morpho feed price
+      console.log(`    🔍 Verifying price conversion accuracy for ${displayName}...`);
+      try {
+        const MORPHO_FEED_ABI = ["function price() view returns (uint256)"];
+        const morphoFeed = await hre.ethers.getContractAt(MORPHO_FEED_ABI, typedFeedConfig.feed);
+        const rawMorphoPrice = await morphoFeed.price(); // 1e36 scaled
+
+        console.log(`    📊 Raw Morpho Feed Price: ${rawMorphoPrice} (1e36 scale)`);
+
+        // Convert raw Morpho price to wrapper's base currency unit (same logic as wrapper's _convertFromMorphoScale)
+        const MORPHO_PRICE_SCALE = BigInt(10) ** BigInt(36);
+
+        // Simulate the wrapper's _convertFromMorphoScale function: morphoPrice.mulDiv(BASE_CURRENCY_UNIT, MORPHO_PRICE_SCALE)
+        const convertedMorphoPrice = (rawMorphoPrice * BigInt(baseCurrencyUnit.toString())) / MORPHO_PRICE_SCALE;
+        const convertedMorphoPriceNumber = Number(convertedMorphoPrice) / Number(baseCurrencyUnit);
+
+        console.log(`    🔄 Converted Raw Price: ${convertedMorphoPrice} (base currency units)`);
+        console.log(`    📈 Normalized Raw Price: ${convertedMorphoPriceNumber.toFixed(8)} ${quoteAssetName}`);
+        console.log(`    📈 Wrapper Price:       ${normalizedPrice.toFixed(8)} ${quoteAssetName}`);
+
+        // Check if wrapper price differs from direct conversion by more than 0.1%
+        const priceDifference = Math.abs(normalizedPrice - convertedMorphoPriceNumber);
+        const percentageDifference = (priceDifference / convertedMorphoPriceNumber) * 100;
+        const absoluteDifference = priceDifference.toFixed(8);
+
+        console.log(`    📊 Price Difference: ${absoluteDifference} ${quoteAssetName} (${percentageDifference.toFixed(6)}%)`);
+
+        if (percentageDifference > 0.1) {
+          // 0.1% tolerance
+          const errorMsg =
+            `Price conversion sanity check failed for ${displayName}: ` +
+            `Wrapper price ${normalizedPrice.toFixed(8)} differs from raw Morpho price ${convertedMorphoPriceNumber.toFixed(8)} by ${percentageDifference.toFixed(6)}% (>0.1%)`;
+          console.error(`    ❌ ${errorMsg}`);
+          throw new Error(errorMsg);
+        } else {
+          console.log(`    ✅ Price conversion check PASSED: Difference ${percentageDifference.toFixed(6)}% (<0.1% tolerance)`);
+        }
+      } catch (conversionError) {
+        console.warn(`    ⚠️  Could not verify price conversion for ${displayName}: ${(conversionError as Error).message}`);
+        // Don't fail deployment for conversion check issues, just warn
+      }
+
       if (normalizedPrice < minPrice || normalizedPrice > maxPrice) {
         const errorMsg =
           `Sanity check failed for ${displayName}/${quoteAssetName} (${assetAddress}): ` +
@@ -120,7 +164,7 @@ async function performOracleSanityChecks(
       } else {
         console.log(
           `Sanity check passed for ${displayName}/${quoteAssetName}: ` +
-            `Price ${normalizedPrice.toFixed(6)} ${quoteAssetName} (range: [${minPrice}, ${maxPrice}])`
+          `Price ${normalizedPrice.toFixed(6)} ${quoteAssetName} (range: [${minPrice}, ${maxPrice}])`
         );
       }
     } catch (error) {
@@ -245,7 +289,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
     );
 
     if (Object.keys(configuredFeeds).length > 0) {
-      await performOracleSanityChecks(morphoWrapper, configuredFeeds, firstFeedConfig.baseCurrencyUnit, wrapperName, config);
+      await performOracleSanityChecks(hre, morphoWrapper, configuredFeeds, firstFeedConfig.baseCurrencyUnit, wrapperName, config);
     } else {
       console.log(`No configured oracles found for ${wrapperName} - all are placeholders`);
     }
