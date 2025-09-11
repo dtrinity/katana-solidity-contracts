@@ -94,8 +94,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
   return true;
 };
 
-func.tags = ["erc4626-oracle", "oracle-aggregator", "oracle-wrapper"];
-func.dependencies = ["deploy-morpho-wrappers"];
-func.id = "deploy-erc4626-wrappers";
+func.tags = ["erc4626-oracle", "oracle-aggregator", "oracle-wrapper", "yvvbETH"];
+func.dependencies = [];
+func.id = "deploy-yvvbETH-erc4626-wrappers";
 
 export default func;
