@@ -21,8 +21,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const wstETHAddress = "0x7Fb4D0f51544F24F385a421Db6e7D4fC71Ad8e5C"; // Wrapped Lido Staked ETH
   const weETHAddress = "0x9893989433e7a383Cb313953e4c2365107dc19a7"; // Wrapped eETH
 
-  const frxUSDAddress = "0xFB55A212Dd6187bc4B088a79F7ab9d1aeA86E50e"; // Frax USD
-  const sfrxUSDAddress = "0xBA2F8EA0A9e790ffC982F7241bEc17af949C71b3"; // Staked Frax USD
+  const frxUSDAddress = "0x80Eede496655FB9047dd39d9f418d5483ED600df"; // Frax USD from LayerZero
+  const sfrxUSDAddress = "0x5Bff88cA1442c2496f7E475E9e7786383Bc070c0"; // Staked Frax USD from LayerZero
   const USDCAddress = "0x203A662b0BD271A6ed5a60EdFbd04bFce608FD36"; // Actually vbUSDC
   const USDTAddress = "0x2DCa96907fde857dd3D816880A0df407eeB2D2F2"; // Actually vbUSDT
   const AUSDAddress = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a"; // Natively issued AUSD
@@ -132,7 +132,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
-            [yUSDAddress]: "0x951Ed02C90A0185575Dc82e94088b9d3016b7263", // Our yUSD/USD ChainlinkDecimalDownscaler feed to convert 18 decimals to 8 decimals
+            [yUSDAddress]: "0x41cBecc9eC9f142437323B4899e01B8c6D5B9D70", // Our yUSD/USD ChainlinkDecimalDownscaler feed to convert 18 decimals to 8 decimals
           },
           redstoneOracleWrappersWithThresholding: {
             [USDCAddress]: {

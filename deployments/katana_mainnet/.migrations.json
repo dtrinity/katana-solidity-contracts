@@ -12,5 +12,19 @@
   "dETH_IssuerV2": 1757051709,
   "dETH_Redeemer": 1757051748,
   "deth-whitelist-collateral": 1757051757,
-  "dUSD": 1757051768
+  "dUSD": 1757051768,
+  "setup-usd-redstone-oracle-wrappers": 1757666591,
+  "usd_yusd_chainlink_decimal_downscaler": 1757669696,
+  "setup-usd-api3-oracle-wrappers": 1757744004,
+  "deploy-usd-oracle-aggregator": 1757744010,
+  "point-usd-aggregator-to-api3-wrappers": 1757744019,
+  "point-usd-aggregator-to-redstone-wrappers": 1757744034,
+  "dUSD_HardPegOracleWrapper": 1757744043,
+  "dUSD_CollateralHolderVault": 1757744049,
+  "dUSD_AmoManager": 1757744055,
+  "dUSD_IssuerV2": 1757744109,
+  "dUSD_Redeemer": 1757744149,
+  "dusd-whitelist-collateral": 1757744177,
+  "point-usd-oracle-aggregator-for-usd": 1757744181,
+  "dstake_dlend_rewards": 1757744181
 }

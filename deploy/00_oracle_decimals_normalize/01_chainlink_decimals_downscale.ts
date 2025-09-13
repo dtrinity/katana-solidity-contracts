@@ -3,9 +3,9 @@ import { DeployFunction } from "hardhat-deploy/types";
 
 import { getConfig } from "../../config/networks/katana_mainnet";
 
-const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Promise<boolean> {
   const { deployments, getNamedAccounts, ethers } = hre;
-  const { deploy } = deployments;
+  const { deploy, getOrNull } = deployments;
   const { deployer } = await getNamedAccounts();
 
   console.log("🚀 Deploying ChainlinkDecimalDownscaler for yUSD feed...");
@@ -27,6 +27,25 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
   // Deploy ChainlinkDecimalDownscaler to convert 18 -> 8 decimals
   const TARGET_DECIMALS = 8;
 
+  // If the source feed already has the desired decimals, skip deployment entirely
+  try {
+    const sourceFeed = await ethers.getContractAt("AggregatorV3Interface", yUSDFeedAddress);
+    const sourceDecimals = await sourceFeed.decimals();
+    if (Number(sourceDecimals) === TARGET_DECIMALS) {
+      console.log(`♻️  Source feed already at target decimals (${TARGET_DECIMALS}). Skipping downscaler deployment.`);
+      return true;
+    }
+  } catch (e) {
+    console.log(`⚠️  Could not read source feed decimals at ${yUSDFeedAddress}, continuing with deployment: ${e}`);
+  }
+
+  // If already deployed, reuse and exit
+  const existing = await getOrNull("ChainlinkDecimalDownscaler_yUSD");
+  if (existing?.address) {
+    console.log(`♻️  Reusing existing ChainlinkDecimalDownscaler at: ${existing.address}`);
+    return true;
+  }
+
   const chainlinkDecimalDownscaler = await deploy("ChainlinkDecimalDownscaler_yUSD", {
     contract: "ChainlinkDecimalDownscaler",
     from: deployer,
@@ -35,6 +54,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
       TARGET_DECIMALS, // target decimals (8 decimals)
     ],
     log: true,
+    skipIfAlreadyDeployed: true,
     deterministicDeployment: false,
   });
 
@@ -70,8 +90,10 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
   console.log(`   • This downscaler converts 18 decimals -> 8 decimals automatically`);
   console.log(`   • Original feed: ${yUSDFeedAddress} (18 decimals)`);
   console.log(`   • Downscaled feed: ${chainlinkDecimalDownscaler.address} (8 decimals)`);
+  return true;
 };
 
 export default deployChainlinkDecimalDownscaler;
 deployChainlinkDecimalDownscaler.tags = ["ChainlinkDecimalDownscaler", "yUSD", "Oracle", "Decimals"];
 deployChainlinkDecimalDownscaler.dependencies = [];
+deployChainlinkDecimalDownscaler.id = "usd_yusd_chainlink_decimal_downscaler";
