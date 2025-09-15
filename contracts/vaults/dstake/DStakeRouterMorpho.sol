@@ -255,8 +255,14 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @param fromVault Address of the vault to withdraw from
    * @param toVault Address of the vault to deposit to
    * @param amount Amount of dStable equivalent to exchange
+   * @param minToVaultAssetAmount Minimum amount of target vault asset to accept (slippage protection)
    */
-  function exchangeCollateral(address fromVault, address toVault, uint256 amount) external onlyRole(COLLATERAL_EXCHANGER_ROLE) {
+  function exchangeCollateral(
+    address fromVault,
+    address toVault,
+    uint256 amount,
+    uint256 minToVaultAssetAmount
+  ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) nonReentrant {
     if (amount == 0) revert InvalidAmount();
     if (fromVault == toVault) revert InvalidVaultConfig();
 
@@ -282,12 +288,7 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     uint256 requiredVaultAssetAmount = IERC4626(fromVault).previewWithdraw(amount);
 
     // Execute the exchange using the parent contract's function
-    this.exchangeAssetsUsingAdapters(
-      fromVault,
-      toVault,
-      requiredVaultAssetAmount,
-      0 // TODO: Consider adding slippage protection with minToVaultAssetAmount
-    );
+    this.exchangeAssetsUsingAdapters(fromVault, toVault, requiredVaultAssetAmount, minToVaultAssetAmount);
 
     emit CollateralExchanged(fromVault, toVault, amount, msg.sender);
   }
@@ -331,6 +332,9 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   /**
    * @notice Updates an existing vault configuration
    * @dev Only callable by admin role. Does not validate total allocations - use validateTotalAllocations() if needed
+   *      WARNING: This function can temporarily leave total allocations != 100%, which may affect
+   *      deposit/withdrawal behavior until all vault configurations are properly aligned.
+   *      Consider using setVaultConfigs() for atomic updates of all vaults.
    * @param vault Address of the vault to update
    * @param adapter New adapter address
    * @param targetBps New target allocation in basis points
@@ -785,6 +789,9 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
       // Convert dStable to vault asset through adapter
       (, uint256 convertedAmount) = adapter.convertToVaultAsset(depositAmounts[i]);
 
+      // Clear any remaining allowance after conversion for security
+      IERC20(dStable).forceApprove(config.adapter, 0);
+
       // Verify the shares were sent to collateralVault
       uint256 afterBal = IERC20(selectedVaults[i]).balanceOf(address(collateralVault));
       uint256 actualShares = afterBal - beforeBal;
@@ -832,6 +839,10 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
       // Convert to dStable
       uint256 receivedDStable = adapter.convertFromVaultAsset(vaultAssetAmount);
+
+      // Clear any remaining allowance after conversion for security
+      IERC20(selectedVaults[i]).forceApprove(config.adapter, 0);
+
       totalReceived += receivedDStable;
     }
 
