@@ -101,7 +101,6 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
   event WeightedDeposit(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount, uint256 randomSeed);
   event WeightedWithdrawal(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount, uint256 randomSeed);
   event CollateralExchanged(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
-  event AllocationSnapshot(address[] vaults, uint256[] currentAllocations, uint256[] targetAllocations, uint256 totalBalance);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
   event MaxVaultsPerOperationUpdated(uint256 oldCount, uint256 newCount);
 
@@ -151,8 +150,44 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
       selectCount
     );
 
-    // Split deposit amount evenly among selected vaults
-    uint256[] memory depositAmounts = AllocationCalculator.splitAmountEvenly(dStableAmount, selectedVaults.length);
+    // Split deposit amount proportionally based on underallocations
+    uint256[] memory selectedTargetAllocations = new uint256[](selectedVaults.length);
+    uint256[] memory selectedCurrentAllocations = new uint256[](selectedVaults.length);
+    uint256[] memory underallocations = new uint256[](selectedVaults.length);
+
+    // Extract allocations for selected vaults
+    for (uint256 i = 0; i < selectedVaults.length; i++) {
+      for (uint256 j = 0; j < activeVaults.length; j++) {
+        if (selectedVaults[i] == activeVaults[j]) {
+          selectedTargetAllocations[i] = targetAllocations[j];
+          selectedCurrentAllocations[i] = currentAllocations[j];
+          if (targetAllocations[j] > currentAllocations[j]) {
+            underallocations[i] = targetAllocations[j] - currentAllocations[j];
+          }
+          break;
+        }
+      }
+    }
+
+    // Use proportional split based on underallocations
+    (uint256[] memory depositAmounts, uint256 remainder) = AllocationCalculator.splitAmountProportionally(dStableAmount, underallocations);
+
+    // Distribute any remainder
+    if (remainder > 0) {
+      depositAmounts = AllocationCalculator.distributeRemainder(depositAmounts, dStableAmount, underallocations, remainder);
+    }
+
+    // Fallback to even split if all underallocations are zero
+    bool allZero = true;
+    for (uint256 i = 0; i < underallocations.length; i++) {
+      if (underallocations[i] > 0) {
+        allZero = false;
+        break;
+      }
+    }
+    if (allZero) {
+      depositAmounts = AllocationCalculator.splitAmountEvenly(dStableAmount, selectedVaults.length);
+    }
 
     // Execute deposits to selected vaults
     _executeMultiVaultDeposits(selectedVaults, depositAmounts, dStableAmount);
@@ -196,10 +231,17 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     );
 
     // Calculate withdrawal amounts proportionally based on available liquidity
-    uint256[] memory withdrawalAmounts = _calculateWithdrawalAmounts(selectedVaults, selectedIndices, dStableAmount);
+    (uint256[] memory withdrawalAmounts, uint256 totalUsed) = _calculateWithdrawalAmounts(
+      selectedVaults,
+      selectedIndices,
+      dStableAmount,
+      activeVaults,
+      currentAllocations,
+      targetAllocations
+    );
 
-    // Execute withdrawals from selected vaults
-    _executeMultiVaultWithdrawals(selectedVaults, withdrawalAmounts, dStableAmount, receiver);
+    // Execute withdrawals from selected vaults using calculated amounts
+    _executeMultiVaultWithdrawals(selectedVaults, withdrawalAmounts, totalUsed, receiver);
 
     emit WeightedWithdrawal(selectedVaults, withdrawalAmounts, dStableAmount, 0);
     // Note: owner parameter not emitted to avoid stack too deep
@@ -213,8 +255,14 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @param fromVault Address of the vault to withdraw from
    * @param toVault Address of the vault to deposit to
    * @param amount Amount of dStable equivalent to exchange
+   * @param minToVaultAssetAmount Minimum amount of target vault asset to accept (slippage protection)
    */
-  function exchangeCollateral(address fromVault, address toVault, uint256 amount) external onlyRole(COLLATERAL_EXCHANGER_ROLE) {
+  function exchangeCollateral(
+    address fromVault,
+    address toVault,
+    uint256 amount,
+    uint256 minToVaultAssetAmount
+  ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) nonReentrant {
     if (amount == 0) revert InvalidAmount();
     if (fromVault == toVault) revert InvalidVaultConfig();
 
@@ -236,23 +284,11 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     }
 
     // Use the existing exchangeAssetsUsingAdapters function
-    // First, we need to determine how much vault asset to exchange
-    IDStableConversionAdapter fromAdapter = IDStableConversionAdapter(fromConfig.adapter);
-
-    // Preview how much vault asset we need to get the desired dStable amount
-    (address expectedFromAsset, uint256 requiredVaultAssetAmount) = fromAdapter.previewConvertToVaultAsset(amount);
-
-    if (expectedFromAsset != fromVault) {
-      revert AdapterAssetMismatch(fromConfig.adapter, fromVault, expectedFromAsset);
-    }
+    // Calculate required shares for withdrawal (not deposit)
+    uint256 requiredVaultAssetAmount = IERC4626(fromVault).previewWithdraw(amount);
 
     // Execute the exchange using the parent contract's function
-    this.exchangeAssetsUsingAdapters(
-      fromVault,
-      toVault,
-      requiredVaultAssetAmount,
-      0 // No minimum - we trust the calculation
-    );
+    this.exchangeAssetsUsingAdapters(fromVault, toVault, requiredVaultAssetAmount, minToVaultAssetAmount);
 
     emit CollateralExchanged(fromVault, toVault, amount, msg.sender);
   }
@@ -295,7 +331,10 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
   /**
    * @notice Updates an existing vault configuration
-   * @dev Only callable by admin role
+   * @dev Only callable by admin role. Does not validate total allocations - use validateTotalAllocations() if needed
+   *      WARNING: This function can temporarily leave total allocations != 100%, which may affect
+   *      deposit/withdrawal behavior until all vault configurations are properly aligned.
+   *      Consider using setVaultConfigs() for atomic updates of all vaults.
    * @param vault Address of the vault to update
    * @param adapter New adapter address
    * @param targetBps New target allocation in basis points
@@ -319,6 +358,21 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     }
 
     emit VaultConfigUpdated(vault, adapter, targetBps, isActive);
+  }
+
+  /**
+   * @notice Validates that total target allocations sum to 100%
+   * @dev Can be called after multiple updateVaultConfig calls to ensure consistency
+   * @return isValid True if total allocations equal BasisPointConstants.ONE_HUNDRED_PERCENT_BPS
+   * @return totalBps Current total of all target allocations
+   */
+  function validateTotalAllocations() external view returns (bool isValid, uint256 totalBps) {
+    totalBps = 0;
+    for (uint256 i = 0; i < vaultConfigs.length; i++) {
+      totalBps += vaultConfigs[i].targetBps;
+    }
+    isValid = (totalBps == BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+    return (isValid, totalBps);
   }
 
   /**
@@ -624,10 +678,16 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @return balance Current balance in dStable equivalent
    */
   function _getVaultBalance(address vault) internal view returns (uint256 balance) {
+    return _getVaultBalanceWithAdapter(vault, address(0));
+  }
+
+  function _getVaultBalanceWithAdapter(address vault, address adapter) internal view returns (uint256 balance) {
     try IERC20(vault).balanceOf(address(collateralVault)) returns (uint256 shares) {
       if (shares == 0) return 0;
 
-      address adapter = this.vaultAssetToAdapter(vault);
+      if (adapter == address(0)) {
+        adapter = this.vaultAssetToAdapter(vault);
+      }
       if (adapter == address(0)) return 0;
 
       try IDStableConversionAdapter(adapter).assetValueInDStable(vault, shares) returns (uint256 value) {
@@ -729,6 +789,9 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
       // Convert dStable to vault asset through adapter
       (, uint256 convertedAmount) = adapter.convertToVaultAsset(depositAmounts[i]);
 
+      // Clear any remaining allowance after conversion for security
+      IERC20(dStable).forceApprove(config.adapter, 0);
+
       // Verify the shares were sent to collateralVault
       uint256 afterBal = IERC20(selectedVaults[i]).balanceOf(address(collateralVault));
       uint256 actualShares = afterBal - beforeBal;
@@ -776,6 +839,10 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
 
       // Convert to dStable
       uint256 receivedDStable = adapter.convertFromVaultAsset(vaultAssetAmount);
+
+      // Clear any remaining allowance after conversion for security
+      IERC20(selectedVaults[i]).forceApprove(config.adapter, 0);
+
       totalReceived += receivedDStable;
     }
 
@@ -804,42 +871,217 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
    * @param selectedVaults Array of selected vault addresses
    * @param selectedIndices Array of indices in the original active vaults array
    * @param totalAmount Total amount to withdraw
+   * @param activeVaults Array of all active vault addresses
+   * @param currentAllocations Current allocations of all active vaults
+   * @param targetAllocations Target allocations of all active vaults
    * @return withdrawalAmounts Array of amounts to withdraw from each vault
+   * @return totalUsed Actual total amount that will be withdrawn
    */
   function _calculateWithdrawalAmounts(
     address[] memory selectedVaults,
     uint256[] memory selectedIndices,
-    uint256 totalAmount
-  ) internal view returns (uint256[] memory withdrawalAmounts) {
+    uint256 totalAmount,
+    address[] memory activeVaults,
+    uint256[] memory currentAllocations,
+    uint256[] memory targetAllocations
+  ) internal view returns (uint256[] memory withdrawalAmounts, uint256 totalUsed) {
     // Get available liquidity from each selected vault
     uint256[] memory availableLiquidity = new uint256[](selectedVaults.length);
-    uint256 totalLiquidity = 0;
+    uint256 totalSelectedLiquidity = 0;
 
     for (uint256 i = 0; i < selectedVaults.length; i++) {
       uint256 vaultShares = IERC20(selectedVaults[i]).balanceOf(address(collateralVault));
       if (vaultShares > 0) {
         try IERC4626(selectedVaults[i]).previewRedeem(vaultShares) returns (uint256 assets) {
           availableLiquidity[i] = assets;
-          totalLiquidity += assets;
+          totalSelectedLiquidity += assets;
         } catch {
           availableLiquidity[i] = 0;
         }
       }
     }
 
-    if (totalLiquidity == 0) {
+    if (totalSelectedLiquidity == 0) {
       revert NoLiquidityAvailable();
     }
 
-    // If total requested is more than available, scale down proportionally
-    if (totalAmount > totalLiquidity) {
-      totalAmount = totalLiquidity;
+    // Check if selected vaults have enough liquidity
+    if (totalAmount <= totalSelectedLiquidity) {
+      // Selected vaults have enough liquidity
+      uint256 remainder;
+      (withdrawalAmounts, remainder) = AllocationCalculator.splitAmountProportionally(totalAmount, availableLiquidity);
+
+      // Distribute remainder to guarantee exact amount
+      if (remainder > 0) {
+        withdrawalAmounts = AllocationCalculator.distributeRemainder(withdrawalAmounts, totalAmount, availableLiquidity, remainder);
+      }
+
+      totalUsed = totalAmount;
+    } else {
+      // Selected vaults don't have enough liquidity - try to select additional overallocated vaults
+      uint256 additionalNeeded = totalAmount - totalSelectedLiquidity;
+
+      // Find additional overallocated vaults that can provide more liquidity
+      uint256 additionalVaultsNeeded = maxVaultsPerOperation - selectedVaults.length;
+
+      if (additionalVaultsNeeded > 0) {
+        // Get all active vaults not already selected
+        address[] memory remainingVaults = new address[](activeVaults.length);
+        uint256[] memory remainingAllocations = new uint256[](activeVaults.length);
+        uint256[] memory remainingTargets = new uint256[](activeVaults.length);
+        uint256 remainingCount = 0;
+
+        for (uint256 i = 0; i < activeVaults.length; i++) {
+          bool alreadySelected = false;
+          for (uint256 j = 0; j < selectedVaults.length; j++) {
+            if (activeVaults[i] == selectedVaults[j]) {
+              alreadySelected = true;
+              break;
+            }
+          }
+
+          if (!alreadySelected) {
+            remainingVaults[remainingCount] = activeVaults[i];
+            remainingAllocations[remainingCount] = currentAllocations[i];
+            remainingTargets[remainingCount] = targetAllocations[i];
+            remainingCount++;
+          }
+        }
+
+        // Select additional overallocated vaults if any exist
+        if (remainingCount > 0) {
+          // Resize arrays to actual count
+          address[] memory trimmedRemainingVaults = new address[](remainingCount);
+          uint256[] memory trimmedRemainingAllocations = new uint256[](remainingCount);
+          uint256[] memory trimmedRemainingTargets = new uint256[](remainingCount);
+
+          for (uint256 i = 0; i < remainingCount; i++) {
+            trimmedRemainingVaults[i] = remainingVaults[i];
+            trimmedRemainingAllocations[i] = remainingAllocations[i];
+            trimmedRemainingTargets[i] = remainingTargets[i];
+          }
+
+          uint256 selectAdditional = additionalVaultsNeeded > remainingCount ? remainingCount : additionalVaultsNeeded;
+
+          (address[] memory additionalVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
+            trimmedRemainingVaults,
+            trimmedRemainingAllocations,
+            trimmedRemainingTargets,
+            selectAdditional
+          );
+
+          // Calculate additional liquidity from these vaults
+          uint256 additionalLiquidity = 0;
+          for (uint256 i = 0; i < additionalVaults.length; i++) {
+            uint256 vaultShares = IERC20(additionalVaults[i]).balanceOf(address(collateralVault));
+            if (vaultShares > 0) {
+              try IERC4626(additionalVaults[i]).previewRedeem(vaultShares) returns (uint256 assets) {
+                additionalLiquidity += assets;
+              } catch {
+                // Ignore vaults that can't be redeemed
+              }
+            }
+          }
+
+          // If we can get closer to the target amount with additional vaults
+          if (additionalLiquidity > 0) {
+            uint256 totalAvailableLiquidity = totalSelectedLiquidity + additionalLiquidity;
+
+            if (totalAmount <= totalAvailableLiquidity) {
+              // We can fulfill the full request
+              totalUsed = totalAmount;
+            } else {
+              // Use all available liquidity
+              totalUsed = totalAvailableLiquidity;
+            }
+
+            // Since we're changing vault selection, fall back to proportional distribution
+            // based on selected vault liquidity only (this is a simplified approach)
+            uint256 remainder2;
+            (withdrawalAmounts, remainder2) = AllocationCalculator.splitAmountProportionally(
+              totalUsed > totalSelectedLiquidity ? totalSelectedLiquidity : totalUsed,
+              availableLiquidity
+            );
+
+            if (remainder2 > 0) {
+              withdrawalAmounts = AllocationCalculator.distributeRemainder(
+                withdrawalAmounts,
+                totalUsed > totalSelectedLiquidity ? totalSelectedLiquidity : totalUsed,
+                availableLiquidity,
+                remainder2
+              );
+            }
+          } else {
+            // No additional liquidity available, use what we have
+            uint256 remainder3;
+            (withdrawalAmounts, remainder3) = AllocationCalculator.splitAmountProportionally(totalSelectedLiquidity, availableLiquidity);
+
+            if (remainder3 > 0) {
+              withdrawalAmounts = AllocationCalculator.distributeRemainder(
+                withdrawalAmounts,
+                totalSelectedLiquidity,
+                availableLiquidity,
+                remainder3
+              );
+            }
+
+            totalUsed = totalSelectedLiquidity;
+          }
+        } else {
+          // No additional vaults available, use what we have
+          uint256 remainder4;
+          (withdrawalAmounts, remainder4) = AllocationCalculator.splitAmountProportionally(totalSelectedLiquidity, availableLiquidity);
+
+          if (remainder4 > 0) {
+            withdrawalAmounts = AllocationCalculator.distributeRemainder(
+              withdrawalAmounts,
+              totalSelectedLiquidity,
+              availableLiquidity,
+              remainder4
+            );
+          }
+
+          totalUsed = totalSelectedLiquidity;
+        }
+      } else {
+        // No additional vaults can be selected, use available liquidity
+        uint256 remainder5;
+        (withdrawalAmounts, remainder5) = AllocationCalculator.splitAmountProportionally(totalSelectedLiquidity, availableLiquidity);
+
+        if (remainder5 > 0) {
+          withdrawalAmounts = AllocationCalculator.distributeRemainder(
+            withdrawalAmounts,
+            totalSelectedLiquidity,
+            availableLiquidity,
+            remainder5
+          );
+        }
+
+        totalUsed = totalSelectedLiquidity;
+      }
     }
 
-    // Distribute withdrawal amounts proportionally based on available liquidity
-    (withdrawalAmounts, ) = AllocationCalculator.splitAmountProportionally(totalAmount, availableLiquidity);
+    // Final check: if we can't provide sufficient liquidity across all active vaults, revert
+    if (totalUsed < totalAmount) {
+      // Check total liquidity across all active vaults
+      uint256 totalSystemLiquidity = 0;
+      for (uint256 i = 0; i < activeVaults.length; i++) {
+        uint256 vaultShares = IERC20(activeVaults[i]).balanceOf(address(collateralVault));
+        if (vaultShares > 0) {
+          try IERC4626(activeVaults[i]).previewRedeem(vaultShares) returns (uint256 assets) {
+            totalSystemLiquidity += assets;
+          } catch {
+            // Ignore vaults that can't be redeemed
+          }
+        }
+      }
 
-    return withdrawalAmounts;
+      if (totalSystemLiquidity < totalAmount) {
+        revert NoLiquidityAvailable();
+      }
+    }
+
+    return (withdrawalAmounts, totalUsed);
   }
 
   /**

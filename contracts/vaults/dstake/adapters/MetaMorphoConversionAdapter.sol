@@ -68,9 +68,10 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
    * @param _dStable The address of the dSTABLE asset (e.g., dUSD)
    * @param _metaMorphoVault The address of the MetaMorpho vault (must be ERC4626)
    * @param _collateralVault The address of the DStakeCollateralVault
+   * @param _initialAdmin The initial admin address (will be transferred to governance later)
    */
-  constructor(address _dStable, address _metaMorphoVault, address _collateralVault) {
-    if (_dStable == address(0) || _metaMorphoVault == address(0) || _collateralVault == address(0)) {
+  constructor(address _dStable, address _metaMorphoVault, address _collateralVault, address _initialAdmin) {
+    if (_dStable == address(0) || _metaMorphoVault == address(0) || _collateralVault == address(0) || _initialAdmin == address(0)) {
       revert ZeroAddress();
     }
 
@@ -78,7 +79,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     metaMorphoVault = IERC4626(_metaMorphoVault);
     collateralVault = _collateralVault;
 
-    // Initialize access control - grant admin role to collateral vault
+    // Initialize access control - grant admin role to both initial admin and collateral vault
+    _grantRole(DEFAULT_ADMIN_ROLE, _initialAdmin);
     _grantRole(DEFAULT_ADMIN_ROLE, _collateralVault);
 
     // Initialize slippage to 1% (backward compatibility)
