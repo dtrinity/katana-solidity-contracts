@@ -25,7 +25,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const adapterDUSD = await deploy("MetaMorphoConversionAdapter_dUSD", {
     from: deployer,
     contract: "MetaMorphoConversionAdapter",
-    args: [dusd.address, mockMetaMorphoVaultdUSD.address, sdUSDCollateralVault.address],
+    args: [dusd.address, mockMetaMorphoVaultdUSD.address, sdUSDCollateralVault.address, deployer],
     log: true,
   });
 
@@ -65,7 +65,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const adapterDETH = await deploy("MetaMorphoConversionAdapter_dETH", {
     from: deployer,
     contract: "MetaMorphoConversionAdapter",
-    args: [deth.address, mockMetaMorphoVaultdETH.address, sdETHCollateralVault.address],
+    args: [deth.address, mockMetaMorphoVaultdETH.address, sdETHCollateralVault.address, deployer],
     log: true,
   });
 
