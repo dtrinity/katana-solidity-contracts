@@ -278,23 +278,15 @@ contract DStakeRouterMorpho is DStakeRouter, ReentrancyGuard, Pausable {
     }
 
     // Use the existing exchangeAssetsUsingAdapters function
-    // First, we need to determine how much vault asset to exchange
-    IDStableConversionAdapter fromAdapter = IDStableConversionAdapter(fromConfig.adapter);
-
     // Calculate required shares for withdrawal (not deposit)
     uint256 requiredVaultAssetAmount = IERC4626(fromVault).previewWithdraw(amount);
-    address expectedFromAsset = fromVault;
-
-    if (expectedFromAsset != fromVault) {
-      revert AdapterAssetMismatch(fromConfig.adapter, fromVault, expectedFromAsset);
-    }
 
     // Execute the exchange using the parent contract's function
     this.exchangeAssetsUsingAdapters(
       fromVault,
       toVault,
       requiredVaultAssetAmount,
-      0 // No minimum - we trust the calculation
+      0 // TODO: Consider adding slippage protection with minToVaultAssetAmount
     );
 
     emit CollateralExchanged(fromVault, toVault, amount, msg.sender);
