@@ -36,4 +36,40 @@ interface IDStakeRouter {
    * @param minToVaultAssetAmount The minimum amount of toVault assets expected.
    */
   function exchangeCollateral(address fromVault, address toVault, uint256 amount, uint256 minToVaultAssetAmount) external;
+
+  /**
+   * @notice Solver-facing deposit method using asset amounts
+   * @dev Called by DStakeToken solver methods to deposit into multiple vaults using asset amounts
+   * @param vaults Array of vault addresses to deposit into
+   * @param assets Array of asset amounts to deposit into each vault
+   */
+  function solverDepositAssets(address[] calldata vaults, uint256[] calldata assets) external;
+
+  /**
+   * @notice Solver-facing deposit method using share amounts
+   * @dev Called by DStakeToken solver methods to deposit into multiple vaults using share amounts
+   * @param vaults Array of vault addresses to deposit into
+   * @param shares Array of share amounts to deposit into each vault
+   */
+  function solverDepositShares(address[] calldata vaults, uint256[] calldata shares) external;
+
+  /**
+   * @notice Solver-facing withdrawal method using asset amounts
+   * @dev Called by DStakeToken solver methods to withdraw from multiple vaults using asset amounts
+   * @param vaults Array of vault addresses to withdraw from
+   * @param assets Array of asset amounts to withdraw from each vault
+   * @param receiver The address that will receive the withdrawn dStable asset
+   * @param owner The original owner initiating the withdrawal
+   */
+  function solverWithdrawAssets(address[] calldata vaults, uint256[] calldata assets, address receiver, address owner) external;
+
+  /**
+   * @notice Solver-facing withdrawal method using share amounts
+   * @dev Called by DStakeToken solver methods to withdraw from multiple vaults using share amounts
+   * @param vaults Array of vault addresses to withdraw from
+   * @param shares Array of share amounts to withdraw from each vault
+   * @param receiver The address that will receive the withdrawn dStable asset
+   * @param owner The original owner initiating the withdrawal
+   */
+  function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares, address receiver, address owner) external;
 }

@@ -6,6 +6,7 @@ import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ER
 import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IDStakeCollateralVault } from "./interfaces/IDStakeCollateralVault.sol";
 import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
@@ -249,6 +250,251 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
     uint256 grossAssets = super.previewRedeem(shares);
     return _getNetAmountAfterFee(grossAssets);
+  }
+
+  // --- Solver-Facing Methods ---
+
+  /**
+   * @notice Solver-facing deposit method using asset amounts
+   * @dev Allows solvers to deposit into specific vaults using asset amounts
+   * @param vaults Array of vault addresses to deposit into
+   * @param assets Array of asset amounts to deposit into each vault
+   * @param minShares Minimum dSTAKE shares to mint (slippage protection)
+   * @param receiver Address to receive the minted dSTAKE shares
+   * @return shares The amount of dSTAKE shares minted
+   */
+  function solverDepositAssets(
+    address[] calldata vaults,
+    uint256[] calldata assets,
+    uint256 minShares,
+    address receiver
+  ) public virtual returns (uint256 shares) {
+    // Calculate total assets
+    uint256 totalAssetAmount = 0;
+    for (uint256 i = 0; i < assets.length; i++) {
+      totalAssetAmount += assets[i];
+    }
+
+    if (totalAssetAmount == 0) {
+      revert ZeroShares();
+    }
+
+    // Preview shares to be minted based on total assets
+    shares = previewDeposit(totalAssetAmount);
+    if (shares < minShares) {
+      revert ERC4626ExceedsMaxWithdraw(shares, minShares); // Reusing error for slippage check
+    }
+
+    if (address(router) == address(0)) {
+      revert ZeroAddress();
+    }
+
+    // Pull assets from caller
+    IERC20(asset()).safeTransferFrom(_msgSender(), address(this), totalAssetAmount);
+
+    // Approve router to spend the assets
+    IERC20(asset()).forceApprove(address(router), totalAssetAmount);
+
+    // Delegate to router's solver deposit method
+    router.solverDepositAssets(vaults, assets);
+
+    // Mint shares to receiver
+    _mint(receiver, shares);
+
+    // Emit ERC4626 Deposit event
+    emit Deposit(_msgSender(), receiver, totalAssetAmount, shares);
+
+    return shares;
+  }
+
+  /**
+   * @notice Solver-facing deposit method using share amounts
+   * @dev Allows solvers to deposit into specific vaults using share amounts
+   * @param vaults Array of vault addresses to deposit into
+   * @param shares Array of share amounts to deposit into each vault
+   * @param minShares Minimum dSTAKE shares to mint (slippage protection)
+   * @param receiver Address to receive the minted dSTAKE shares
+   * @return totalShares The amount of dSTAKE shares minted
+   */
+  function solverDepositShares(
+    address[] calldata vaults,
+    uint256[] calldata shares,
+    uint256 minShares,
+    address receiver
+  ) public virtual returns (uint256 totalShares) {
+    // Calculate total assets by converting vault shares to asset amounts
+    uint256 totalAssetAmount = 0;
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (shares[i] > 0) {
+        // Use the vault's previewMint to convert shares to assets
+        uint256 assetAmount = IERC4626(vaults[i]).previewMint(shares[i]);
+        totalAssetAmount += assetAmount;
+      }
+    }
+
+    if (totalAssetAmount == 0) {
+      revert ZeroShares();
+    }
+
+    // Preview dSTAKE shares to be minted based on total assets
+    totalShares = previewDeposit(totalAssetAmount);
+    if (totalShares < minShares) {
+      revert ERC4626ExceedsMaxWithdraw(totalShares, minShares); // Reusing error for slippage check
+    }
+
+    if (address(router) == address(0)) {
+      revert ZeroAddress();
+    }
+
+    // Pull assets from caller
+    IERC20(asset()).safeTransferFrom(_msgSender(), address(this), totalAssetAmount);
+
+    // Approve router to spend the assets
+    IERC20(asset()).forceApprove(address(router), totalAssetAmount);
+
+    // Delegate to router's solver deposit method
+    router.solverDepositShares(vaults, shares);
+
+    // Mint dSTAKE shares to receiver
+    _mint(receiver, totalShares);
+
+    // Emit ERC4626 Deposit event
+    emit Deposit(_msgSender(), receiver, totalAssetAmount, totalShares);
+
+    return totalShares;
+  }
+
+  /**
+   * @notice Solver-facing withdrawal method using asset amounts
+   * @dev Allows solvers to withdraw from specific vaults using asset amounts
+   * @param vaults Array of vault addresses to withdraw from
+   * @param assets Array of asset amounts to withdraw from each vault
+   * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
+   * @param receiver Address to receive the withdrawn assets
+   * @param owner Address that owns the dSTAKE shares being burned
+   * @return shares The amount of dSTAKE shares burned
+   */
+  function solverWithdrawAssets(
+    address[] calldata vaults,
+    uint256[] calldata assets,
+    uint256 maxShares,
+    address receiver,
+    address owner
+  ) public virtual returns (uint256 shares) {
+    // Calculate total net assets (after fees)
+    uint256 totalGrossAssets = 0;
+    for (uint256 i = 0; i < assets.length; i++) {
+      totalGrossAssets += assets[i];
+    }
+
+    if (totalGrossAssets == 0) {
+      revert ZeroShares();
+    }
+
+    // Calculate gross assets required to get net assets after fees
+    uint256 grossAssetsRequired = _getGrossAmountRequiredForNet(totalGrossAssets);
+
+    // Preview shares to be burned based on gross assets
+    shares = previewWithdraw(totalGrossAssets); // This already accounts for fees
+    if (shares > maxShares) {
+      revert ERC4626ExceedsMaxRedeem(shares, maxShares);
+    }
+
+    // Check allowance if caller is not owner
+    if (_msgSender() != owner) {
+      _spendAllowance(owner, _msgSender(), shares);
+    }
+
+    if (address(router) == address(0)) {
+      revert ZeroAddress();
+    }
+
+    // Burn shares from owner
+    _burn(owner, shares);
+
+    // Delegate to router's solver withdrawal method
+    router.solverWithdrawAssets(vaults, assets, receiver, owner);
+
+    // Calculate fee and net amount
+    uint256 fee = _calculateWithdrawalFee(grossAssetsRequired);
+    uint256 netAmount = grossAssetsRequired - fee;
+
+    // Emit ERC4626 Withdraw event with net assets
+    emit Withdraw(_msgSender(), receiver, owner, netAmount, shares);
+
+    // Emit fee event if applicable
+    if (fee > 0) {
+      emit WithdrawalFee(owner, receiver, fee);
+    }
+
+    return shares;
+  }
+
+  /**
+   * @notice Solver-facing withdrawal method using share amounts
+   * @dev Allows solvers to withdraw from specific vaults using share amounts
+   * @param vaults Array of vault addresses to withdraw from
+   * @param vaultShares Array of share amounts to withdraw from each vault
+   * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
+   * @param receiver Address to receive the withdrawn assets
+   * @param owner Address that owns the dSTAKE shares being burned
+   * @return assets The amount of net assets withdrawn (after fees)
+   */
+  function solverWithdrawShares(
+    address[] calldata vaults,
+    uint256[] calldata vaultShares,
+    uint256 maxShares,
+    address receiver,
+    address owner
+  ) public virtual returns (uint256 assets) {
+    // Calculate total gross assets by converting vault shares to assets
+    uint256 totalGrossAssets = 0;
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (vaultShares[i] > 0) {
+        // Use the vault's previewRedeem to convert shares to assets
+        uint256 assetAmount = IERC4626(vaults[i]).previewRedeem(vaultShares[i]);
+        totalGrossAssets += assetAmount;
+      }
+    }
+
+    if (totalGrossAssets == 0) {
+      revert ZeroShares();
+    }
+
+    // Preview dSTAKE shares to be burned (gross assets → shares)
+    uint256 shares = convertToShares(totalGrossAssets);
+    if (shares > maxShares) {
+      revert ERC4626ExceedsMaxRedeem(shares, maxShares);
+    }
+
+    // Check allowance if caller is not owner
+    if (_msgSender() != owner) {
+      _spendAllowance(owner, _msgSender(), shares);
+    }
+
+    if (address(router) == address(0)) {
+      revert ZeroAddress();
+    }
+
+    // Burn shares from owner
+    _burn(owner, shares);
+
+    // Delegate to router's solver withdrawal method
+    router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
+
+    // Calculate net assets after withdrawal fee
+    assets = _getNetAmountAfterFee(totalGrossAssets);
+    uint256 fee = totalGrossAssets - assets;
+
+    // Emit ERC4626 Withdraw event with net assets
+    emit Withdraw(_msgSender(), receiver, owner, assets, shares);
+
+    // Emit fee event if applicable
+    if (fee > 0) {
+      emit WithdrawalFee(owner, receiver, fee);
+    }
+
+    return assets;
   }
 
   // --- Governance Functions ---

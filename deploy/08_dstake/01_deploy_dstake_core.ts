@@ -107,7 +107,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       args: [DStakeTokenDeployment.address, instanceConfig.dStable],
       log: false,
     });
-
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);

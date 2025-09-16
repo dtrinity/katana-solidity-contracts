@@ -50,6 +50,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   error InvalidMaxVaultsPerOperation(uint256 count);
   error InsufficientActiveVaultsForOperation(uint256 activeCount);
   error RoutingCapacityExceeded(uint256 requested, uint256 fulfilled, uint256 vaultLimit);
+  error EmptyArrays();
+  error ArrayLengthMismatch();
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -166,39 +168,41 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    uint256 selectCount = _selectionLimit(activeVaults.length);
-    (address[] memory selectedVaults, uint256[] memory selectedIndices) = DeterministicVaultSelector.selectTopUnderallocated(
+    // Simple deterministic ordering: pick the most underallocated vault
+    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
       activeVaults,
       currentAllocations,
       targetAllocations,
-      selectCount
+      1 // Only select one vault for auto routing
     );
 
-    uint256[] memory underallocationsFull = DeterministicVaultSelector.calculateUnderallocations(currentAllocations, targetAllocations);
-    uint256[] memory underallocations = new uint256[](selectedVaults.length);
-    for (uint256 i = 0; i < selectedVaults.length; i++) {
-      underallocations[i] = underallocationsFull[selectedIndices[i]];
-    }
+    IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
-    (uint256[] memory depositAmounts, uint256 remainder) = AllocationCalculator.splitAmountProportionally(dStableAmount, underallocations);
-    if (remainder > 0) {
-      depositAmounts = AllocationCalculator.distributeRemainder(depositAmounts, dStableAmount, underallocations, remainder);
-    }
-
-    bool allZero = true;
-    for (uint256 i = 0; i < underallocations.length; i++) {
-      if (underallocations[i] > 0) {
-        allZero = false;
-        break;
+    // Try vaults in order until one succeeds or we run out
+    address targetVault = selectedVaults[0];
+    for (uint256 attempts = 0; attempts < activeVaults.length; attempts++) {
+      try this._depositToVaultWithRetry(targetVault, dStableAmount) {
+        // Success - emit event and return
+        address[] memory vaultArray = new address[](1);
+        uint256[] memory amountArray = new uint256[](1);
+        vaultArray[0] = targetVault;
+        amountArray[0] = dStableAmount;
+        emit WeightedDeposit(vaultArray, amountArray, dStableAmount, 0);
+        return;
+      } catch (bytes memory reason) {
+        if (_isTransientError(reason) && attempts < activeVaults.length - 1) {
+          // Try next vault in deterministic order
+          targetVault = activeVaults[(attempts + 1) % activeVaults.length];
+        } else {
+          // Non-transient error or last attempt, propagate
+          assembly {
+            revert(add(reason, 0x20), mload(reason))
+          }
+        }
       }
     }
-    if (allZero) {
-      depositAmounts = AllocationCalculator.splitAmountEvenly(dStableAmount, selectedVaults.length);
-    }
 
-    _executeMultiVaultDeposits(selectedVaults, depositAmounts, dStableAmount);
-
-    emit WeightedDeposit(selectedVaults, depositAmounts, dStableAmount, 0);
+    revert NoLiquidityAvailable();
   }
 
   function withdraw(
@@ -216,16 +220,166 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    (address[] memory withdrawalVaults, uint256[] memory withdrawalAmounts) = _buildWithdrawalPlan(
-      dStableAmount,
+    // Simple deterministic ordering: pick the most overallocated vault
+    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
       activeVaults,
       currentAllocations,
-      targetAllocations
+      targetAllocations,
+      1 // Only select one vault for auto routing
     );
 
-    _executeWithdrawalPlan(withdrawalVaults, withdrawalAmounts, dStableAmount, receiver, owner);
+    // Try vaults in order until one succeeds or we run out
+    address targetVault = selectedVaults[0];
+    for (uint256 attempts = 0; attempts < activeVaults.length; attempts++) {
+      try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, receiver, owner) {
+        // Success - emit event and return
+        address[] memory vaultArray = new address[](1);
+        uint256[] memory amountArray = new uint256[](1);
+        vaultArray[0] = targetVault;
+        amountArray[0] = dStableAmount;
+        emit WeightedWithdrawal(vaultArray, amountArray, dStableAmount, 0);
+        return;
+      } catch (bytes memory reason) {
+        if (_isTransientError(reason) && attempts < activeVaults.length - 1) {
+          // Try next vault in deterministic order
+          targetVault = activeVaults[(attempts + 1) % activeVaults.length];
+        } else {
+          // Non-transient error or last attempt, propagate
+          assembly {
+            revert(add(reason, 0x20), mload(reason))
+          }
+        }
+      }
+    }
 
-    emit WeightedWithdrawal(withdrawalVaults, withdrawalAmounts, dStableAmount, 0);
+    revert NoLiquidityAvailable();
+  }
+
+  // --- Solver Mode Entrypoints ---
+
+  function solverDepositAssets(
+    address[] calldata vaults,
+    uint256[] calldata assets
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    if (vaults.length == 0) revert EmptyArrays();
+    if (vaults.length != assets.length) revert ArrayLengthMismatch();
+
+    uint256 totalAssets = 0;
+    for (uint256 i = 0; i < assets.length; i++) {
+      totalAssets += assets[i];
+    }
+
+    if (totalAssets == 0) revert InvalidAmount();
+    IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
+
+    // Execute deposits atomically - any failure reverts the entire transaction
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (assets[i] > 0) {
+        _depositToVaultAtomically(vaults[i], assets[i]);
+      }
+    }
+
+    emit WeightedDeposit(vaults, assets, totalAssets, 0);
+  }
+
+  function solverDepositShares(
+    address[] calldata vaults,
+    uint256[] calldata shares
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    if (vaults.length == 0) revert EmptyArrays();
+    if (vaults.length != shares.length) revert ArrayLengthMismatch();
+
+    uint256[] memory assetAmounts = new uint256[](vaults.length);
+    uint256 totalAssets = 0;
+
+    // Convert shares to assets and calculate total
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (shares[i] > 0) {
+        VaultConfig memory config = _getVaultConfig(vaults[i]);
+        IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
+        (, uint256 vaultAssetAmount) = adapter.previewConvertToVaultAsset(shares[i]);
+        assetAmounts[i] = vaultAssetAmount;
+        totalAssets += assetAmounts[i];
+      }
+    }
+
+    if (totalAssets == 0) revert InvalidAmount();
+    IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
+
+    // Execute deposits atomically
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (assetAmounts[i] > 0) {
+        _depositToVaultAtomically(vaults[i], assetAmounts[i]);
+      }
+    }
+
+    emit WeightedDeposit(vaults, assetAmounts, totalAssets, 0);
+  }
+
+  function solverWithdrawAssets(
+    address[] calldata vaults,
+    uint256[] calldata assets,
+    address receiver,
+    address /* owner */
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    if (vaults.length == 0) revert EmptyArrays();
+    if (vaults.length != assets.length) revert ArrayLengthMismatch();
+
+    uint256 totalAssets = 0;
+    for (uint256 i = 0; i < assets.length; i++) {
+      totalAssets += assets[i];
+    }
+
+    if (totalAssets == 0) revert InvalidAmount();
+
+    // Execute withdrawals atomically
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (assets[i] > 0) {
+        _withdrawFromVaultAtomically(vaults[i], assets[i]);
+      }
+    }
+
+    // Transfer all accumulated dStable to receiver
+    uint256 balance = IERC20(dStable).balanceOf(address(this));
+    IERC20(dStable).safeTransfer(receiver, balance);
+
+    emit WeightedWithdrawal(vaults, assets, totalAssets, 0);
+  }
+
+  function solverWithdrawShares(
+    address[] calldata vaults,
+    uint256[] calldata shares,
+    address receiver,
+    address /* owner */
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    if (vaults.length == 0) revert EmptyArrays();
+    if (vaults.length != shares.length) revert ArrayLengthMismatch();
+
+    uint256[] memory assetAmounts = new uint256[](vaults.length);
+    uint256 totalAssets = 0;
+
+    // Convert shares to vault asset amounts
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (shares[i] > 0) {
+        assetAmounts[i] = IERC4626(vaults[i]).previewRedeem(shares[i]);
+        totalAssets += assetAmounts[i];
+      }
+    }
+
+    if (totalAssets == 0) revert InvalidAmount();
+
+    // Execute withdrawals atomically
+    for (uint256 i = 0; i < vaults.length; i++) {
+      if (shares[i] > 0) {
+        _withdrawSharesFromVaultAtomically(vaults[i], shares[i]);
+      }
+    }
+
+    // Transfer all accumulated dStable to receiver
+    uint256 balance = IERC20(dStable).balanceOf(address(this));
+    IERC20(dStable).safeTransfer(receiver, balance);
+
+    emit WeightedWithdrawal(vaults, assetAmounts, totalAssets, 0);
   }
 
   // --- Exchange Functions ---
@@ -354,6 +508,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   // --- Adapter Management ---
 
   function addAdapter(address vaultAsset, address adapterAddress) external onlyRole(ADAPTER_MANAGER_ROLE) {
+    _addAdapter(vaultAsset, adapterAddress);
+  }
+
+  function _addAdapter(address vaultAsset, address adapterAddress) internal {
     if (adapterAddress == address(0) || vaultAsset == address(0)) revert ZeroAddress();
     address adapterVaultAsset = IDStableConversionAdapter(adapterAddress).vaultAsset();
     if (adapterVaultAsset != vaultAsset) revert AdapterAssetMismatch(adapterAddress, vaultAsset, adapterVaultAsset);
@@ -542,133 +700,111 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     return maxVaultsPerOperation < activeCount ? maxVaultsPerOperation : activeCount;
   }
 
-  function _executeMultiVaultDeposits(address[] memory selectedVaults, uint256[] memory depositAmounts, uint256 totalAmount) internal {
-    IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAmount);
-
-    for (uint256 i = 0; i < selectedVaults.length; i++) {
-      if (depositAmounts[i] == 0) continue;
-
-      VaultConfig memory config = _getVaultConfig(selectedVaults[i]);
-      IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
-
-      (address vaultAssetExpected, uint256 expectedShares) = adapter.previewConvertToVaultAsset(depositAmounts[i]);
-      if (vaultAssetExpected != selectedVaults[i]) revert AdapterAssetMismatch(config.adapter, selectedVaults[i], vaultAssetExpected);
-
-      uint256 beforeBal = IERC20(selectedVaults[i]).balanceOf(address(collateralVault));
-      IERC20(dStable).forceApprove(config.adapter, depositAmounts[i]);
-      (, uint256 reportedShares) = adapter.convertToVaultAsset(depositAmounts[i]);
-      IERC20(dStable).forceApprove(config.adapter, 0);
-
-      uint256 afterBal = IERC20(selectedVaults[i]).balanceOf(address(collateralVault));
-      uint256 actualShares = afterBal - beforeBal;
-      if (actualShares < expectedShares) revert SlippageCheckFailed(selectedVaults[i], actualShares, expectedShares);
-      if (actualShares != reportedShares) revert InconsistentState("Adapter mis-reported shares");
-
-      emit RouterDeposit(config.adapter, selectedVaults[i], msg.sender, actualShares, depositAmounts[i]);
-    }
-  }
-
-  function _buildWithdrawalPlan(
-    uint256 totalAmount,
-    address[] memory activeVaults,
-    uint256[] memory currentAllocations,
-    uint256[] memory targetAllocations
-  ) internal view returns (address[] memory vaults, uint256[] memory amounts) {
-    (address[] memory orderedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
-      activeVaults,
-      currentAllocations,
-      targetAllocations,
-      activeVaults.length
-    );
-
-    // Use a more generous limit to allow for vault failures
-    uint256 limit = activeVaults.length;
-    if (maxVaultsPerOperation > 0 && maxVaultsPerOperation < activeVaults.length) {
-      // Allow up to double the max vaults per operation to handle failures
-      limit = (maxVaultsPerOperation * 3) / 2;
-      if (limit > activeVaults.length) limit = activeVaults.length;
-    }
-
-    address[] memory tempVaults = new address[](limit);
-    uint256[] memory tempAmounts = new uint256[](limit);
-
-    uint256 remaining = totalAmount;
-    uint256 used = 0;
-
-    for (uint256 i = 0; i < orderedVaults.length && remaining > 0 && used < limit; i++) {
-      VaultConfig memory config = _getVaultConfig(orderedVaults[i]);
-      if (!config.isActive) continue;
-
-      uint256 available = _getVaultBalanceWithAdapter(orderedVaults[i], config.adapter);
-      if (available == 0) continue;
-
-      uint256 toUse = available < remaining ? available : remaining;
-      if (toUse == 0) continue;
-
-      tempVaults[used] = orderedVaults[i];
-      tempAmounts[used] = toUse;
-      remaining -= toUse;
-      used++;
-    }
-
-    if (remaining > 0) {
-      uint256 totalSystemLiquidity = _totalSystemLiquidity(activeVaults);
-      if (totalSystemLiquidity < totalAmount) revert NoLiquidityAvailable();
-      // Don't revert here - let the execution handle the shortfall by trying more vaults
-    }
-
-    vaults = new address[](used);
-    amounts = new uint256[](used);
-    for (uint256 i = 0; i < used; i++) {
-      vaults[i] = tempVaults[i];
-      amounts[i] = tempAmounts[i];
-    }
-  }
-
-  function _executeWithdrawalPlan(
-    address[] memory vaults,
-    uint256[] memory dStableAmounts,
-    uint256 totalAmount,
-    address receiver,
-    address owner
-  ) internal {
-    uint256 totalReceived = 0;
-    uint256 successfulVaults = 0;
-
-    // First pass: try to withdraw from planned vaults
-    for (uint256 i = 0; i < vaults.length; i++) {
-      if (dStableAmounts[i] == 0) continue;
-
-      (uint256 received, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vaults[i], dStableAmounts[i]);
-
-      if (received > 0) {
-        totalReceived += received;
-        successfulVaults++;
-        emit Withdrawn(vaults[i], vaultAssetAmount, received, owner, receiver);
+  function _isTransientError(bytes memory reason) internal pure returns (bool) {
+    // Check for common transient error signatures
+    if (reason.length >= 4) {
+      bytes4 selector;
+      assembly {
+        selector := mload(add(reason, 0x20))
       }
 
-      IERC20(vaults[i]).forceApprove(adapter, 0);
+      // These errors should trigger retries (transient errors)
+      // - NoLiquidityAvailable: vault may be temporarily drained
+      // - VaultNotActive: vault may be temporarily paused
+      // - SlippageCheckFailed: temporary price movement
+      return selector == NoLiquidityAvailable.selector || selector == VaultNotActive.selector || selector == SlippageCheckFailed.selector;
     }
-
-    uint256 routerBalance = IERC20(dStable).balanceOf(address(this));
-
-    // Handle case where no vaults provided liquidity
-    if (successfulVaults == 0 || routerBalance == 0) {
-      revert NoLiquidityAvailable();
-    }
-
-    // If we have sufficient balance, transfer the full amount
-    // If we have some but not enough, transfer what we have (partial fulfillment)
-    uint256 actualTransfer = routerBalance >= totalAmount ? totalAmount : routerBalance;
-
-    if (totalReceived > actualTransfer) {
-      emit SurplusHeld(totalReceived - actualTransfer);
-    } else if (routerBalance < totalAmount) {
-      emit ShortfallCovered(totalAmount - routerBalance);
-    }
-
-    IERC20(dStable).safeTransfer(receiver, actualTransfer);
+    return false;
   }
+
+  function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
+    require(msg.sender == address(this), "Only self-callable");
+    // This is called by this contract only, for auto-routing retries
+    _depositToVaultAtomically(vault, dStableAmount);
+  }
+
+  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, address receiver, address /* owner */) external {
+    require(msg.sender == address(this), "Only self-callable");
+    // This is called by this contract only, for auto-routing retries
+    _withdrawFromVaultAtomically(vault, dStableAmount);
+    // Transfer the withdrawn dStable to receiver
+    uint256 balance = IERC20(dStable).balanceOf(address(this));
+    IERC20(dStable).safeTransfer(receiver, balance);
+  }
+
+  function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
+    VaultConfig memory config = _getVaultConfig(vault);
+    if (!config.isActive) revert VaultNotActive(vault);
+
+    IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
+
+    (address vaultAssetExpected, uint256 expectedShares) = adapter.previewConvertToVaultAsset(dStableAmount);
+    if (vaultAssetExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultAssetExpected);
+
+    uint256 beforeBal = IERC20(vault).balanceOf(address(collateralVault));
+
+    IERC20(dStable).forceApprove(config.adapter, dStableAmount);
+    try adapter.convertToVaultAsset(dStableAmount) returns (address actualVault, uint256 reportedShares) {
+      if (actualVault != vault) {
+        IERC20(dStable).forceApprove(config.adapter, 0);
+        revert AdapterAssetMismatch(config.adapter, vault, actualVault);
+      }
+
+      uint256 afterBal = IERC20(vault).balanceOf(address(collateralVault));
+      uint256 actualShares = afterBal - beforeBal;
+
+      if (actualShares < expectedShares) {
+        IERC20(dStable).forceApprove(config.adapter, 0);
+        revert SlippageCheckFailed(vault, actualShares, expectedShares);
+      }
+
+      if (actualShares != reportedShares) {
+        IERC20(dStable).forceApprove(config.adapter, 0);
+        revert InconsistentState("Adapter mis-reported shares");
+      }
+
+      emit RouterDeposit(config.adapter, vault, msg.sender, actualShares, dStableAmount);
+    } catch {
+      IERC20(dStable).forceApprove(config.adapter, 0);
+      revert InconsistentState("Deposit conversion failed");
+    }
+
+    IERC20(dStable).forceApprove(config.adapter, 0);
+  }
+
+  function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
+    (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);
+    if (receivedDStable == 0) revert NoLiquidityAvailable();
+
+    IERC20(vault).forceApprove(adapter, 0);
+    emit Withdrawn(vault, vaultAssetAmount, receivedDStable, msg.sender, msg.sender);
+  }
+
+  function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal {
+    VaultConfig memory config = _getVaultConfig(vault);
+    if (!config.isActive) revert VaultNotActive(vault);
+
+    address adapter = config.adapter;
+    IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
+
+    uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
+    if (shares > availableShares) revert NoLiquidityAvailable();
+
+    collateralVault.sendAsset(vault, shares, address(this));
+    IERC20(vault).forceApprove(adapter, shares);
+
+    try conversionAdapter.convertFromVaultAsset(shares) returns (uint256 receivedDStable) {
+      IERC20(vault).forceApprove(adapter, 0);
+      emit Withdrawn(vault, shares, receivedDStable, msg.sender, msg.sender);
+    } catch {
+      IERC20(vault).forceApprove(adapter, 0);
+      // Return the shares to the collateral vault
+      IERC20(vault).safeTransfer(address(collateralVault), shares);
+      revert InconsistentState("Share withdrawal conversion failed");
+    }
+  }
+
+  // Multi-vault planning helpers removed in favor of solver mode and simplified auto-routing
 
   function _withdrawFromVault(
     address vault,
@@ -848,7 +984,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     vaultExists[config.vault] = true;
 
     if (config.isActive) {
-      this.addAdapter(config.vault, config.adapter);
+      _addAdapter(config.vault, config.adapter);
     }
 
     emit VaultConfigAdded(config.vault, config.adapter, config.targetBps);
@@ -861,7 +997,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     vaultConfigs[index] = config;
 
     if (config.isActive) {
-      this.addAdapter(config.vault, config.adapter);
+      _addAdapter(config.vault, config.adapter);
     } else {
       try this.removeAdapter(config.vault) {} catch {}
     }
