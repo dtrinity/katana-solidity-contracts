@@ -295,21 +295,21 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     // Convert shares to assets and calculate total
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
-        VaultConfig memory config = _getVaultConfig(vaults[i]);
-        IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
-        (, uint256 vaultAssetAmount) = adapter.previewConvertToVaultAsset(shares[i]);
-        assetAmounts[i] = vaultAssetAmount;
-        totalAssets += assetAmounts[i];
+        // Use previewMint to determine assets needed to mint the desired shares
+        uint256 assetsNeeded = IERC4626(vaults[i]).previewMint(shares[i]);
+        assetAmounts[i] = assetsNeeded;
+        totalAssets += assetsNeeded;
       }
     }
 
     if (totalAssets == 0) revert InvalidAmount();
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
 
-    // Execute deposits atomically
+    // Execute mints atomically to get exact shares
+    uint256[] memory sharesReceived = new uint256[](vaults.length);
     for (uint256 i = 0; i < vaults.length; i++) {
-      if (assetAmounts[i] > 0) {
-        _depositToVaultAtomically(vaults[i], assetAmounts[i]);
+      if (shares[i] > 0) {
+        sharesReceived[i] = _mintToVaultAtomically(vaults[i], shares[i]);
       }
     }
 
@@ -712,7 +712,16 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       // - NoLiquidityAvailable: vault may be temporarily drained
       // - VaultNotActive: vault may be temporarily paused
       // - SlippageCheckFailed: temporary price movement
-      return selector == NoLiquidityAvailable.selector || selector == VaultNotActive.selector || selector == SlippageCheckFailed.selector;
+      // - Also check for common ERC20 errors (insufficient balance/allowance)
+      if (
+        selector == NoLiquidityAvailable.selector ||
+        selector == VaultNotActive.selector ||
+        selector == SlippageCheckFailed.selector ||
+        selector == bytes4(keccak256("ERC20InsufficientBalance(address,uint256,uint256)")) ||
+        selector == bytes4(keccak256("ERC20InsufficientAllowance(address,uint256,uint256)"))
+      ) {
+        return true;
+      }
     }
     return false;
   }
@@ -764,12 +773,32 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
 
       emit RouterDeposit(config.adapter, vault, msg.sender, actualShares, dStableAmount);
-    } catch {
+    } catch (bytes memory reason) {
       IERC20(dStable).forceApprove(config.adapter, 0);
-      revert InconsistentState("Deposit conversion failed");
+      // Re-throw the original error so _isTransientError can check it
+      assembly {
+        revert(add(32, reason), mload(reason))
+      }
     }
 
     IERC20(dStable).forceApprove(config.adapter, 0);
+  }
+
+  function _mintToVaultAtomically(address vault, uint256 sharesToMint) internal returns (uint256) {
+    // Use ERC4626 mint to get exact shares
+    uint256 assetsNeeded = IERC4626(vault).previewMint(sharesToMint);
+
+    // Approve vault to pull assets
+    IERC20(dStable).forceApprove(vault, assetsNeeded);
+
+    // Mint exact shares to collateral vault
+    uint256 actualAssets = IERC4626(vault).mint(sharesToMint, address(collateralVault));
+
+    // Clean up approval
+    IERC20(dStable).forceApprove(vault, 0);
+
+    emit RouterDeposit(vault, vault, msg.sender, sharesToMint, actualAssets);
+    return sharesToMint;
   }
 
   function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
@@ -828,7 +857,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
     if (vaultAssetAmount > availableShares) {
-      vaultAssetAmount = availableShares;
+      // Don't silently truncate - revert if insufficient shares
+      revert NoLiquidityAvailable();
     }
 
     if (vaultAssetAmount == 0) {

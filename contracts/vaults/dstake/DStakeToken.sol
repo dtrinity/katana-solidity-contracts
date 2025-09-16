@@ -298,6 +298,9 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Delegate to router's solver deposit method
     router.solverDepositAssets(vaults, assets);
 
+    // Clean up approval
+    IERC20(asset()).forceApprove(address(router), 0);
+
     // Mint shares to receiver
     _mint(receiver, shares);
 
@@ -354,6 +357,9 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
     // Delegate to router's solver deposit method
     router.solverDepositShares(vaults, shares);
+
+    // Clean up approval
+    IERC20(asset()).forceApprove(address(router), 0);
 
     // Mint dSTAKE shares to receiver
     _mint(receiver, totalShares);

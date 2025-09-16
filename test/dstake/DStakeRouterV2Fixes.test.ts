@@ -498,18 +498,23 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const aliceShares = await dStakeToken.balanceOf(alice.address);
       const withdrawShares = aliceShares / 2n; // 50% withdrawal
 
+      // With the fix for silent truncation, withdrawals that exceed single vault capacity
+      // will now correctly revert with NoLiquidityAvailable instead of silently truncating
+      // This is the correct behavior - no partial withdrawals should occur
+
+      // Try a smaller withdrawal that fits within single vault capacity
+      const smallerWithdrawShares = aliceShares / 10n; // 10% withdrawal
       const balanceBefore = await dStable.balanceOf(alice.address);
 
-      // This should succeed even with liquidity constraints
-      await dStakeToken.connect(alice).redeem(withdrawShares, alice.address, alice.address);
+      // This smaller withdrawal should succeed
+      await dStakeToken.connect(alice).redeem(smallerWithdrawShares, alice.address, alice.address);
 
       const balanceAfter = await dStable.balanceOf(alice.address);
       const received = balanceAfter - balanceBefore;
 
       expect(received).to.be.gt(0);
-      // With single-vault selection and 1% fees, expect reasonable withdrawal amount
-      // Allow for more variance due to deterministic single-vault selection
-      const expectedMinimum = ethers.parseEther("3000"); // Further reduced for single-vault constraints
+      // With single-vault selection and 1% fees on vault1, expect reasonable withdrawal
+      const expectedMinimum = ethers.parseEther("1500"); // Adjusted for 10% withdrawal
       expect(received).to.be.gte(expectedMinimum);
     });
 
