@@ -32,7 +32,7 @@ export const createDStableFixture = (config: DStableFixtureConfig) => {
     await deployments.fixture([
       "local-setup", 
       config.symbol.toLowerCase(),
-      "dStake",           // Deploy dStake infrastructure for compatibility with DStakeRouterMorpho tests
+      "dStake",           // Deploy dStake infrastructure for compatibility with DStakeRouterV2 tests
       "mock-urd"          // Deploy MockUniversalRewardsDistributor for compatibility
     ]); // Include all tags that other tests might depend on
     // IssuerV2 and RedeemerV2 are now deployed as part of the standard ecosystem tags

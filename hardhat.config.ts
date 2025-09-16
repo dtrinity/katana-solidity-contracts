@@ -92,19 +92,8 @@ const config: HardhatUserConfig = {
           viaIR: true,
         },
       },
-      // DStake router with stack too deep errors
-      "contracts/vaults/dstake/DStakeRouterDLend.sol": {
-        version: "0.8.20",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
-          },
-          viaIR: true,
-        },
-      },
-      // DStake Morpho router with stack too deep errors
-      "contracts/vaults/dstake/DStakeRouterMorpho.sol": {
+      // Unified dSTAKE router with stack too deep errors
+      "contracts/vaults/dstake/DStakeRouterV2.sol": {
         version: "0.8.20",
         settings: {
           optimizer: {

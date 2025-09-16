@@ -4,7 +4,7 @@
 Migrate dSTAKE from dLEND (Aave v3 fork) to Morpho Blue on Katana with minimal changes to dSTAKE architecture. Maintain the router + adapter pattern and collateral vault design. Provide mocks for local testing.
 
 ## Summary of Changes
-- Keep `IDStableConversionAdapter` and `DStakeRouter*` patterns unchanged.
+- Keep `IDStableConversionAdapter` and the router/adapters pattern unchanged.
 - Introduce a non-rebasing ERC-4626 wrapper over Morpho Blue supply positions to serve as the dSTAKE `vault asset`.
 - Implement a new adapter `WrappedMorphoConversionAdapter` that converts dSTABLE <-> wrapper shares and mints/burns shares directly to/from `DStakeCollateralVault`.
 - Provide `IMorpho` interfaces and `MockMorphoBlue` contract to enable local tests without forking.
@@ -46,7 +46,7 @@ This mirrors our existing `StaticATokenLM` approach while adapting to Morpho Blu
 - Morpho Blue has no built-in rebasing/reward token like Aave LM. Keep `DStakeRewardManagerDLend` out; add a placeholder `DStakeRewardManagerMorpho` only if we later integrate external rewards. Not required for MVP.
 
 ## Contract Wiring
-- `DStakeRouterDLend` can be reused as-is since it only talks to `IDStableConversionAdapter` and the Collateral Vault. Alternatively, introduce `DStakeRouterMorpho` for naming clarity but functionally identical.
+- Use the unified `DStakeRouterV2` which already handles deterministic multi-vault routing; configure MetaMorpho vaults via `setVaultConfigs`.
 - `DStakeCollateralVault` remains unchanged (holds the wrapper shares as the vault asset).
 
 ## Deployment/Config Changes
@@ -99,4 +99,3 @@ We will add a configurable `MockMorphoBlue` that implements the `IMorpho` surfac
 - Add optional reward harvesting if a Morpho incentives module is deployed.
 - Expose wrapper view methods to introspect market health and capacity.
 - Support multiple Morpho markets per dSTAKE instance via multiple wrapper+adapter pairs.
-

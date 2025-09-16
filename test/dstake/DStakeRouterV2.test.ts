@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { ethers, deployments, getNamedAccounts } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { 
-  DStakeRouterMorpho,
+import {
+  DStakeRouterV2,
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
@@ -13,7 +13,7 @@ import {
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
 
-describe("DStakeRouterMorpho Integration Tests", function () {
+describe("DStakeRouterV2 Integration Tests", function () {
   // Test configuration
   const config = SDUSD_CONFIG;
 
@@ -26,7 +26,7 @@ describe("DStakeRouterMorpho Integration Tests", function () {
   let collateralExchanger: SignerWithAddress;
   
   let dStable: TestMintableERC20;
-  let router: DStakeRouterMorpho;
+  let router: DStakeRouterV2;
   let collateralVault: DStakeCollateralVault;
   let dStakeToken: DStakeToken;
   
@@ -49,7 +49,7 @@ describe("DStakeRouterMorpho Integration Tests", function () {
 
   /**
    * Comprehensive deployment fixture that sets up:
-   * - DStakeRouterMorpho contract 
+   * - DStakeRouterV2 contract
    * - 3 MetaMorpho vaults with different target allocations
    * - All necessary adapters and configurations
    * - Proper role assignments and permissions
@@ -99,9 +99,6 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       dStableAddress
     );
     
-    // Deploy DStakeRouterMorpho contract (libraries are inlined by compiler)
-    const DStakeRouterMorphoFactory = await ethers.getContractFactory("DStakeRouterMorpho");
-    
     let dStakeTokenDeployment, collateralVaultDeployment;
     try {
       dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
@@ -121,11 +118,14 @@ describe("DStakeRouterMorpho Integration Tests", function () {
       throw new Error(`Invalid collateralVault address: ${collateralVaultAddress}. Contract may not be deployed.`);
     }
     
-    const routerContract = await DStakeRouterMorphoFactory.deploy(
-      dStakeTokenAddress,
-      collateralVaultAddress
-    );
-    await routerContract.waitForDeployment();
+    const routerDeployment = await deployments.deploy("Test_DStakeRouterV2", {
+      contract: "DStakeRouterV2",
+      from: deployer,
+      args: [dStakeTokenAddress, collateralVaultAddress],
+      log: false,
+      skipIfAlreadyDeployed: false,
+    });
+    const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
     
     const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
     const collateralVaultContract = await ethers.getContractAt(
@@ -1024,169 +1024,69 @@ describe("DStakeRouterMorpho Integration Tests", function () {
   });
 
   describe("MaxVaultsPerOperation Constraints", function () {
-    it("Should validate maxVaultsPerOperation with 3 active vaults (max allowed = 1)", async function () {
-      // With 3 active vaults, max allowed is max(1, 3/2) = 1
-      const maxVaultsPerOperationBefore = await router.maxVaultsPerOperation();
-      expect(maxVaultsPerOperationBefore).to.equal(1);
-      
-      // Setting to 1 should work
-      await expect(router.setMaxVaultsPerOperation(1))
+    it("Should allow setting maxVaultsPerOperation up to the active vault count", async function () {
+      await expect(router.setMaxVaultsPerOperation(2))
         .to.emit(router, "MaxVaultsPerOperationUpdated")
-        .withArgs(1, 1);
-      
-      // Setting to 2 should fail with 3 active vaults
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(2, 1);
-      
-      // Setting to 3 should fail with 3 active vaults
+        .withArgs(1, 2);
+
       await expect(router.setMaxVaultsPerOperation(3))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(3, 1);
+        .to.emit(router, "MaxVaultsPerOperationUpdated")
+        .withArgs(2, 3);
+
+      await expect(router.setMaxVaultsPerOperation(4))
+        .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
+        .withArgs(4);
     });
-    
-    it("Should validate maxVaultsPerOperation with 4 active vaults (max allowed = 2)", async function () {
-      // Add a fourth vault to test different constraint
+
+    it("Should enforce the cap when the active vault set grows", async function () {
       const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-      const vault4 = await MockMetaMorphoFactory.deploy(
-        dStable.target,
-        "MetaMorpho Vault 4",
-        "MM4"
-      );
-      
       const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
-      const adapter4 = await MetaMorphoAdapterFactory.deploy(
-        dStable.target,      // _dStable
-        vault4.target,       // _metaMorphoVault
-        collateralVault.target  // _collateralVault
-      );
-      
-      // Add fourth vault with balanced allocations (25% each)
-      const newConfigs = [
-        {
-          vault: vault1.target,
-          adapter: adapter1.target,
-          targetBps: 250000, // 25%
-          isActive: true
-        },
-        {
-          vault: vault2.target,
-          adapter: adapter2.target,
-          targetBps: 250000, // 25%
-          isActive: true
-        },
-        {
-          vault: vault3.target,
-          adapter: adapter3.target,
-          targetBps: 250000, // 25%
-          isActive: true
-        },
-        {
-          vault: vault4.target,
-          adapter: adapter4.target,
-          targetBps: 250000, // 25%
-          isActive: true
-        }
-      ];
-      
-      await router.setVaultConfigs(newConfigs);
-      
-      // With 4 active vaults, max allowed is 4/2 = 2
-      await expect(router.setMaxVaultsPerOperation(1))
-        .to.emit(router, "MaxVaultsPerOperationUpdated");
-      
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.emit(router, "MaxVaultsPerOperationUpdated");
-      
-      // Setting to 3 should fail with 4 active vaults (max allowed = 2)
-      await expect(router.setMaxVaultsPerOperation(3))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(3, 2);
-    });
-    
-    it("Should validate maxVaultsPerOperation with 5 active vaults (max allowed = 2)", async function () {
-      // Add fourth and fifth vaults
-      const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-      const vault4 = await MockMetaMorphoFactory.deploy(dStable.target, "Vault 4", "V4");
-      const vault5 = await MockMetaMorphoFactory.deploy(dStable.target, "Vault 5", "V5");
-      
-      const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
+
+      const vault4 = await MockMetaMorphoFactory.deploy(dStable.target, "MetaMorpho Vault 4", "MM4");
       const adapter4 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault4.target, collateralVault.target);
+
+      const vault5 = await MockMetaMorphoFactory.deploy(dStable.target, "MetaMorpho Vault 5", "MM5");
       const adapter5 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault5.target, collateralVault.target);
-      
-      // Configure 5 vaults (20% each)
-      const newConfigs = [
+
+      await router.setVaultConfigs([
         { vault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
         { vault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
         { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
         { vault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
         { vault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
-      ];
-      
-      await router.setVaultConfigs(newConfigs);
-      
-      // With 5 active vaults, max allowed is 5/2 = 2 (integer division)
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.emit(router, "MaxVaultsPerOperationUpdated");
-      
-      // Setting to 3 should fail
-      await expect(router.setMaxVaultsPerOperation(3))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(3, 2);
+      ]);
+
+      await expect(router.setMaxVaultsPerOperation(5))
+        .to.emit(router, "MaxVaultsPerOperationUpdated")
+        .withArgs(3, 5);
+
+      await expect(router.setMaxVaultsPerOperation(6))
+        .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
+        .withArgs(6);
     });
-    
-    it("Should validate maxVaultsPerOperation with 2 active vaults (max allowed = 1)", async function () {
-      // Deactivate vault3, leaving only 2 active vaults
-      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
-      // Update allocations for remaining 2 vaults
-      await router.updateVaultConfig(vault1.target, adapter1.target, 600000, true); // 60%
-      await router.updateVaultConfig(vault2.target, adapter2.target, 400000, true); // 40%
-      
-      // With 2 active vaults, max allowed is max(1, 2/2) = 1
-      await expect(router.setMaxVaultsPerOperation(1))
-        .to.emit(router, "MaxVaultsPerOperationUpdated");
-      
-      // Setting to 2 should fail
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(2, 1);
-    });
-    
-    it("Should validate maxVaultsPerOperation with 1 active vault (max allowed = 1)", async function () {
-      // Deactivate all but vault1
-      await router.updateVaultConfig(vault1.target, adapter1.target, 1000000, true); // 100%
-      await router.updateVaultConfig(vault2.target, adapter2.target, 0, false);
-      await router.updateVaultConfig(vault3.target, adapter3.target, 0, false);
-      
-      // With 1 active vault, max allowed is max(1, 1/2) = 1
-      await expect(router.setMaxVaultsPerOperation(1))
-        .to.emit(router, "MaxVaultsPerOperationUpdated");
-      
-      // Setting to 2 should fail
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.be.revertedWithCustomError(router, "MaxVaultsPerOperationTooHigh")
-        .withArgs(2, 1);
-    });
-    
+
     it("Should reject maxVaultsPerOperation of 0", async function () {
       await expect(router.setMaxVaultsPerOperation(0))
         .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
         .withArgs(0);
     });
-    
+
     it("Should enforce maxVaultsPerOperation in weighted selection", async function () {
-      // Ensure maxVaultsPerOperation is 1
+      await router.setVaultConfigs([
+        { vault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
+        { vault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
+        { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
+      ]);
+
       await router.setMaxVaultsPerOperation(1);
-      
+
       const depositAmount = ethers.parseEther("5000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
-      // Make several deposits and verify only 1 vault is selected each time
-      for (let i = 0; i < 5; i++) {
+
+      for (let i = 0; i < 3; i++) {
         const tx = await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
         const receipt = await tx.wait();
-        
+
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
@@ -1195,13 +1095,28 @@ describe("DStakeRouterMorpho Integration Tests", function () {
             return false;
           }
         });
-        
+
         expect(weightedDepositEvent).to.not.be.undefined;
         const decoded = router.interface.parseLog(weightedDepositEvent!);
-        
-        // Should always select exactly 1 vault
         expect(decoded.args.selectedVaults).to.have.lengthOf(1);
       }
+
+      await router.setMaxVaultsPerOperation(3);
+
+      const tx = await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
+      const receipt = await tx.wait();
+      const weightedDepositEvent = receipt.logs.find(log => {
+        try {
+          const decoded = router.interface.parseLog(log);
+          return decoded?.name === "WeightedDeposit";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(weightedDepositEvent).to.not.be.undefined;
+      const decoded = router.interface.parseLog(weightedDepositEvent!);
+      expect(decoded.args.selectedVaults.length).to.be.greaterThan(1);
     });
   });
 

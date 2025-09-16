@@ -13,17 +13,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const config = await getConfig(hre);
 
   if (!config.dStake) {
-    console.log("No dStake configuration found for this network. Skipping DStakeRouterMorpho deployment.");
+    console.log("No dStake configuration found for this network. Skipping DStakeRouterV2 deployment.");
     return;
   }
 
-  if (!config.morpho) {
-    console.log("No Morpho configuration found for this network. Skipping DStakeRouterMorpho deployment.");
-    return;
-  }
-
-  // First, deploy the libraries that DStakeRouterMorpho depends on
-  console.log("📚 Deploying DStakeRouterMorpho libraries...");
+  // First, deploy the libraries that DStakeRouterV2 depends on
+  console.log("📚 Deploying DStakeRouterV2 libraries...");
 
   // Deploy DeterministicVaultSelector library
   const deterministicVaultSelectorDeployment = await deploy("DeterministicVaultSelector", {
@@ -76,16 +71,16 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
   }
 
-  // Deploy DStakeRouterMorpho for each dSTAKE instance
+  // Deploy DStakeRouterV2 for each dSTAKE instance
   for (const instanceKey in config.dStake) {
     const _instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
-    const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
+    const routerDeploymentName = `DStakeRouterV2_${instanceKey}`;
 
     // Check if already deployed to avoid redeployment on mainnet
-    const existingMorphoRouter = await deployments.getOrNull(morphoRouterDeploymentName);
+    const existingRouter = await deployments.getOrNull(routerDeploymentName);
 
-    if (existingMorphoRouter) {
-      console.log(`DStakeRouterMorpho for ${instanceKey} already deployed at ${existingMorphoRouter.address}. Skipping deployment.`);
+    if (existingRouter) {
+      console.log(`DStakeRouterV2 for ${instanceKey} already deployed at ${existingRouter.address}. Skipping deployment.`);
       continue;
     }
 
@@ -93,11 +88,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const dstakeTokenDeployment = await deployments.get(`DStakeToken_${instanceKey}`);
     const collateralVaultDeployment = await deployments.get(`DStakeCollateralVault_${instanceKey}`);
 
-    console.log(`🚀 Deploying DStakeRouterMorpho for ${instanceKey}...`);
+    console.log(`🚀 Deploying DStakeRouterV2 for ${instanceKey}...`);
 
-    const morphoRouterDeployment = await deploy(morphoRouterDeploymentName, {
+    const routerDeployment = await deploy(routerDeploymentName, {
       from: deployer,
-      contract: "DStakeRouterMorpho",
+      contract: "DStakeRouterV2",
       args: [dstakeTokenDeployment.address, collateralVaultDeployment.address],
       libraries: {
         DeterministicVaultSelector: deterministicVaultSelectorDeployment.address,
@@ -108,53 +103,53 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // Grant necessary roles to deployer for configuration scripts to work
     const deployerSigner = await ethers.getSigner(deployer);
-    const morphoRouterContract = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
+    const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address, deployerSigner);
 
     // Grant VAULT_MANAGER_ROLE, CONFIG_MANAGER_ROLE, and PAUSER_ROLE to deployer
-    const VAULT_MANAGER_ROLE = await morphoRouterContract.VAULT_MANAGER_ROLE();
-    const CONFIG_MANAGER_ROLE = await morphoRouterContract.CONFIG_MANAGER_ROLE();
-    const PAUSER_ROLE = await morphoRouterContract.PAUSER_ROLE();
+    const VAULT_MANAGER_ROLE = await routerContract.VAULT_MANAGER_ROLE();
+    const CONFIG_MANAGER_ROLE = await routerContract.CONFIG_MANAGER_ROLE();
+    const PAUSER_ROLE = await routerContract.PAUSER_ROLE();
 
-    const hasVaultRole = await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, deployer);
-    const hasConfigRole = await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, deployer);
-    const hasPauserRole = await morphoRouterContract.hasRole(PAUSER_ROLE, deployer);
+    const hasVaultRole = await routerContract.hasRole(VAULT_MANAGER_ROLE, deployer);
+    const hasConfigRole = await routerContract.hasRole(CONFIG_MANAGER_ROLE, deployer);
+    const hasPauserRole = await routerContract.hasRole(PAUSER_ROLE, deployer);
 
     if (!hasVaultRole) {
       await morphoRouterContract.grantRole(VAULT_MANAGER_ROLE, deployer);
     }
 
     if (!hasConfigRole) {
-      await morphoRouterContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
+      await routerContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
     }
 
     if (!hasPauserRole) {
-      await morphoRouterContract.grantRole(PAUSER_ROLE, deployer);
+      await routerContract.grantRole(PAUSER_ROLE, deployer);
     }
 
-    console.log(`✅ Deployed DStakeRouterMorpho for ${instanceKey} at ${morphoRouterDeployment.address}`);
+    console.log(`✅ Deployed DStakeRouterV2 for ${instanceKey} at ${routerDeployment.address}`);
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);
 };
 
 export default func;
-func.tags = ["dStakeMorphoRouter", "dStake", "morpho"];
-func.dependencies = ["dStakeCore", "dStakeAdapters", "metamorpho-adapters"];
+func.tags = ["dStakeRouterV2", "dStake"];
+func.dependencies = ["dStakeCore", "dStakeAdapters"];
 
 // Mark script as executed so it won't run again
-func.id = "deploy_morpho_router";
+func.id = "deploy_dstake_router_v2";
 
 // Skip if already deployed (safety for mainnet)
 func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
   const { deployments } = hre;
   const config = await getConfig(hre);
 
-  if (!config.dStake || !config.morpho) return true;
+  if (!config.dStake) return true;
 
-  // Check if all DStakeRouterMorpho instances are deployed
+  // Check if all DStakeRouterV2 instances are deployed
   for (const instanceKey in config.dStake) {
-    const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
-    const existingRouter = await deployments.getOrNull(morphoRouterDeploymentName);
+    const routerDeploymentName = `DStakeRouterV2_${instanceKey}`;
+    const existingRouter = await deployments.getOrNull(routerDeploymentName);
 
     if (!existingRouter) {
       return false; // At least one router is missing, allow script to run

@@ -5,10 +5,10 @@ import { DeployFunction } from "hardhat-deploy/types";
 import { getConfig } from "../../config/config";
 
 /**
- * Grant new role-based access controls for DStakeRouterMorpho and DStakeRouter contracts.
+ * Grant new role-based access controls for DStakeRouterV2 and DStakeRouter contracts.
  * This script adds the new granular roles introduced in the access control improvements:
  *
- * DStakeRouterMorpho:
+ * DStakeRouterV2:
  * - VAULT_MANAGER_ROLE for vault configuration functions
  * - CONFIG_MANAGER_ROLE for system parameters
  * - PAUSER_ROLE for emergency functions (already exists)
@@ -36,93 +36,54 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const instanceConfig = config.dStake[instanceKey];
     console.log(`\n🔐 Setting up new roles for dSTAKE instance ${instanceKey}…`);
 
-    // --- DStakeRouter roles ---
+    // --- DStakeRouterV2 roles ---
     try {
-      const routerDeployment = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
+      const routerV2Deployment = await deployments.getOrNull(`DStakeRouterV2_${instanceKey}`);
 
-      if (routerDeployment) {
-        console.log(`  📄 ROUTER ROLES: DStakeRouter_${instanceKey}`);
-        const routerContract = await ethers.getContractAt("DStakeRouter", routerDeployment.address, deployerSigner);
+      if (routerV2Deployment) {
+        console.log(`  📄 ROUTER ROLES: DStakeRouterV2_${instanceKey}`);
+        const routerV2Contract = await ethers.getContractAt("DStakeRouterV2", routerV2Deployment.address, deployerSigner);
 
-        const ADAPTER_MANAGER_ROLE = await routerContract.ADAPTER_MANAGER_ROLE();
-        const CONFIG_MANAGER_ROLE = await routerContract.CONFIG_MANAGER_ROLE();
+        const VAULT_MANAGER_ROLE = await routerV2Contract.VAULT_MANAGER_ROLE();
+        const CONFIG_MANAGER_ROLE = await routerV2Contract.CONFIG_MANAGER_ROLE();
+        const PAUSER_ROLE = await routerV2Contract.PAUSER_ROLE();
 
         // Grant new roles to the configured admin
-        if (!(await routerContract.hasRole(ADAPTER_MANAGER_ROLE, instanceConfig.initialAdmin))) {
-          await routerContract.grantRole(ADAPTER_MANAGER_ROLE, instanceConfig.initialAdmin);
-          console.log(`    ➕ Granted ADAPTER_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
-        }
-
-        if (!(await routerContract.hasRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin))) {
-          await routerContract.grantRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin);
-          console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
-        }
-
-        // Also grant to deployer temporarily for testing/configuration
-        if (!(await routerContract.hasRole(ADAPTER_MANAGER_ROLE, deployer))) {
-          await routerContract.grantRole(ADAPTER_MANAGER_ROLE, deployer);
-          console.log(`    ➕ Granted ADAPTER_MANAGER_ROLE to deployer (temporary)`);
-        }
-
-        if (!(await routerContract.hasRole(CONFIG_MANAGER_ROLE, deployer))) {
-          await routerContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
-          console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to deployer (temporary)`);
-        }
-      } else {
-        console.log(`  ⚠️ DStakeRouter_${instanceKey} not deployed, skipping router role setup`);
-      }
-    } catch (error) {
-      console.error(`  ❌ Failed to setup DStakeRouter_${instanceKey} roles: ${error}`);
-    }
-
-    // --- DStakeRouterMorpho roles ---
-    try {
-      const morphoRouterDeployment = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
-
-      if (morphoRouterDeployment) {
-        console.log(`  📄 MORPHO ROUTER ROLES: DStakeRouterMorpho_${instanceKey}`);
-        const morphoRouterContract = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
-
-        const VAULT_MANAGER_ROLE = await morphoRouterContract.VAULT_MANAGER_ROLE();
-        const CONFIG_MANAGER_ROLE = await morphoRouterContract.CONFIG_MANAGER_ROLE();
-        const PAUSER_ROLE = await morphoRouterContract.PAUSER_ROLE();
-
-        // Grant new roles to the configured admin
-        if (!(await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin))) {
-          await morphoRouterContract.grantRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin);
+        if (!(await routerV2Contract.hasRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await routerV2Contract.grantRole(VAULT_MANAGER_ROLE, instanceConfig.initialAdmin);
           console.log(`    ➕ Granted VAULT_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
         }
 
-        if (!(await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin))) {
-          await morphoRouterContract.grantRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin);
+        if (!(await routerV2Contract.hasRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin))) {
+          await routerV2Contract.grantRole(CONFIG_MANAGER_ROLE, instanceConfig.initialAdmin);
           console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to ${instanceConfig.initialAdmin}`);
         }
 
-        if (!(await morphoRouterContract.hasRole(PAUSER_ROLE, instanceConfig.initialAdmin))) {
-          await morphoRouterContract.grantRole(PAUSER_ROLE, instanceConfig.initialAdmin);
+        if (!(await routerV2Contract.hasRole(PAUSER_ROLE, instanceConfig.initialAdmin))) {
+          await routerV2Contract.grantRole(PAUSER_ROLE, instanceConfig.initialAdmin);
           console.log(`    ➕ Granted PAUSER_ROLE to ${instanceConfig.initialAdmin}`);
         }
 
         // Also grant to deployer temporarily for testing/configuration
-        if (!(await morphoRouterContract.hasRole(VAULT_MANAGER_ROLE, deployer))) {
-          await morphoRouterContract.grantRole(VAULT_MANAGER_ROLE, deployer);
+        if (!(await routerV2Contract.hasRole(VAULT_MANAGER_ROLE, deployer))) {
+          await routerV2Contract.grantRole(VAULT_MANAGER_ROLE, deployer);
           console.log(`    ➕ Granted VAULT_MANAGER_ROLE to deployer (temporary)`);
         }
 
-        if (!(await morphoRouterContract.hasRole(CONFIG_MANAGER_ROLE, deployer))) {
-          await morphoRouterContract.grantRole(CONFIG_MANAGER_ROLE, deployer);
+        if (!(await routerV2Contract.hasRole(CONFIG_MANAGER_ROLE, deployer))) {
+          await routerV2Contract.grantRole(CONFIG_MANAGER_ROLE, deployer);
           console.log(`    ➕ Granted CONFIG_MANAGER_ROLE to deployer (temporary)`);
         }
 
-        if (!(await morphoRouterContract.hasRole(PAUSER_ROLE, deployer))) {
-          await morphoRouterContract.grantRole(PAUSER_ROLE, deployer);
+        if (!(await routerV2Contract.hasRole(PAUSER_ROLE, deployer))) {
+          await routerV2Contract.grantRole(PAUSER_ROLE, deployer);
           console.log(`    ➕ Granted PAUSER_ROLE to deployer (temporary)`);
         }
       } else {
-        console.log(`  ⚠️ DStakeRouterMorpho_${instanceKey} not deployed, skipping morpho router role setup`);
+        console.log(`  ⚠️ DStakeRouterV2_${instanceKey} not deployed, skipping router role setup`);
       }
     } catch (error) {
-      console.error(`  ❌ Failed to setup DStakeRouterMorpho_${instanceKey} roles: ${error}`);
+      console.error(`  ❌ Failed to setup DStakeRouterV2_${instanceKey} roles: ${error}`);
     }
 
     // --- DStakeRewardManagerMetaMorpho roles ---
@@ -168,9 +129,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.tags = ["dStakeNewRoles", "postDStake"];
-func.dependencies = ["dStakeMorphoConfigure"];
+func.dependencies = ["dStakeRouterV2Configure"];
 func.runAtTheEnd = false;
 
 // Unique identifier so Hardhat Deploy knows this script has executed when it
 // returns `true` (skip behaviour).
-func.id = "update_morpho_router_roles";
+func.id = "update_dstake_router_roles";

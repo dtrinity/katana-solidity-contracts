@@ -5,7 +5,7 @@ import { deployments, ethers, getNamedAccounts } from "hardhat";
 
 import {
   DStakeCollateralVault,
-  DStakeRouter,
+  DStakeRouterV2,
   DStakeToken,
   ERC20,
 } from "../../typechain-types";
@@ -29,7 +29,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let user1: SignerWithAddress;
     let DStakeToken: DStakeToken;
     let collateralVault: DStakeCollateralVault;
-    let router: DStakeRouter;
+    let router: DStakeRouterV2;
     let dStableToken: ERC20;
     let stable: ERC20StablecoinUpgradeable;
     let minterRole: string;
@@ -55,7 +55,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       );
       DStakeToken = out.DStakeToken as unknown as DStakeToken;
       collateralVault = out.collateralVault as unknown as DStakeCollateralVault;
-      router = out.router as unknown as DStakeRouter;
+      router = out.router as unknown as DStakeRouterV2;
       dStableToken = out.dStableToken;
       dStableDecimals = await dStableToken.decimals();
 

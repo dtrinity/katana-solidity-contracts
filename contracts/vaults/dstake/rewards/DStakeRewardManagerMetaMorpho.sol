@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { RewardClaimable } from "../../rewards_claimable/RewardClaimable.sol";
-import { DStakeRouter } from "../DStakeRouter.sol";
+import { DStakeRouterV2 } from "../DStakeRouterV2.sol";
 import { IDStakeCollateralVault } from "../interfaces/IDStakeCollateralVault.sol";
 import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -52,7 +52,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
   // --- State ---
   address public immutable dStakeCollateralVault;
-  DStakeRouter public immutable dStakeRouter;
+  DStakeRouterV2 public immutable dStakeRouter;
   IMetaMorpho public immutable metaMorphoVault;
   IUniversalRewardsDistributor public urd; // Can be updated by admin
 
@@ -109,7 +109,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     }
 
     dStakeCollateralVault = _dStakeCollateralVault;
-    dStakeRouter = DStakeRouter(_dStakeRouter);
+    dStakeRouter = DStakeRouterV2(_dStakeRouter);
     metaMorphoVault = IMetaMorpho(_metaMorphoVault);
 
     if (_urd != address(0)) {

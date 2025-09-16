@@ -56,7 +56,7 @@ Following our second round security audit, we validated concerns and implemented
 
 ```
 Files Modified: 2
-- contracts/vaults/dstake/DStakeRouterMorpho.sol
+- contracts/vaults/dstake/DStakeRouterV2.sol
 - contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol
 
 Commits: 3

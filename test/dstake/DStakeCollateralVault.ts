@@ -5,7 +5,7 @@ import { ethers, getNamedAccounts } from "hardhat";
 
 import {
   DStakeCollateralVault,
-  DStakeRouter,
+  DStakeRouterV2,
   DStakeToken,
   ERC20,
   IDStableConversionAdapter,
@@ -37,7 +37,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     // Fixture types
     let DStakeToken: DStakeToken;
     let collateralVault: DStakeCollateralVault;
-    let router: DStakeRouter;
+    let router: DStakeRouterV2;
     let dStableToken: ERC20;
     let dStableDecimals: bigint;
     let vaultAssetToken: IERC20;
@@ -65,7 +65,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
       DStakeToken = out.DStakeToken as unknown as DStakeToken;
       collateralVault = out.collateralVault as unknown as DStakeCollateralVault;
-      router = out.router as unknown as DStakeRouter;
+      router = out.router as unknown as DStakeRouterV2;
       dStableToken = out.dStableToken;
       dStableDecimals = await dStableToken.decimals();
       vaultAssetToken = out.vaultAssetToken;

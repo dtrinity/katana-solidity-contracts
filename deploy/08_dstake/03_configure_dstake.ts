@@ -71,7 +71,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
     const DStakeTokenDeploymentName = `DStakeToken_${instanceKey}`;
     const collateralVaultDeploymentName = `DStakeCollateralVault_${instanceKey}`;
-    const routerDeploymentName = `DStakeRouter_${instanceKey}`;
+    const routerDeploymentName = `DStakeRouterV2_${instanceKey}`;
 
     const collateralVaultDeployment = await get(collateralVaultDeploymentName);
     const routerDeployment = await get(routerDeploymentName);
@@ -111,7 +111,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     // --- Configure DStakeCollateralVault ---
-    const routerContract = await ethers.getContractAt("DStakeRouter", routerDeployment.address, deployerSigner);
+    const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address, deployerSigner);
 
     const vaultRouter = await collateralVault.router();
     const vaultRouterRole = await collateralVault.ROUTER_ROLE();
@@ -191,7 +191,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.tags = ["dStakeConfigure", "dStake"];
-func.dependencies = ["dStakeCore", "dStakeAdapters", "metamorpho-adapters"];
+func.dependencies = ["dStakeCore", "dStakeAdapters", "dStakeRouterV2", "metamorpho-adapters"];
 func.runAtTheEnd = true;
 
 // Prevent re-execution after successful run.

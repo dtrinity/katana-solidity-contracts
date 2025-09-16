@@ -69,7 +69,7 @@ With 1 wei amounts: `(1 * 1_000_000) / totalBalance` rounds to 0.
 
 ### 6. **Asset Stranding During Vault Removal**
 **Severity**: HIGH  
-**File**: `DStakeRouterMorpho.sol:359-383`  
+**File**: `DStakeRouterV2.sol:359-383`  
 **Impact**: Permanent fund lock
 
 `removeVaultConfig()` doesn't migrate assets automatically.  

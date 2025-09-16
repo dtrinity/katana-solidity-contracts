@@ -95,11 +95,11 @@ async function fetchDStakeComponents(
   );
 
   const router = await ethers.getContractAt(
-    "DStakeRouter",
+    "DStakeRouterV2",
     (await deployments.get(config.routerContractId)).address
   );
 
-  // Setup basic admin permissions for DStakeRouter
+  // Setup basic admin permissions for DStakeRouterV2
   // Grant DEFAULT_ADMIN_ROLE to the first test signer (standard test owner)
   const signers = await ethers.getSigners();
   const testOwner = signers[0]; // Standard test owner address

@@ -61,7 +61,7 @@ This PR implements critical security improvements and fixes identified through t
 ## Files Modified
 
 ### Core Contracts
-- `contracts/vaults/dstake/DStakeRouterMorpho.sol` - Router security & features
+- `contracts/vaults/dstake/DStakeRouterV2.sol` - Router security & features
 - `contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol` - Slippage & emergency fixes
 - `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol` - Reward flow fix
 - `contracts/vaults/dstake/libraries/AllocationCalculator.sol` - Basis points standardization
@@ -111,7 +111,7 @@ e4b1707 feat: add global pause mechanism to router
 413a7cb fix(security): add reentrancy protection to vault operations
 f675960 fix(security): add gas limit to emergency ETH transfers
 89437e8 fix(security): ensure rewards flow to collateral vault in claim
-c3525cd fix(security): correct basis points validation in DStakeRouterMorpho
+c3525cd fix(security): correct basis points validation in DStakeRouterV2
 ```
 
 ## Review Focus Areas

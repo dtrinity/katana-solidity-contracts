@@ -17,12 +17,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const config = await getConfig(hre);
 
   if (!config.dStake) {
-    console.log("No dStake configuration found for this network. Skipping migration to DStakeRouterMorpho.");
-    return;
-  }
-
-  if (!config.morpho) {
-    console.log("No Morpho configuration found for this network. Skipping migration to DStakeRouterMorpho.");
+    console.log("No dStake configuration found for this network. Skipping migration to DStakeRouterV2.");
     return;
   }
 
@@ -38,7 +33,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // Check if both old and new routers exist
     const oldRouterExists = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
-    const newRouterExists = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
+    const newRouterExists = await deployments.getOrNull(`DStakeRouterV2_${instanceKey}`);
 
     if (!oldRouterExists) {
       console.log(`⚠️  Skipping ${instanceKey}: Original DStakeRouter not found`);
@@ -46,7 +41,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     if (!newRouterExists) {
-      console.log(`⚠️  Skipping ${instanceKey}: DStakeRouterMorpho not deployed yet`);
+      console.log(`⚠️  Skipping ${instanceKey}: DStakeRouterV2 not deployed yet`);
       continue;
     }
 
@@ -56,7 +51,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const currentRouter = await dstakeToken.router();
 
     if (currentRouter === newRouterExists.address) {
-      console.log(`👍 ${instanceKey} already migrated to DStakeRouterMorpho`);
+      console.log(`👍 ${instanceKey} already migrated to DStakeRouterV2`);
       continue;
     }
 
@@ -64,26 +59,25 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   if (migrateInstances.length === 0) {
-    console.log("No instances require migration to DStakeRouterMorpho.");
+    console.log("No instances require migration to DStakeRouterV2.");
     return;
   }
 
-  console.log(`🔄 Migrating ${migrateInstances.length} instances to DStakeRouterMorpho...`);
+  console.log(`🔄 Migrating ${migrateInstances.length} instances to DStakeRouterV2...`);
 
   // Perform migration for each instance
   for (const instanceKey of migrateInstances) {
-    console.log(`🔄 Migrating ${instanceKey} to DStakeRouterMorpho...`);
+    console.log(`🔄 Migrating ${instanceKey} to DStakeRouterV2...`);
 
     // Get contract instances
     const dstakeTokenDeployment = await get(`DStakeToken_${instanceKey}`);
     const collateralVaultDeployment = await get(`DStakeCollateralVault_${instanceKey}`);
     const oldRouterDeployment = await get(`DStakeRouter_${instanceKey}`);
-    const newRouterDeployment = await get(`DStakeRouterMorpho_${instanceKey}`);
+    const newRouterDeployment = await get(`DStakeRouterV2_${instanceKey}`);
 
     const dstakeToken = await ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address, deployerSigner);
     const collateralVault = await ethers.getContractAt("DStakeCollateralVault", collateralVaultDeployment.address, deployerSigner);
-    const _oldRouter = await ethers.getContractAt("DStakeRouter", oldRouterDeployment.address, deployerSigner);
-    const newRouter = await ethers.getContractAt("DStakeRouterMorpho", newRouterDeployment.address, deployerSigner);
+    const newRouter = await ethers.getContractAt("DStakeRouterV2", newRouterDeployment.address, deployerSigner);
 
     // --- Step 1: Safety Checks ---
     console.log(`    🔍 Performing safety checks for ${instanceKey}...`);
@@ -92,7 +86,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const newRouterVaultCount = await newRouter.getVaultCount();
 
     if (newRouterVaultCount.toString() === "0") {
-      throw new Error(`DStakeRouterMorpho for ${instanceKey} is not configured with any vaults. Run configuration script first.`);
+      throw new Error(`DStakeRouterV2 for ${instanceKey} is not configured with any vaults. Run configuration script first.`);
     }
 
     // Verify router role permissions
@@ -106,10 +100,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // --- Step 2: Grant Router Role to New Router ---
     if (!hasNewRouterRole) {
-      console.log(`    ➕ Granting ROUTER_ROLE to new DStakeRouterMorpho for ${instanceKey}...`);
+      console.log(`    ➕ Granting ROUTER_ROLE to new DStakeRouterV2 for ${instanceKey}...`);
       await collateralVault.grantRole(routerRole, newRouterDeployment.address);
     } else {
-      console.log(`    👍 New DStakeRouterMorpho already has ROUTER_ROLE for ${instanceKey}`);
+      console.log(`    👍 New DStakeRouterV2 already has ROUTER_ROLE for ${instanceKey}`);
     }
 
     // --- Step 3: Check for Active Deposits/Withdrawals ---
@@ -186,29 +180,29 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`      - Old router has ROUTER_ROLE: ${finalHasOldRouterRole}`);
   }
 
-  console.log(`✅ Migration to DStakeRouterMorpho completed for all ${migrateInstances.length} instances`);
+  console.log(`✅ Migration to DStakeRouterV2 completed for all ${migrateInstances.length} instances`);
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);
 };
 
 export default func;
-func.tags = ["dStakeMorphoMigrate", "dStake", "morpho", "migration"];
-func.dependencies = ["dStakeMorphoConfigure"];
+func.tags = ["dStakeRouterV2Migrate", "dStake", "migration"];
+func.dependencies = ["dStakeRouterV2Configure"];
 func.runAtTheEnd = true;
 
 // Mark script as executed so it won't run again
-func.id = "migrate_to_morpho_router";
+func.id = "migrate_to_dstake_router_v2";
 
 // Skip if migration is not needed or already completed
 func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
   const { deployments } = hre;
   const config = await getConfig(hre);
 
-  if (!config.dStake || !config.morpho) return true;
+  if (!config.dStake) return true;
 
   // Check if migration is needed for any instance
   for (const instanceKey in config.dStake) {
     const oldRouterExists = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
-    const newRouterExists = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
+    const newRouterExists = await deployments.getOrNull(`DStakeRouterV2_${instanceKey}`);
 
     if (!oldRouterExists || !newRouterExists) {
       continue; // Skip if routers don't exist

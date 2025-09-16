@@ -23,14 +23,12 @@ dSTAKE is a yield‑bearing stablecoin vault. Users deposit dSTABLE (e.g., dUSD)
   - Computes `totalValueInDStable()` by asking registered adapters to value held assets.
   - Grants `ROUTER_ROLE` to the active router; governance can rotate routers.
 
-- Routers (orchestration, non‑upgradeable)
-  - Base Router: `contracts/vaults/dstake/DStakeRouter.sol`
-    - Converts dSTABLE to a default vault asset on deposit and back on withdrawal.
-    - Manages `vaultAsset → adapter` mappings, slippage/value‑parity checks, and exchanges.
-  - Morpho Router: `contracts/vaults/dstake/DStakeRouterMorpho.sol`
-    - Extends the base router with deterministic multi‑vault selection and target allocations.
-    - Splits deposits and sources withdrawals across configured MetaMorpho vaults.
-    - Pausable; includes simple, manual collateral exchange for ops.
+- Router V2 (orchestration, non-upgradeable)
+  - File: `contracts/vaults/dstake/DStakeRouterV2.sol`
+  - Deterministically selects and splits deposits across multiple configured vaults based on target allocations.
+  - Routes withdrawals across over-allocated vaults, enforcing exact fulfillment with shared buffer/shortfall logic.
+  - Manages `vaultAsset → adapter` mappings, deterministic vault configs, and collateral exchanges.
+  - Governable caps (`maxVaultsPerOperation`, `maxVaultCount`) and pausing provide operational controls.
 
 - Adapters (protocol integrations)
   - Interface: `contracts/vaults/dstake/interfaces/IDStableConversionAdapter.sol`
@@ -48,14 +46,13 @@ dSTAKE is a yield‑bearing stablecoin vault. Users deposit dSTABLE (e.g., dUSD)
 - Deposit / Mint
   - User deposits dSTABLE into `DStakeToken` and receives shares.
   - Token approves the router and calls `router.deposit(amount)`.
-  - Router routes dSTABLE through the selected adapter(s) and mints vault assets directly to the collateral vault.
-  - With `DStakeRouterMorpho`, deposits may be split across multiple configured vaults.
+  - Router routes dSTABLE through the selected adapter(s) and mints vault assets directly to the collateral vault according to target allocations.
 
 - Withdraw / Redeem
   - User requests dSTABLE (net of withdrawal fee); shares are burned.
   - Token calls `router.withdraw(netAmount, receiver, owner)`.
-  - Router pulls needed vault assets from the collateral vault, converts back to dSTABLE via adapter(s), and transfers to the receiver.
-  - Shortfalls/surplus are handled conservatively; the router exposes simple surplus sweep controls.
+  - Router pulls needed vault assets from the collateral vault, converts back to dSTABLE via adapter(s), and transfers to the receiver, reverting if the configured vault set cannot satisfy the request.
+  - Shared buffer/shortfall logic covers minor adapter rounding, and surplus can be swept back into the portfolio.
 
 - Yield Accrual
   - Vault assets (e.g., ERC4626 shares) accrue yield upstream; valuation is measured in dSTABLE.
@@ -63,44 +60,42 @@ dSTAKE is a yield‑bearing stablecoin vault. Users deposit dSTABLE (e.g., dUSD)
 
 - Rebalancing & Exchanges
   - Governance/ops can exchange between supported vault assets through adapters using dSTABLE as the intermediary.
-  - Morpho Router provides deterministic allocation towards configured target weights and a manual collateral exchange helper.
+  - Router V2 maintains deterministic allocation towards configured target weights and includes a manual collateral exchange helper.
 
 ### Risk & Safety Model
 
 - Access Control
   - Token: `DEFAULT_ADMIN_ROLE`, `FEE_MANAGER_ROLE`.
-  - Router: `DSTAKE_TOKEN_ROLE` (only token may call deposit/withdraw), `ADAPTER_MANAGER_ROLE`, `CONFIG_MANAGER_ROLE`, `COLLATERAL_EXCHANGER_ROLE`.
+  - Router V2: `DSTAKE_TOKEN_ROLE` (only token may call deposit/withdraw), `ADAPTER_MANAGER_ROLE`, `CONFIG_MANAGER_ROLE`, `COLLATERAL_EXCHANGER_ROLE`, `VAULT_MANAGER_ROLE`, `PAUSER_ROLE`.
   - Collateral Vault: `DEFAULT_ADMIN_ROLE`, `ROUTER_ROLE` (granted to active router).
-  - Morpho Router adds `PAUSER_ROLE` and `VAULT_MANAGER_ROLE`.
 
 - Guards & Invariants
   - Unit of account is dSTABLE; all previews/valuations are in dSTABLE terms.
   - Adapters are single‑purpose per vault asset and must mint/return the expected token.
   - Slippage and value‑parity checks use adapter previews and a governable `dustTolerance`.
   - Unknown tokens dusted to the collateral vault are ignored in valuation, preserving liveness.
-  - Morpho Router is pausable for deposit/withdraw paths.
+  - Router V2 is pausable for deposit/withdraw paths.
 
 ### Extending dSTAKE
 
 - Add a New Protocol
   - Implement `IDStableConversionAdapter` for the target vault asset.
   - Register the adapter in the router; the collateral vault will list the asset on first use.
-  - For multi‑vault routing (Morpho), provide vault configs and target allocations.
+  - Provide vault configs and target allocations when onboarding additional strategies.
 
 - Change Routing
-  - Use base router for a single default strategy or Morpho router for weighted, multi‑vault flow.
-  - Routers are non‑upgradeable by design; governance can deploy a new router and rotate via `setRouter` on token/vault.
+  - Router V2 deterministically covers both single- and multi-vault flows.
+  - Routers are non-upgradeable by design; governance can deploy a new router and rotate via `setRouter` on token/vault.
 
 - Upgrade & Parameters
   - `DStakeToken` is upgradeable; routers and collateral vault are replaceable.
-  - Governance can set withdrawal fees (capped), dust tolerance, default deposit asset, vault configs, and pause (Morpho).
+  - Governance can set withdrawal fees (capped), dust tolerance, default deposit asset, vault configs, and pause the router.
 
 ### Developer Map
 
 - Token: `contracts/vaults/dstake/DStakeToken.sol`
 - Collateral Vault: `contracts/vaults/dstake/DStakeCollateralVault.sol`
-- Base Router: `contracts/vaults/dstake/DStakeRouter.sol`
-- Morpho Router: `contracts/vaults/dstake/DStakeRouterMorpho.sol`
+- Router: `contracts/vaults/dstake/DStakeRouterV2.sol`
 - Adapters: `contracts/vaults/dstake/adapters/`
 - Interfaces: `contracts/vaults/dstake/interfaces/`
 - Rewards (optional): `contracts/vaults/dstake/rewards/`
@@ -111,4 +106,3 @@ dSTAKE is a yield‑bearing stablecoin vault. Users deposit dSTABLE (e.g., dUSD)
 - The router uses adapters to hop between dSTABLE and protocol‑specific vault assets.
 - The collateral vault only holds assets and reports their value in dSTABLE.
 - Yield happens upstream; dSTAKE reflects it in share price. Governance tunes routes, fees, and allocations.
-

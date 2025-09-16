@@ -18,7 +18,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Get dependencies
   const dusd = await get("dUSD");
   const sdUSDCollateralVault = await get("DStakeCollateralVault_sdUSD");
-  const sdUSDRouter = await get("DStakeRouter_sdUSD");
+  const sdUSDRouter = await get("DStakeRouterV2_sdUSD");
   const mockMetaMorphoVaultdUSD = await get("MockMetaMorphoVault_dUSD");
 
   // Deploy MetaMorphoConversionAdapter for dUSD
@@ -31,7 +31,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Register adapter with router
   const deployerSigner = await hre.ethers.getSigner(deployer);
-  const sdUSDRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdUSDRouter.address, deployerSigner);
+  const sdUSDRouterContract = await hre.ethers.getContractAt("DStakeRouterV2", sdUSDRouter.address, deployerSigner);
 
   // Check if adapter is already registered
   const currentAdapter = await sdUSDRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdUSD.address);
@@ -59,7 +59,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Deploy for dETH
   const deth = await get("dETH");
   const sdETHCollateralVault = await get("DStakeCollateralVault_sdETH");
-  const sdETHRouter = await get("DStakeRouter_sdETH");
+  const sdETHRouter = await get("DStakeRouterV2_sdETH");
   const mockMetaMorphoVaultdETH = await get("MockMetaMorphoVault_dETH");
 
   const adapterDETH = await deploy("MetaMorphoConversionAdapter_dETH", {
@@ -70,7 +70,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   // Register adapter with router
-  const sdETHRouterContract = await hre.ethers.getContractAt("DStakeRouter", sdETHRouter.address, deployerSigner);
+  const sdETHRouterContract = await hre.ethers.getContractAt("DStakeRouterV2", sdETHRouter.address, deployerSigner);
 
   const currentAdapterETH = await sdETHRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdETH.address);
 
@@ -96,6 +96,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 func.tags = ["metamorpho-adapters", "dStake"];
-func.dependencies = ["mock-metamorpho-vaults"];
+func.dependencies = ["mock-metamorpho-vaults", "dStakeRouterV2"];
 
 export default func;

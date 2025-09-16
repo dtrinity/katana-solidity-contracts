@@ -7,7 +7,7 @@ import {
   MockUniversalRewardsDistributor,
   TestMintableERC20,
   DStakeCollateralVault,
-  DStakeRouter,
+  DStakeRouterV2,
   MetaMorphoConversionAdapter
 } from "../../../../typechain-types";
 
@@ -23,7 +23,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
   let metaMorphoVault: MockMetaMorphoVault;
   let urd: MockUniversalRewardsDistributor;
   let collateralVault: DStakeCollateralVault;
-  let router: DStakeRouter;
+  let router: DStakeRouterV2;
   let adapter: MetaMorphoConversionAdapter;
   let rewardManager: DStakeRewardManagerMetaMorpho;
   
@@ -66,7 +66,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     );
     
     // Deploy router
-    const RouterFactory = await ethers.getContractFactory("DStakeRouter");
+    const RouterFactory = await ethers.getContractFactory("DStakeRouterV2");
     router = await RouterFactory.deploy(
       dStakeToken.target,
       collateralVault.target

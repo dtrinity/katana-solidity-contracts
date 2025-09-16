@@ -17,12 +17,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const config = await getConfig(hre);
 
   if (!config.dStake) {
-    console.log("No dStake configuration found for this network. Skipping DStakeRouterMorpho configuration.");
-    return;
-  }
-
-  if (!config.morpho) {
-    console.log("No Morpho configuration found for this network. Skipping DStakeRouterMorpho configuration.");
+    console.log("No dStake configuration found for this network. Skipping DStakeRouterV2 configuration.");
     return;
   }
 
@@ -44,38 +39,38 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing collateralExchangers array for dSTAKE instance ${instanceKey}`);
     }
 
-    // Check if DStakeRouterMorpho is deployed for this instance
-    const morphoRouterDeploymentExists = await deployments.getOrNull(`DStakeRouterMorpho_${instanceKey}`);
+    // Check if DStakeRouterV2 is deployed for this instance
+    const routerV2DeploymentExists = await deployments.getOrNull(`DStakeRouterV2_${instanceKey}`);
 
-    if (!morphoRouterDeploymentExists) {
-      console.log(`⚠️  Skipping ${instanceKey}: DStakeRouterMorpho not deployed yet`);
+    if (!routerV2DeploymentExists) {
+      console.log(`⚠️  Skipping ${instanceKey}: DStakeRouterV2 not deployed yet`);
       continue;
     }
 
     validInstances.push(instanceKey);
   }
 
-  // Configure DStakeRouterMorpho for each valid instance
+  // Configure DStakeRouterV2 for each valid instance
   for (const instanceKey of validInstances) {
     const instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
-    const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
+    const routerV2DeploymentName = `DStakeRouterV2_${instanceKey}`;
 
-    console.log(`⚙️ Configuring DStakeRouterMorpho for ${instanceKey}...`);
+    console.log(`⚙️ Configuring DStakeRouterV2 for ${instanceKey}...`);
 
-    const morphoRouterDeployment = await get(morphoRouterDeploymentName);
-    const morphoRouter = await ethers.getContractAt("DStakeRouterMorpho", morphoRouterDeployment.address, deployerSigner);
+    const routerV2Deployment = await get(routerV2DeploymentName);
+    const routerV2 = await ethers.getContractAt("DStakeRouterV2", routerV2Deployment.address, deployerSigner);
 
     // --- Configure Collateral Exchangers ---
-    const collateralExchangerRole = await morphoRouter.COLLATERAL_EXCHANGER_ROLE();
+    const collateralExchangerRole = await routerV2.COLLATERAL_EXCHANGER_ROLE();
 
     for (const exchanger of instanceConfig.collateralExchangers) {
-      const hasRole = await morphoRouter.hasRole(collateralExchangerRole, exchanger);
+      const hasRole = await routerV2.hasRole(collateralExchangerRole, exchanger);
 
       if (!hasRole) {
-        await morphoRouter.grantRole(collateralExchangerRole, exchanger);
-        console.log(`    ➕ Granted COLLATERAL_EXCHANGER_ROLE to ${exchanger} for ${morphoRouterDeploymentName}`);
+        await routerV2.grantRole(collateralExchangerRole, exchanger);
+        console.log(`    ➕ Granted COLLATERAL_EXCHANGER_ROLE to ${exchanger} for ${routerV2DeploymentName}`);
       } else {
-        console.log(`    👍 ${exchanger} already has COLLATERAL_EXCHANGER_ROLE for ${morphoRouterDeploymentName}`);
+        console.log(`    👍 ${exchanger} already has COLLATERAL_EXCHANGER_ROLE for ${routerV2DeploymentName}`);
       }
     }
 
@@ -127,10 +122,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         totalTargetBps += targetBps;
 
         // Add adapter to the router (base functionality)
-        const existingAdapter = await morphoRouter.vaultAssetToAdapter(vaultAssetAddress);
+        const existingAdapter = await routerV2.vaultAssetToAdapter(vaultAssetAddress);
 
         if (existingAdapter === ethers.ZeroAddress) {
-          await morphoRouter.addAdapter(vaultAssetAddress, adapterDeployment.address);
+          await routerV2.addAdapter(vaultAssetAddress, adapterDeployment.address);
           console.log(`    ➕ Added adapter ${adapterDeploymentName} for vault ${vaultAssetAddress}`);
         } else if (existingAdapter !== adapterDeployment.address) {
           console.log(
@@ -153,11 +148,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
       // Set vault configurations
       try {
-        const currentVaultCount = await morphoRouter.getVaultCount();
+        const currentVaultCount = await routerV2.getVaultCount();
 
         if (currentVaultCount.toString() === "0") {
-          console.log(`    ⚙️ Setting vault configurations for ${morphoRouterDeploymentName}...`);
-          await morphoRouter.setVaultConfigs(vaultConfigs);
+          console.log(`    ⚙️ Setting vault configurations for ${routerV2DeploymentName}...`);
+          await routerV2.setVaultConfigs(vaultConfigs);
           console.log(`    ✅ Configured ${vaultConfigs.length} vaults with target allocations`);
 
           // Log the configuration
@@ -166,10 +161,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
             console.log(`      Vault ${i + 1}: ${config.vault} -> ${config.targetBps / 100}% (Adapter: ${config.adapter})`);
           }
         } else {
-          console.log(`    👍 Vault configurations already set for ${morphoRouterDeploymentName} (${currentVaultCount} vaults)`);
+          console.log(`    👍 Vault configurations already set for ${routerV2DeploymentName} (${currentVaultCount} vaults)`);
         }
       } catch (error) {
-        console.error(`    ❌ Failed to set vault configurations for ${morphoRouterDeploymentName}:`, error);
+        console.error(`    ❌ Failed to set vault configurations for ${routerV2DeploymentName}:`, error);
         throw error;
       }
     } else {
@@ -179,27 +174,27 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // --- Configure Default Deposit Vault Asset ---
     // Use the first configured vault as the default
     if (vaultConfigs.length > 0) {
-      const currentDefaultAsset = await morphoRouter.defaultDepositVaultAsset();
+      const currentDefaultAsset = await routerV2.defaultDepositVaultAsset();
       const firstVaultAsset = vaultConfigs[0].vault;
 
       if (currentDefaultAsset !== firstVaultAsset) {
-        await morphoRouter.setDefaultDepositVaultAsset(firstVaultAsset);
-        console.log(`    ⚙️ Set default deposit vault asset to ${firstVaultAsset} for ${morphoRouterDeploymentName}`);
+        await routerV2.setDefaultDepositVaultAsset(firstVaultAsset);
+        console.log(`    ⚙️ Set default deposit vault asset to ${firstVaultAsset} for ${routerV2DeploymentName}`);
       } else {
-        console.log(`    👍 Default deposit vault asset already set for ${morphoRouterDeploymentName}`);
+        console.log(`    👍 Default deposit vault asset already set for ${routerV2DeploymentName}`);
       }
     }
 
-    console.log(`✅ Completed configuration for DStakeRouterMorpho ${instanceKey}`);
+    console.log(`✅ Completed configuration for DStakeRouterV2 ${instanceKey}`);
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);
 };
 
 export default func;
-func.tags = ["dStakeMorphoConfigure", "dStake", "morpho"];
-func.dependencies = ["dStakeMorphoRouter", "metamorpho-adapters"];
+func.tags = ["dStakeRouterV2Configure", "dStake"];
+func.dependencies = ["dStakeRouterV2", "metamorpho-adapters"];
 func.runAtTheEnd = false;
 
 // Mark script as executed so it won't run again
-func.id = "configure_morpho_router";
+func.id = "configure_dstake_router_v2";

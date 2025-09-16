@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { ethers, deployments, getNamedAccounts } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import {
-  DStakeRouterMorpho,
+  DStakeRouterV2,
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
@@ -13,7 +13,7 @@ import {
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
 
-describe("DStakeRouterMorpho Fixes Tests", function () {
+describe("DStakeRouterV2 Fixes Tests", function () {
   // Test configuration
   const config = SDUSD_CONFIG;
 
@@ -26,7 +26,7 @@ describe("DStakeRouterMorpho Fixes Tests", function () {
   let collateralExchanger: SignerWithAddress;
 
   let dStable: TestMintableERC20;
-  let router: DStakeRouterMorpho;
+  let router: DStakeRouterV2;
   let collateralVault: DStakeCollateralVault;
   let dStakeToken: DStakeToken;
 
@@ -49,7 +49,7 @@ describe("DStakeRouterMorpho Fixes Tests", function () {
 
   /**
    * Comprehensive deployment fixture that sets up:
-   * - DStakeRouterMorpho contract
+   * - DStakeRouterV2 contract
    * - 3 MetaMorpho vaults with different target allocations
    * - All necessary adapters and configurations
    * - Proper role assignments and permissions
@@ -99,9 +99,6 @@ describe("DStakeRouterMorpho Fixes Tests", function () {
       dStableAddress
     );
 
-    // Deploy DStakeRouterMorpho contract (libraries are inlined by compiler)
-    const DStakeRouterMorphoFactory = await ethers.getContractFactory("DStakeRouterMorpho");
-
     let dStakeTokenDeployment, collateralVaultDeployment;
     try {
       dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
@@ -121,11 +118,14 @@ describe("DStakeRouterMorpho Fixes Tests", function () {
       throw new Error(`Invalid collateralVault address: ${collateralVaultAddress}. Contract may not be deployed.`);
     }
 
-    const routerContract = await DStakeRouterMorphoFactory.deploy(
-      dStakeTokenAddress,
-      collateralVaultAddress
-    );
-    await routerContract.waitForDeployment();
+    const routerDeployment = await deployments.deploy("Test_DStakeRouterV2_Fixes", {
+      contract: "DStakeRouterV2",
+      from: deployer,
+      args: [dStakeTokenAddress, collateralVaultAddress],
+      log: false,
+      skipIfAlreadyDeployed: false,
+    });
+    const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
 
     const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
     const collateralVaultContract = await ethers.getContractAt(
@@ -436,8 +436,8 @@ describe("DStakeRouterMorpho Fixes Tests", function () {
         await dStakeToken.connect(alice).deposit(smallDeposit, alice.address);
       }
 
-      // Set maxVaultsPerOperation to 2 to allow selection of additional vaults
-      await router.setMaxVaultsPerOperation(1); // Start with 1, then test expansion
+      // Allow router to tap multiple vaults for the withdrawal
+      await router.setMaxVaultsPerOperation(3);
 
       // Create artificial liquidity constraint by setting vault fees (reduces available liquidity)
       await vault1.setFees(1000, 0); // 10% entry fee to reduce effective balance
