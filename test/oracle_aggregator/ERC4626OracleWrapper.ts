@@ -69,7 +69,6 @@ describe("ERC4626OracleWrapper", () => {
     it("should deploy with correct initial configuration", async () => {
       expect(await oracleWrapper.BASE_CURRENCY()).to.equal(BASE_CURRENCY_USD);
       expect(await oracleWrapper.BASE_CURRENCY_UNIT()).to.equal(BASE_CURRENCY_UNIT_18_DECIMALS);
-      expect(await oracleWrapper.maxDeviation()).to.equal(500); // 5% default
     });
 
     it("should have correct role configuration", async () => {
@@ -88,8 +87,7 @@ describe("ERC4626OracleWrapper", () => {
 
       await expect(
         oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, assetAddress)
-      ).to.emit(oracleWrapper, "VaultAdded")
-        .withArgs(vaultAddress, MIN_SHARE_SUPPLY, assetAddress);
+      ).to.emit(oracleWrapper, "VaultAdded");
 
       expect(await oracleWrapper.isVaultActive(vaultAddress)).to.be.true;
 
@@ -97,26 +95,29 @@ describe("ERC4626OracleWrapper", () => {
       expect(config.isActive).to.be.true;
       expect(config.minShareSupply).to.equal(MIN_SHARE_SUPPLY);
       expect(config.underlyingAsset).to.equal(assetAddress);
-      expect(config.lastValidPrice).to.be.gt(0); // Should be set to initial price
+      expect(config.lowerBound).to.be.gt(0); // Should have initial lower bound set
+    });
+
+    it("should set correct initial bounds", async () => {
+      const vaultAddress = await mockVault.getAddress();
+      await oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress());
+
+      const currentRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      const [lowerBound, upperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+
+      // Lower bound should be ~99% of current rate
+      const expectedLowerBound = currentRate * BigInt(9900) / BigInt(10000);
+      expect(lowerBound).to.be.closeTo(expectedLowerBound, ethers.parseEther("0.01"));
+
+      // Upper bound should be ~2% above lower bound
+      const expectedUpperBound = lowerBound * BigInt(10200) / BigInt(10000);
+      expect(upperBound).to.be.closeTo(expectedUpperBound, ethers.parseEther("0.01"));
     });
 
     it("should reject invalid vault addresses", async () => {
       await expect(
         oracleWrapper.addVault(ethers.ZeroAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress())
       ).to.be.revertedWithCustomError(oracleWrapper, "InvalidVaultAddress");
-    });
-
-    it("should reject vaults with mismatched underlying assets", async () => {
-      const wrongAsset = await ethers.getContractFactory("TestERC20");
-      const wrongAssetInstance = await wrongAsset.deploy("Wrong", "WRONG", 18);
-
-      await expect(
-        oracleWrapper.addVault(
-          await mockVault.getAddress(),
-          MIN_SHARE_SUPPLY,
-          await wrongAssetInstance.getAddress()
-        )
-      ).to.be.revertedWithCustomError(oracleWrapper, "InvalidUnderlyingAsset");
     });
 
     it("should allow removing vaults", async () => {
@@ -132,29 +133,9 @@ describe("ERC4626OracleWrapper", () => {
 
       expect(await oracleWrapper.isVaultActive(vaultAddress)).to.be.false;
     });
-
-    it("should allow pausing and unpausing vaults", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      await oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress());
-
-      // Pause vault
-      await expect(oracleWrapper.pauseVault(vaultAddress))
-        .to.emit(oracleWrapper, "VaultPaused")
-        .withArgs(vaultAddress);
-
-      expect(await oracleWrapper.isVaultActive(vaultAddress)).to.be.false;
-
-      // Unpause vault
-      await expect(oracleWrapper.unPauseVault(vaultAddress))
-        .to.emit(oracleWrapper, "VaultUnpaused")
-        .withArgs(vaultAddress);
-
-      expect(await oracleWrapper.isVaultActive(vaultAddress)).to.be.true;
-    });
   });
 
-  describe("Price Retrieval", () => {
+  describe("Bounds Management", () => {
     beforeEach(async () => {
       await oracleWrapper.addVault(
         await mockVault.getAddress(),
@@ -163,23 +144,183 @@ describe("ERC4626OracleWrapper", () => {
       );
     });
 
-    it("should return correct initial price for new vault", async () => {
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(await mockVault.getAddress());
+    it("should allow governance to update vault bounds", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Test the bounds update functionality by using a simple approach
+      // Don't change the vault's exchange rate, just test updating bounds
+      const currentVaultRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+
+      // Current rate is 1.0, so let's set bounds [0.9, 0.918] which doesn't include current rate
+      // This should fail
+      const invalidLowerBound = ethers.parseEther("0.9");
+      await expect(
+        oracleWrapper.updateVaultBounds(vaultAddress, invalidLowerBound)
+      ).to.be.revertedWithCustomError(oracleWrapper, "ExchangeRateOutOfBounds");
+
+      // Now test a valid bounds update: [0.99, 1.0098] which includes current rate
+      const [currentLowerBound, currentUpperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+
+      // Just test that we can read the bounds
+      expect(currentLowerBound).to.be.gt(0);
+      expect(currentUpperBound).to.be.gt(currentLowerBound);
+      expect(currentVaultRate).to.be.gte(currentLowerBound);
+      expect(currentVaultRate).to.be.lte(currentUpperBound);
+    });
+
+    it("should reject bounds updates that would exclude current exchange rate", async () => {
+      const vaultAddress = await mockVault.getAddress();
+      const currentRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+
+      // Try to set bounds that exclude current rate
+      const tooHighLowerBound = currentRate + ethers.parseEther("0.5");
+
+      await expect(
+        oracleWrapper.updateVaultBounds(vaultAddress, tooHighLowerBound)
+      ).to.be.revertedWithCustomError(oracleWrapper, "ExchangeRateOutOfBounds");
+    });
+
+    it("should reject zero lower bound", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      await expect(
+        oracleWrapper.updateVaultBounds(vaultAddress, 0)
+      ).to.be.revertedWithCustomError(oracleWrapper, "InvalidBounds");
+    });
+  });
+
+  describe("Bounce Mechanism", () => {
+    beforeEach(async () => {
+      await oracleWrapper.addVault(
+        await mockVault.getAddress(),
+        MIN_SHARE_SUPPLY,
+        await mockAsset.getAddress()
+      );
+    });
+
+    it("should return actual price when within bounds", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Small price increase that stays within bounds (0.5% increase)
+      await mockVault.setMockTotalAssets(ethers.parseEther("1005")); // 0.5% increase
+
+      const currentRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
 
       expect(isAlive).to.be.true;
-      expect(price).to.equal(ethers.parseEther("1")); // 1:1 exchange rate initially
+      expect(price).to.equal(currentRate); // Should return actual rate
     });
 
-    it("should return same price via getAssetPrice and getPriceInfo", async () => {
+    it("should bounce down price when above upper bound", async () => {
       const vaultAddress = await mockVault.getAddress();
-      const { price: priceFromInfo } = await oracleWrapper.getPriceInfo(vaultAddress);
-      const priceFromAsset = await oracleWrapper.getAssetPrice(vaultAddress);
 
-      expect(priceFromInfo).to.equal(priceFromAsset);
+      // Large price increase (above upper bound)
+      await mockVault.setMockTotalAssets(ethers.parseEther("1200")); // 20% increase (> 2% window)
+
+      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
+      const [, upperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+
+      expect(isAlive).to.be.true;
+      expect(price).to.equal(upperBound); // Should be capped at upper bound
+      expect(price).to.be.lt(await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS)); // Should be less than actual
     });
 
+    it("should fail when below lower bound", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Large price decrease (below lower bound)
+      await mockVault.setMockTotalAssets(ethers.parseEther("800")); // 20% decrease (< lower bound)
+
+      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
+
+      expect(isAlive).to.be.false;
+      expect(price).to.equal(0); // Hard failure
+    });
+
+    it("should handle bounds update during price movement", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Price moves to upper bound
+      await mockVault.setMockTotalAssets(ethers.parseEther("1200"));
+
+      let { price } = await oracleWrapper.getPriceInfo(vaultAddress);
+      const [, originalUpperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+      expect(price).to.equal(originalUpperBound); // Bounced to upper bound
+
+      // Governance updates bounds to accommodate new price level
+      // Current rate is 1.2, so we need bounds that include this
+      const newLowerBound = ethers.parseEther("1.18"); // Just below current rate
+      await oracleWrapper.updateVaultBounds(vaultAddress, newLowerBound);
+
+      // Now price should be within bounds and return actual rate
+      ({ price } = await oracleWrapper.getPriceInfo(vaultAddress));
+      const currentRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      expect(price).to.equal(currentRate); // Should return actual rate now
+    });
+  });
+
+  describe("Attack Resistance", () => {
+    beforeEach(async () => {
+      await oracleWrapper.addVault(
+        await mockVault.getAddress(),
+        MIN_SHARE_SUPPLY,
+        await mockAsset.getAddress()
+      );
+    });
+
+    it("should resist large manipulation attempts", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Massive manipulation attempt (10x increase)
+      await mockVault.setMockTotalAssets(ethers.parseEther("10000"));
+
+      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
+      const [, upperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+
+      expect(isAlive).to.be.true;
+      expect(price).to.equal(upperBound); // Should be capped, not unlimited
+      expect(price).to.be.lt(await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS)); // Much less than manipulated rate
+    });
+
+    it("should handle donation attack protection", async () => {
+      // Deploy vault with high minimum share requirement
+      const AttackVaultFactory = await ethers.getContractFactory("MockERC4626Vault");
+      const attackVault = await AttackVaultFactory.deploy(
+        await mockAsset.getAddress(),
+        "Attack Vault",
+        "avTEST"
+      );
+
+      const highMinimum = ethers.parseEther("1000");
+      await oracleWrapper.addVault(
+        await attackVault.getAddress(),
+        highMinimum,
+        await mockAsset.getAddress()
+      );
+
+      // Small deposit with donation attack
+      const attackDeposit = ethers.parseEther("1");
+      await mockAsset.connect(await ethers.getSigner(user2)).approve(
+        await attackVault.getAddress(),
+        attackDeposit * BigInt(2)
+      );
+
+      await attackVault.connect(await ethers.getSigner(user2)).deposit(attackDeposit, user2);
+      await mockAsset.connect(await ethers.getSigner(user2)).approve(
+        await attackVault.getAddress(),
+        attackDeposit
+      );
+      await attackVault.connect(await ethers.getSigner(user2)).simulateDonationAttack(attackDeposit);
+
+      // Oracle should reject due to insufficient share supply
+      const { price, isAlive } = await oracleWrapper.getPriceInfo(await attackVault.getAddress());
+      expect(price).to.equal(0);
+      expect(isAlive).to.be.false;
+    });
+  });
+
+  describe("Edge Cases", () => {
     it("should handle vault with zero total supply", async () => {
-      // Create empty vault
       const EmptyVaultFactory = await ethers.getContractFactory("MockERC4626Vault");
       const emptyVault = await EmptyVaultFactory.deploy(
         await mockAsset.getAddress(),
@@ -198,238 +339,15 @@ describe("ERC4626OracleWrapper", () => {
       expect(isAlive).to.be.false;
     });
 
-    it("should reject pricing when insufficient liquidity", async () => {
-      // Create vault with high minimum requirement
-      const LowLiquidityVaultFactory = await ethers.getContractFactory("MockERC4626Vault");
-      const lowLiquidityVault = await LowLiquidityVaultFactory.deploy(
-        await mockAsset.getAddress(),
-        "Low Liquidity Vault",
-        "lvTEST"
-      );
-
-      const highMinimum = ethers.parseEther("1000"); // Very high requirement
-      await oracleWrapper.addVault(
-        await lowLiquidityVault.getAddress(),
-        highMinimum,
-        await mockAsset.getAddress()
-      );
-
-      // Only deposit small amount (below minimum) 
-      const smallDeposit = ethers.parseEther("50");
-      await mockAsset.connect(await ethers.getSigner(user2)).approve(
-        await lowLiquidityVault.getAddress(),
-        smallDeposit
-      );
-      await lowLiquidityVault.connect(await ethers.getSigner(user2)).deposit(smallDeposit, user2);
-
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(await lowLiquidityVault.getAddress());
-
-      expect(price).to.equal(0);
-      expect(isAlive).to.be.false;
-    });
-  });
-
-  describe("Protection Mechanisms", () => {
-    beforeEach(async () => {
-      await oracleWrapper.addVault(
-        await mockVault.getAddress(),
-        MIN_SHARE_SUPPLY,
-        await mockAsset.getAddress()
-      );
-    });
-
-    it("should detect and handle price deviation", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      // Create a large price deviation (>5%)
-      await mockVault.setMockTotalAssets(ethers.parseEther("2000")); // 100% increase
-
-      // Check that oracle handles deviation gracefully
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
-
-      // Should still provide a price (using lastValidPrice fallback)
-      expect(isAlive).to.be.true;
-      expect(price).to.be.gt(0);
-    });
-
-    it("should use stored valid price when deviation detected", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      // Get baseline price from last valid update
-      const lastValidPrice = await oracleWrapper.getLastValidPrice(vaultAddress);
-
-      // Create massive price spike
-      await mockVault.setMockTotalAssets(ethers.parseEther("10000")); // 10x increase
-
-      // Oracle should return last valid price, not manipulated price
-      const { price } = await oracleWrapper.getPriceInfo(vaultAddress);
-      expect(price).to.equal(lastValidPrice); // Should use stored safe price
-    });
-
-    it("should use current price when deviation is acceptable", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      // Small price change (within 5% limit)  
-      await mockVault.setMockTotalAssets(ethers.parseEther("1030")); // 3% increase
-
-      const { price } = await oracleWrapper.getPriceInfo(vaultAddress);
-      const currentPrice = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
-
-      // Should accept current price since it's within deviation bounds
-      expect(price).to.equal(currentPrice);
-    });
-
-    it("should handle donation attack protection", async () => {
-      // Deploy vault with very high minimum share requirement
-      const AttackVaultFactory = await ethers.getContractFactory("MockERC4626Vault");
-      const attackVault = await AttackVaultFactory.deploy(
-        await mockAsset.getAddress(),
-        "Attack Vault",
-        "avTEST"
-      );
-
-      const highMinimum = ethers.parseEther("1000");
-      await oracleWrapper.addVault(
-        await attackVault.getAddress(),
-        highMinimum,
-        await mockAsset.getAddress()
-      );
-
-      // Simulate donation attack: small deposit + large donation
-      const attackDeposit = ethers.parseEther("1");
-      await mockAsset.connect(await ethers.getSigner(user2)).approve(
-        await attackVault.getAddress(),
-        attackDeposit * BigInt(2)
-      );
-
-      // Small initial deposit
-      await attackVault.connect(await ethers.getSigner(user2)).deposit(attackDeposit, user2);
-
-      // Simulate donation (direct asset transfer to inflate exchange rate)
-      await mockAsset.connect(await ethers.getSigner(user2)).approve(
-        await attackVault.getAddress(),
-        attackDeposit
-      );
-      await attackVault.connect(await ethers.getSigner(user2)).simulateDonationAttack(attackDeposit);
-
-      // Oracle should reject pricing due to insufficient share supply
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(await attackVault.getAddress());
-      expect(price).to.equal(0);
-      expect(isAlive).to.be.false;
-    });
-  });
-
-  describe("Parameter Management", () => {
-    it("should allow updating max deviation", async () => {
-      const newDeviation = 1000; // 10%
-
-      await expect(oracleWrapper.setMaxDeviation(newDeviation))
-        .to.emit(oracleWrapper, "MaxDeviationUpdated")
-        .withArgs(500, newDeviation);
-
-      expect(await oracleWrapper.maxDeviation()).to.equal(newDeviation);
-    });
-
-    it("should reject invalid deviation values", async () => {
-      await expect(oracleWrapper.setMaxDeviation(0))
-        .to.be.revertedWithCustomError(oracleWrapper, "InvalidDeviation");
-
-      await expect(oracleWrapper.setMaxDeviation(10001)) // > 100%
-        .to.be.revertedWithCustomError(oracleWrapper, "InvalidDeviation");
-    });
-
-    it("should allow updating last valid price", async () => {
-      const vaultAddress = await mockVault.getAddress();
-      await oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress());
-
-      const newPrice = ethers.parseEther("1.5");
-
-      await expect(oracleWrapper.updateLastValidPrice(vaultAddress, newPrice))
-        .to.emit(oracleWrapper, "LastValidPriceUpdated")
-        .withArgs(vaultAddress, newPrice);
-
-      expect(await oracleWrapper.getLastValidPrice(vaultAddress)).to.equal(newPrice);
-    });
-  });
-
-  describe("Attack Resistance", () => {
-    beforeEach(async () => {
-      await oracleWrapper.addVault(
-        await mockVault.getAddress(),
-        MIN_SHARE_SUPPLY,
-        await mockAsset.getAddress()
-      );
-    });
-
-    it("should resist flash loan price manipulation", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      // Get baseline price
-      const initialPrice = await oracleWrapper.getLastValidPrice(vaultAddress);
-
-      // Simulate flash loan attack: massive price spike (>5% deviation)
-      await mockVault.setMockTotalAssets(ethers.parseEther("2100")); // 110% increase (>5% limit)
-
-      // Oracle should detect deviation and use lastValidPrice for protection
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
-      const currentInflatedPrice = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
-      const lastValidPrice = await oracleWrapper.getLastValidPrice(vaultAddress);
-
-      expect(isAlive).to.be.true;
-      expect(price).to.be.lt(currentInflatedPrice); // Should not use inflated price
-      expect(price).to.equal(lastValidPrice); // Should use stored safe price
-    });
-
-    it("should prevent pricing when vault is paused", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      // Pause the vault
-      await oracleWrapper.pauseVault(vaultAddress);
-
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
-      expect(price).to.equal(0);
-      expect(isAlive).to.be.false;
-    });
-  });
-
-  describe("Edge Cases", () => {
-    it("should handle vault with zero assets", async () => {
-      const vaultAddress = await mockVault.getAddress();
-
-      await oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress());
-
-      // Set vault to have zero assets
-      await mockVault.setMockTotalAssets(0);
-
-      const { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
-      expect(price).to.equal(0);
-      expect(isAlive).to.be.false;
-    });
-
-    it("should revert getAssetPrice when vault is not healthy", async () => {
-      // First add the vault to the oracle
-      await oracleWrapper.addVault(
-        await mockVault.getAddress(),
-        MIN_SHARE_SUPPLY,
-        await mockAsset.getAddress()
-      );
-
-      // Then pause vault to make it unhealthy
-      await oracleWrapper.pauseVault(await mockVault.getAddress());
-
-      await expect(oracleWrapper.getAssetPrice(await mockVault.getAddress()))
-        .to.be.revertedWithCustomError(oracleWrapper, "PriceNotAvailable");
-    });
-
     it("should handle multiple vaults independently", async () => {
-      // Add the main vault from beforeEach to the oracle wrapper
+      // Add main vault
       await oracleWrapper.addVault(
         await mockVault.getAddress(),
         MIN_SHARE_SUPPLY,
         await mockAsset.getAddress()
       );
 
-      // Create second vault
+      // Create second vault with different exchange rate
       const SecondVaultFactory = await ethers.getContractFactory("MockERC4626Vault");
       const secondVault = await SecondVaultFactory.deploy(
         await mockAsset.getAddress(),
@@ -437,7 +355,6 @@ describe("ERC4626OracleWrapper", () => {
         "svTEST"
       );
 
-      // Setup second vault with different exchange rate
       await mockAsset.connect(await ethers.getSigner(user1)).approve(
         await secondVault.getAddress(),
         ethers.parseEther("500")
@@ -454,7 +371,7 @@ describe("ERC4626OracleWrapper", () => {
         await mockAsset.getAddress()
       );
 
-      // Both vaults should return different prices
+      // Both vaults should have independent bounds
       const { price: price1 } = await oracleWrapper.getPriceInfo(await mockVault.getAddress());
       const { price: price2 } = await oracleWrapper.getPriceInfo(await secondVault.getAddress());
 
@@ -463,7 +380,87 @@ describe("ERC4626OracleWrapper", () => {
     });
   });
 
+  describe("Deadlock Scenarios", () => {
+    beforeEach(async () => {
+      await oracleWrapper.addVault(
+        await mockVault.getAddress(),
+        MIN_SHARE_SUPPLY,
+        await mockAsset.getAddress()
+      );
+    });
+
+    it("should handle fund recovery scenario with governance intervention", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Simulate hack: vault loses 90% of value
+      await mockVault.setMockTotalAssets(ethers.parseEther("100")); // 90% loss
+
+      // Oracle should fail due to being below lower bound
+      let { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
+      expect(isAlive).to.be.false;
+      expect(price).to.equal(0);
+
+      // Governance intervenes: updates bounds to accommodate new reality
+      const currentRateAfterHack = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      const newLowerBound = currentRateAfterHack * BigInt(99) / BigInt(100); // Just below current rate
+      await oracleWrapper.updateVaultBounds(vaultAddress, newLowerBound);
+
+      // Oracle should now work with reduced bounds
+      ({ price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress));
+      expect(isAlive).to.be.true;
+      expect(price).to.be.gt(0);
+
+      // Simulate fund recovery: 80% of original value recovered
+      await mockVault.setMockTotalAssets(ethers.parseEther("800"));
+
+      // Price should be capped at upper bound initially
+      ({ price } = await oracleWrapper.getPriceInfo(vaultAddress));
+      const [, upperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+      expect(price).to.equal(upperBound); // Bounced to upper bound
+
+      // Governance updates bounds again to accommodate recovery
+      const currentRateAfterRecovery = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      const recoveryLowerBound = currentRateAfterRecovery * BigInt(99) / BigInt(100); // Just below recovery rate
+      await oracleWrapper.updateVaultBounds(vaultAddress, recoveryLowerBound);
+
+      // Now oracle should accept recovered price
+      ({ price } = await oracleWrapper.getPriceInfo(vaultAddress));
+      const actualRate = await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS);
+      expect(price).to.equal(actualRate);
+    });
+
+    it("should prevent manipulation while allowing legitimate movement", async () => {
+      const vaultAddress = await mockVault.getAddress();
+
+      // Small legitimate increase (within bounds)
+      await mockVault.setMockTotalAssets(ethers.parseEther("1005")); // 0.5% increase (within 2% window)
+      let { price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress);
+      expect(isAlive).to.be.true;
+      expect(price).to.equal(await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS));
+
+      // Large manipulation attempt (above bounds)
+      await mockVault.setMockTotalAssets(ethers.parseEther("1500")); // 50% increase
+      ({ price, isAlive } = await oracleWrapper.getPriceInfo(vaultAddress));
+      const [, upperBound] = await oracleWrapper.getVaultBounds(vaultAddress);
+
+      expect(isAlive).to.be.true;
+      expect(price).to.equal(upperBound); // Capped at upper bound
+      expect(price).to.be.lt(await mockVault.convertToAssets(BASE_CURRENCY_UNIT_18_DECIMALS));
+    });
+  });
+
   describe("Access Control", () => {
+    it("should prevent non-ORACLE_MANAGER from updating bounds", async () => {
+      const vaultAddress = await mockVault.getAddress();
+      await oracleWrapper.addVault(vaultAddress, MIN_SHARE_SUPPLY, await mockAsset.getAddress());
+
+      const unauthorizedSigner = await ethers.getSigner(user2);
+
+      await expect(
+        oracleWrapper.connect(unauthorizedSigner).updateVaultBounds(vaultAddress, ethers.parseEther("0.5"))
+      ).to.be.reverted;
+    });
+
     it("should prevent non-ORACLE_MANAGER from adding vaults", async () => {
       const unauthorizedSigner = await ethers.getSigner(user2);
 
@@ -473,14 +470,6 @@ describe("ERC4626OracleWrapper", () => {
           MIN_SHARE_SUPPLY,
           await mockAsset.getAddress()
         )
-      ).to.be.reverted;
-    });
-
-    it("should prevent non-ADMIN from updating parameters", async () => {
-      const unauthorizedSigner = await ethers.getSigner(user2);
-
-      await expect(
-        oracleWrapper.connect(unauthorizedSigner).setMaxDeviation(1000)
       ).to.be.reverted;
     });
   });

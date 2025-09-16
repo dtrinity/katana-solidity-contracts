@@ -41,25 +41,32 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
 
   /* MUTABLE STATE */
 
-  /// @notice Configuration for each vault
-  struct VaultConfig {
-    bool isActive;
-    uint256 minShareSupply; // Minimum shares to prevent donation attacks
-    uint256 lastValidPrice; // For deviation checking
-    address underlyingAsset; // The vault's underlying asset
-    bool isPaused; // Emergency pause state
-  }
+    /// @notice Configuration for each vault
+    struct VaultConfig {
+        bool isActive;
+        uint256 minShareSupply; // Minimum shares to prevent donation attacks
+        uint256 lowerBound; // Dynamic lower bound for exchange rate (replaces lastValidPrice)
+        uint256 lastBoundsUpdate; // Timestamp of last bounds update
+        address underlyingAsset; // The vault's underlying asset
+        bool isPaused; // Emergency pause state
+    }
 
   /// @notice Vault configurations mapping
   mapping(address => VaultConfig) public vaultConfigs;
 
-  /// @notice Maximum allowed price deviation in basis points (5% default)
-  uint256 public maxDeviation = 500;
-
   /* CONSTANTS */
 
+  /// @notice Window size in basis points (2% between lower and upper bound)
+  uint256 private constant WINDOW_SIZE = 200;
+
+  /// @notice Buffer size in basis points (1% buffer when updating bounds)
+  uint256 private constant BUFFER_SIZE = 100;
+
   /// @notice Basis point denominator (100%)
-  uint256 private constant DEVIATION_BASE = 10000;
+  uint256 private constant PERCENTAGE_FACTOR = 10000;
+
+  /// @notice Minimum interval between bounds updates
+  uint256 private constant UPDATE_BOUNDS_COOLDOWN = 1 days;
 
   /* ROLES */
 
@@ -68,12 +75,12 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
 
   /* EVENTS */
 
-  event VaultAdded(address indexed vault, uint256 minShareSupply, address underlyingAsset);
+  event VaultAdded(address indexed vault, uint256 minShareSupply, address underlyingAsset, uint256 initialLowerBound);
   event VaultRemoved(address indexed vault);
   event VaultPaused(address indexed vault);
   event VaultUnpaused(address indexed vault);
-  event MaxDeviationUpdated(uint256 oldDeviation, uint256 newDeviation);
-  event LastValidPriceUpdated(address indexed vault, uint256 newPrice);
+  event BoundsUpdated(address indexed vault, uint256 newLowerBound, uint256 newUpperBound);
+  event ExchangeRateBounced(address indexed vault, uint256 actualRate, uint256 cappedRate);
 
   /* ERRORS */
 
@@ -82,7 +89,8 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
   error InvalidVaultAddress();
   error InvalidUnderlyingAsset();
   error InvalidMinShareSupply();
-  error InvalidDeviation();
+  error InvalidBounds();
+  error ExchangeRateOutOfBounds(address vault);
   error PriceNotAvailable(address vault);
   error InsufficientLiquidity(address vault);
 
@@ -95,7 +103,7 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
    */
   constructor(address baseCurrency, uint256 baseCurrencyUnit) {
     if (baseCurrencyUnit == 0) {
-      revert InvalidDeviation();
+      revert InvalidBounds();
     }
 
     _baseCurrency = baseCurrency;
@@ -131,23 +139,30 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
    */
   function getPriceInfo(address vault) public view override returns (uint256 price, bool isAlive) {
     VaultConfig storage config = vaultConfigs[vault];
-
+    
     // Check if vault is configured and healthy
     if (!_validateVaultHealth(vault)) {
       return (0, false);
     }
 
     // Get current exchange rate: how many assets per _baseCurrencyUnit of shares
-    uint256 currentPrice = IERC4626(vault).convertToAssets(_baseCurrencyUnit);
-
-    // Apply bounds checking for manipulation resistance
-    if (config.lastValidPrice > 0 && _priceDeviatesSignificantly(currentPrice, config.lastValidPrice)) {
-      // Price shows suspicious deviation - use last known good price for safety
-      return (config.lastValidPrice, true);
+    uint256 exchangeRate = IERC4626(vault).convertToAssets(_baseCurrencyUnit);
+    
+    // Apply Gearbox-style bounds checking with bounce mechanism
+    uint256 lb = config.lowerBound;
+    if (exchangeRate < lb) {
+      // Below lower bound - hard failure (panic mode)
+      return (0, false);
     }
 
-    // Current price looks reasonable
-    return (currentPrice, true);
+    uint256 ub = _calcUpperBound(lb);
+    if (exchangeRate > ub) {
+      // Above upper bound - soft cap (bounce down to upper bound)
+      return (ub, true);
+    }
+
+    // Exchange rate is within bounds - use actual rate
+    return (exchangeRate, true);
   }
 
   /**
@@ -182,19 +197,21 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
       revert InvalidUnderlyingAsset();
     }
 
-    // Initialize vault configuration with current price as baseline
-    uint256 initialPrice = IERC4626(vault).convertToAssets(_baseCurrencyUnit);
-
+    // Initialize vault configuration with current exchange rate as lower bound
+    uint256 initialExchangeRate = IERC4626(vault).convertToAssets(_baseCurrencyUnit);
+    uint256 initialLowerBound = _calcLowerBound(initialExchangeRate); // Set lower bound with buffer
+    
     vaultConfigs[vault] = VaultConfig({
       isActive: true,
       minShareSupply: minShares,
-      lastValidPrice: initialPrice,
+      lowerBound: initialLowerBound,
+      lastBoundsUpdate: block.timestamp,
       underlyingAsset: underlyingAsset,
       isPaused: false
     });
 
-    emit VaultAdded(vault, minShares, underlyingAsset);
-    emit LastValidPriceUpdated(vault, initialPrice);
+    emit VaultAdded(vault, minShares, underlyingAsset, initialLowerBound);
+    emit BoundsUpdated(vault, initialLowerBound, _calcUpperBound(initialLowerBound));
   }
 
   /**
@@ -231,43 +248,79 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
   }
 
   /**
-   * @notice Update the last valid price for a vault (governance function)
+   * @notice Update the bounds for a vault (governance function)
    * @param vault The vault address
-   * @param newPrice The new baseline price
+   * @param newLowerBound The new lower bound for the vault's exchange rate
    */
-  function updateLastValidPrice(address vault, uint256 newPrice) external onlyRole(ORACLE_MANAGER_ROLE) {
+  function updateVaultBounds(address vault, uint256 newLowerBound) external onlyRole(ORACLE_MANAGER_ROLE) {
     if (!vaultConfigs[vault].isActive) revert VaultNotActive(vault);
-    if (newPrice == 0) revert InvalidDeviation();
+    if (newLowerBound == 0) revert InvalidBounds();
 
-    vaultConfigs[vault].lastValidPrice = newPrice;
-    emit LastValidPriceUpdated(vault, newPrice);
-  }
-
-  /* PARAMETER MANAGEMENT */
-
-  /**
-   * @notice Update maximum allowed price deviation
-   * @param newDeviation New deviation in basis points (e.g., 500 = 5%)
-   */
-  function setMaxDeviation(uint256 newDeviation) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (newDeviation == 0 || newDeviation > DEVIATION_BASE) {
-      revert InvalidDeviation();
+    VaultConfig storage config = vaultConfigs[vault];
+    
+    // Ensure current exchange rate would be within new bounds
+    uint256 currentRate = IERC4626(vault).convertToAssets(_baseCurrencyUnit);
+    uint256 newUpperBound = _calcUpperBound(newLowerBound);
+    
+    if (currentRate < newLowerBound || currentRate > newUpperBound) {
+      revert ExchangeRateOutOfBounds(vault);
     }
 
-    uint256 oldDeviation = maxDeviation;
-    maxDeviation = newDeviation;
-    emit MaxDeviationUpdated(oldDeviation, newDeviation);
+    config.lowerBound = newLowerBound;
+    config.lastBoundsUpdate = block.timestamp;
+    
+    emit BoundsUpdated(vault, newLowerBound, newUpperBound);
+  }
+
+  /* BOUNDS CALCULATION */
+
+  /**
+   * @notice Calculate upper bound from lower bound
+   * @param lowerBound The lower bound value
+   * @return The upper bound (lowerBound * 1.02)
+   */
+  function _calcUpperBound(uint256 lowerBound) internal pure returns (uint256) {
+    return lowerBound * (PERCENTAGE_FACTOR + WINDOW_SIZE) / PERCENTAGE_FACTOR;
+  }
+
+  /**
+   * @notice Calculate lower bound from exchange rate with buffer
+   * @param exchangeRate The current exchange rate
+   * @return The lower bound (exchangeRate * 0.99)
+   */
+  function _calcLowerBound(uint256 exchangeRate) internal pure returns (uint256) {
+    return exchangeRate * (PERCENTAGE_FACTOR - BUFFER_SIZE) / PERCENTAGE_FACTOR;
   }
 
   /* VIEW FUNCTIONS */
 
   /**
-   * @notice Get the last valid price for a vault
+   * @notice Get the current bounds for a vault
    * @param vault The vault address
-   * @return The last valid price stored
+   * @return lowerBound The lower bound for exchange rate
+   * @return upperBound The upper bound for exchange rate
    */
-  function getLastValidPrice(address vault) external view returns (uint256) {
-    return vaultConfigs[vault].lastValidPrice;
+  function getVaultBounds(address vault) external view returns (uint256 lowerBound, uint256 upperBound) {
+    uint256 lb = vaultConfigs[vault].lowerBound;
+    return (lb, _calcUpperBound(lb));
+  }
+
+  /**
+   * @notice Get the lower bound for a vault
+   * @param vault The vault address
+   * @return The lower bound for exchange rate
+   */
+  function getLowerBound(address vault) external view returns (uint256) {
+    return vaultConfigs[vault].lowerBound;
+  }
+
+  /**
+   * @notice Get the upper bound for a vault
+   * @param vault The vault address
+   * @return The upper bound for exchange rate
+   */
+  function getUpperBound(address vault) external view returns (uint256) {
+    return _calcUpperBound(vaultConfigs[vault].lowerBound);
   }
 
   /**
@@ -309,18 +362,4 @@ contract ERC4626OracleWrapper is IOracleWrapper, AccessControl {
     return true;
   }
 
-  /**
-   * @notice Check if price deviates significantly from baseline
-   * @param newPrice Current price
-   * @param baselinePrice Reference price to compare against
-   * @return Whether the deviation is significant (exceeds threshold)
-   */
-  function _priceDeviatesSignificantly(uint256 newPrice, uint256 baselinePrice) internal view returns (bool) {
-    if (baselinePrice == 0) return false;
-
-    uint256 diff = newPrice > baselinePrice ? newPrice - baselinePrice : baselinePrice - newPrice;
-
-    // Check if deviation exceeds threshold
-    return diff * DEVIATION_BASE > baselinePrice * maxDeviation;
-  }
 }

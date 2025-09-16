@@ -123,7 +123,7 @@ contract OracleWrapperAggregator is IOracleWrapper, AccessControl {
   function getPriceInfo(address asset) public view override returns (uint256 price, bool isAlive) {
     // Get price info from both wrappers
     (uint256 basePrice, bool baseAlive) = BASE_WRAPPER.getPriceInfo(asset);
-    (uint256 quotePrice, bool quoteAlive) = QUOTE_WRAPPER.getPriceInfo(asset);
+    (uint256 quotePrice, bool quoteAlive) = QUOTE_WRAPPER.getPriceInfo(BASE_WRAPPER.BASE_CURRENCY());
 
     // Check if both feeds are alive
     isAlive = baseAlive && quoteAlive;
