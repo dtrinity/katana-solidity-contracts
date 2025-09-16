@@ -25,7 +25,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
 
     // Deploy adapter (admin will be the collateral vault for testing)
     const AdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
-    adapter = await AdapterFactory.deploy(dStable.target, metaMorphoVault.target, admin.address);
+    adapter = await AdapterFactory.deploy(dStable.target, metaMorphoVault.target, admin.address, admin.address);
   });
 
   describe("ETH Emergency Withdraw", function () {

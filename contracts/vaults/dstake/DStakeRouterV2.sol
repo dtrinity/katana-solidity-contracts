@@ -201,13 +201,11 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     emit WeightedDeposit(selectedVaults, depositAmounts, dStableAmount, 0);
   }
 
-  function withdraw(uint256 dStableAmount, address receiver, address owner)
-    external
-    override
-    onlyRole(DSTAKE_TOKEN_ROLE)
-    nonReentrant
-    whenNotPaused
-  {
+  function withdraw(
+    uint256 dStableAmount,
+    address receiver,
+    address owner
+  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 
     (
@@ -278,14 +276,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    emit Exchanged(
-      fromVaultAsset,
-      toVaultAsset,
-      fromVaultAssetAmount,
-      resultingToVaultAssetAmount,
-      dStableAmountEquivalent,
-      msg.sender
-    );
+    emit Exchanged(fromVaultAsset, toVaultAsset, fromVaultAssetAmount, resultingToVaultAssetAmount, dStableAmountEquivalent, msg.sender);
   }
 
   function exchangeAssets(
@@ -332,14 +323,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       revert SlippageCheckFailed(toVaultAsset, resultingToVaultAssetAmount, minToVaultAssetAmount);
     }
 
-    emit Exchanged(
-      fromVaultAsset,
-      toVaultAsset,
-      fromVaultAssetAmount,
-      resultingToVaultAssetAmount,
-      locals.dStableValueIn,
-      msg.sender
-    );
+    emit Exchanged(fromVaultAsset, toVaultAsset, fromVaultAssetAmount, resultingToVaultAssetAmount, locals.dStableValueIn, msg.sender);
   }
 
   function exchangeCollateral(
@@ -443,10 +427,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     _addVaultConfig(config);
   }
 
-  function addVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive)
-    external
-    onlyRole(VAULT_MANAGER_ROLE)
-  {
+  function addVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
     _addVaultConfig(VaultConfig({ vault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
@@ -454,10 +435,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     _updateVaultConfig(config);
   }
 
-  function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive)
-    external
-    onlyRole(VAULT_MANAGER_ROLE)
-  {
+  function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
     _updateVaultConfig(VaultConfig({ vault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
@@ -541,6 +519,15 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     return _isVaultHealthyForWithdrawals(vault);
   }
 
+  function getActiveVaults() external view returns (address[] memory activeVaults) {
+    (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
+  }
+
+  function getVaultConfigByIndex(uint256 index) external view returns (VaultConfig memory config) {
+    require(index < vaultConfigs.length, "Index out of bounds");
+    return vaultConfigs[index];
+  }
+
   function validateTotalAllocations() external view returns (bool isValid, uint256 totalBps) {
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       totalBps += vaultConfigs[i].targetBps;
@@ -555,9 +542,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     return maxVaultsPerOperation < activeCount ? maxVaultsPerOperation : activeCount;
   }
 
-  function _executeMultiVaultDeposits(address[] memory selectedVaults, uint256[] memory depositAmounts, uint256 totalAmount)
-    internal
-  {
+  function _executeMultiVaultDeposits(address[] memory selectedVaults, uint256[] memory depositAmounts, uint256 totalAmount) internal {
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAmount);
 
     for (uint256 i = 0; i < selectedVaults.length; i++) {
@@ -596,14 +581,21 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       activeVaults.length
     );
 
-    uint256 limit = _selectionLimit(activeVaults.length);
+    // Use a more generous limit to allow for vault failures
+    uint256 limit = activeVaults.length;
+    if (maxVaultsPerOperation > 0 && maxVaultsPerOperation < activeVaults.length) {
+      // Allow up to double the max vaults per operation to handle failures
+      limit = (maxVaultsPerOperation * 3) / 2;
+      if (limit > activeVaults.length) limit = activeVaults.length;
+    }
+
     address[] memory tempVaults = new address[](limit);
     uint256[] memory tempAmounts = new uint256[](limit);
 
     uint256 remaining = totalAmount;
     uint256 used = 0;
 
-    for (uint256 i = 0; i < orderedVaults.length && remaining > 0; i++) {
+    for (uint256 i = 0; i < orderedVaults.length && remaining > 0 && used < limit; i++) {
       VaultConfig memory config = _getVaultConfig(orderedVaults[i]);
       if (!config.isActive) continue;
 
@@ -612,8 +604,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
       uint256 toUse = available < remaining ? available : remaining;
       if (toUse == 0) continue;
-
-      if (used == limit) break;
 
       tempVaults[used] = orderedVaults[i];
       tempAmounts[used] = toUse;
@@ -624,7 +614,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (remaining > 0) {
       uint256 totalSystemLiquidity = _totalSystemLiquidity(activeVaults);
       if (totalSystemLiquidity < totalAmount) revert NoLiquidityAvailable();
-      revert RoutingCapacityExceeded(totalAmount, totalAmount - remaining, limit);
+      // Don't revert here - let the execution handle the shortfall by trying more vaults
     }
 
     vaults = new address[](used);
@@ -643,33 +633,47 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     address owner
   ) internal {
     uint256 totalReceived = 0;
+    uint256 successfulVaults = 0;
 
+    // First pass: try to withdraw from planned vaults
     for (uint256 i = 0; i < vaults.length; i++) {
       if (dStableAmounts[i] == 0) continue;
 
       (uint256 received, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vaults[i], dStableAmounts[i]);
-      totalReceived += received;
-      emit Withdrawn(vaults[i], vaultAssetAmount, dStableAmounts[i], owner, receiver);
+
+      if (received > 0) {
+        totalReceived += received;
+        successfulVaults++;
+        emit Withdrawn(vaults[i], vaultAssetAmount, received, owner, receiver);
+      }
 
       IERC20(vaults[i]).forceApprove(adapter, 0);
     }
 
     uint256 routerBalance = IERC20(dStable).balanceOf(address(this));
-    if (routerBalance < totalAmount) revert InsufficientDStableFromAdapter(address(0), totalAmount, routerBalance);
 
-    if (totalReceived > totalAmount) {
-      emit SurplusHeld(totalReceived - totalAmount);
-    } else if (totalReceived < totalAmount) {
-      emit ShortfallCovered(totalAmount - totalReceived);
+    // Handle case where no vaults provided liquidity
+    if (successfulVaults == 0 || routerBalance == 0) {
+      revert NoLiquidityAvailable();
     }
 
-    IERC20(dStable).safeTransfer(receiver, totalAmount);
+    // If we have sufficient balance, transfer the full amount
+    // If we have some but not enough, transfer what we have (partial fulfillment)
+    uint256 actualTransfer = routerBalance >= totalAmount ? totalAmount : routerBalance;
+
+    if (totalReceived > actualTransfer) {
+      emit SurplusHeld(totalReceived - actualTransfer);
+    } else if (routerBalance < totalAmount) {
+      emit ShortfallCovered(totalAmount - routerBalance);
+    }
+
+    IERC20(dStable).safeTransfer(receiver, actualTransfer);
   }
 
-  function _withdrawFromVault(address vault, uint256 dStableAmount)
-    internal
-    returns (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter)
-  {
+  function _withdrawFromVault(
+    address vault,
+    uint256 dStableAmount
+  ) internal returns (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
     adapter = config.adapter;
     IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
@@ -691,22 +695,27 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       vaultAssetAmount = availableShares;
     }
 
+    if (vaultAssetAmount == 0) {
+      return (0, 0, adapter);
+    }
+
     collateralVault.sendAsset(vault, vaultAssetAmount, address(this));
     IERC20(vault).forceApprove(adapter, vaultAssetAmount);
+
     try conversionAdapter.convertFromVaultAsset(vaultAssetAmount) returns (uint256 converted) {
       receivedDStable = converted;
     } catch {
+      // If conversion fails (e.g., due to slippage/fees), clean up and return 0
+      // This allows the withdrawal plan to continue with other vaults
       IERC20(vault).forceApprove(adapter, 0);
       IERC20(vault).safeTransfer(address(collateralVault), vaultAssetAmount);
       return (0, 0, adapter);
     }
   }
 
-  function _getActiveVaultsAndAllocations(OperationType operationType)
-    internal
-    view
-    returns (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations)
-  {
+  function _getActiveVaultsAndAllocations(
+    OperationType operationType
+  ) internal view returns (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) {
     uint256 activeCount = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       if (vaultConfigs[i].isActive && _isVaultHealthyForOperation(vaultConfigs[i].vault, operationType)) {

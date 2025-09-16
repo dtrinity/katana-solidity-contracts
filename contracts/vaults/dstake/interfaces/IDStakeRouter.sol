@@ -26,4 +26,14 @@ interface IDStakeRouter {
    * @param owner The original owner initiating the withdrawal (typically the user burning shares).
    */
   function withdraw(uint256 dStableAmount, address receiver, address owner) external;
+
+  /**
+   * @notice Exchanges collateral from one vault asset to another.
+   * @dev Only callable by authorized collateral exchangers.
+   * @param fromVault The vault to exchange from.
+   * @param toVault The vault to exchange to.
+   * @param amount The amount of dStable equivalent to exchange.
+   * @param minToVaultAssetAmount The minimum amount of toVault assets expected.
+   */
+  function exchangeCollateral(address fromVault, address toVault, uint256 amount, uint256 minToVaultAssetAmount) external;
 }

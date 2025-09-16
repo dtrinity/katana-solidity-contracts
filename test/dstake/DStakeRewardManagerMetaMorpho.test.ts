@@ -81,7 +81,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     adapter = await AdapterFactory.deploy(
       dStable.target,
       metaMorphoVault.target,
-      collateralVault.target
+      collateralVault.target,
+      owner.address
     );
     
     // Configure router

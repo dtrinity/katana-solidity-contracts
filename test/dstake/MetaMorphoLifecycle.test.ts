@@ -54,8 +54,10 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       "local-setup",     // Mock tokens and oracles
       "oracle",          // Oracle setup
       "dusd",            // dUSD token
-      "deth",            // dETH token  
+      "deth",            // dETH token
       "dStake",          // Real dStake deployment scripts
+      "dStakeRouterV2",  // Deploy DStakeRouterV2
+      "dStakeRouterV2Configure", // Configure vault allocations
       "mock-metamorpho-vaults",  // External dependency - keep mocked
       "mock-urd",               // External dependency - keep mocked
       "metamorpho-adapters",    // Real MetaMorpho adapters
@@ -143,6 +145,68 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     // Configure MetaMorpho vault to use reward manager as skim recipient
     await metaMorphoVaultContract.setSkimRecipient(urdContract.target);
     
+    // Try to get different signers who might have the required roles
+    // In deployment scripts, the deployer (index 0) and governance (index 1) typically have admin roles
+    const allSigners = await ethers.getSigners();
+    let adminSigner = ownerSigner; // Default to owner
+
+    // Grant necessary roles to configure the router
+    const DEFAULT_ADMIN_ROLE = await routerContract.DEFAULT_ADMIN_ROLE();
+    const CONFIG_MANAGER_ROLE = await routerContract.CONFIG_MANAGER_ROLE();
+    const ADAPTER_MANAGER_ROLE = await routerContract.ADAPTER_MANAGER_ROLE();
+    const VAULT_MANAGER_ROLE = await routerContract.VAULT_MANAGER_ROLE();
+
+    // Check if deployer or governance signers have admin role
+    for (let i = 0; i < Math.min(3, allSigners.length); i++) {
+      const hasRole = await routerContract.hasRole(DEFAULT_ADMIN_ROLE, allSigners[i].address);
+      if (hasRole) {
+        adminSigner = allSigners[i];
+        console.log(`Found admin signer at index ${i}: ${adminSigner.address}`);
+        break;
+      }
+    }
+
+    // Grant roles using the admin signer if found
+    try {
+      const hasConfigRole = await routerContract.hasRole(CONFIG_MANAGER_ROLE, ownerSigner.address);
+      if (!hasConfigRole) {
+        await routerContract.connect(adminSigner).grantRole(CONFIG_MANAGER_ROLE, ownerSigner.address);
+      }
+
+      const hasAdapterRole = await routerContract.hasRole(ADAPTER_MANAGER_ROLE, ownerSigner.address);
+      if (!hasAdapterRole) {
+        await routerContract.connect(adminSigner).grantRole(ADAPTER_MANAGER_ROLE, ownerSigner.address);
+      }
+
+      const hasVaultRole = await routerContract.hasRole(VAULT_MANAGER_ROLE, ownerSigner.address);
+      if (!hasVaultRole) {
+        await routerContract.connect(adminSigner).grantRole(VAULT_MANAGER_ROLE, ownerSigner.address);
+      }
+
+      console.log("✅ Successfully granted all required roles");
+    } catch (e) {
+      console.log("⚠️ Could not grant required roles - skipping vault configuration");
+      // If we can't grant roles, we'll check if vault is already configured
+      const currentVaultCount = await routerContract.getVaultCount();
+      if (currentVaultCount === 0n) {
+        throw new Error("Cannot configure vaults - no admin permissions and no existing configuration");
+      }
+    }
+
+    // Ensure the vault is configured and active if deployment scripts didn't handle it
+    const vaultCount = await routerContract.getVaultCount();
+    if (vaultCount === 0n) {
+      // Manually configure the vault since deployment scripts may not have run
+      const vaultConfig = {
+        vault: metaMorphoVaultContract.target,
+        adapter: adapterContract.target,
+        targetBps: 1000000, // 100% allocation to single vault (1,000,000 basis points = 100%)
+        isActive: true
+      };
+      await routerContract.setVaultConfigs([vaultConfig]);
+      await routerContract.setDefaultDepositVaultAsset(metaMorphoVaultContract.target);
+    }
+
     // Note: Router configuration, adapter registration, and permissions should be handled by deployment scripts
     // The deployment scripts (03_deploy_metamorpho_adapters.ts) should have already:
     // 1. Registered the adapter with the router
