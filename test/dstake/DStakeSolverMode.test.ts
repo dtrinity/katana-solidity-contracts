@@ -946,19 +946,21 @@ describe("DStake Solver Mode Tests", function () {
       const vaults = [vault1Address];
       const assets = [ethers.parseEther("500")];
 
-      const bobBalanceBefore = await dStable.balanceOf(bob.address);
+      // Direct router calls return assets to msg.sender (alice) for fee handling
+      // The receiver parameter is ignored when called directly (only DStakeToken should call this)
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       const tx = await router.connect(alice).solverWithdrawAssets(
         vaults,
         assets,
-        bob.address, // Different receiver
+        bob.address, // Receiver parameter is ignored in direct calls
         alice.address
       );
 
-      const bobBalanceAfter = await dStable.balanceOf(bob.address);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
 
-      // Verify assets were transferred to bob
-      expect(bobBalanceAfter).to.be.gt(bobBalanceBefore);
+      // Verify assets were returned to msg.sender (alice) for fee handling
+      expect(aliceBalanceAfter).to.be.gt(aliceBalanceBefore);
 
       // Verify WeightedWithdrawal event was emitted
       await expect(tx)

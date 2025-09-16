@@ -418,20 +418,21 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Burn shares from owner
     _burn(owner, shares);
 
-    // Delegate to router's solver withdrawal method
-    router.solverWithdrawAssets(vaults, assets, receiver, owner);
+    // Delegate to router's solver withdrawal method - router returns gross assets
+    uint256 grossWithdrawn = router.solverWithdrawAssets(vaults, assets, receiver, owner);
 
     // Calculate fee and net amount
-    uint256 fee = _calculateWithdrawalFee(grossAssetsRequired);
-    uint256 netAmount = grossAssetsRequired - fee;
+    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
+    uint256 netAmount = grossWithdrawn - fee;
 
-    // Emit ERC4626 Withdraw event with net assets
-    emit Withdraw(_msgSender(), receiver, owner, netAmount, shares);
-
-    // Emit fee event if applicable
+    // Retain fee in contract and transfer net amount to receiver
     if (fee > 0) {
       emit WithdrawalFee(owner, receiver, fee);
     }
+    IERC20(asset()).safeTransfer(receiver, netAmount);
+
+    // Emit ERC4626 Withdraw event with net assets
+    emit Withdraw(_msgSender(), receiver, owner, netAmount, shares);
 
     return shares;
   }
@@ -485,20 +486,21 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Burn shares from owner
     _burn(owner, shares);
 
-    // Delegate to router's solver withdrawal method
-    router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
+    // Delegate to router's solver withdrawal method - router returns gross assets
+    uint256 grossWithdrawn = router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
 
     // Calculate net assets after withdrawal fee
-    assets = _getNetAmountAfterFee(totalGrossAssets);
-    uint256 fee = totalGrossAssets - assets;
+    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
+    assets = grossWithdrawn - fee;
 
-    // Emit ERC4626 Withdraw event with net assets
-    emit Withdraw(_msgSender(), receiver, owner, assets, shares);
-
-    // Emit fee event if applicable
+    // Retain fee in contract and transfer net amount to receiver
     if (fee > 0) {
       emit WithdrawalFee(owner, receiver, fee);
     }
+    IERC20(asset()).safeTransfer(receiver, assets);
+
+    // Emit ERC4626 Withdraw event with net assets
+    emit Withdraw(_msgSender(), receiver, owner, assets, shares);
 
     return assets;
   }

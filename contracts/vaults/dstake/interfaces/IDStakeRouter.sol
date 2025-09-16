@@ -61,7 +61,7 @@ interface IDStakeRouter {
    * @param receiver The address that will receive the withdrawn dStable asset
    * @param owner The original owner initiating the withdrawal
    */
-  function solverWithdrawAssets(address[] calldata vaults, uint256[] calldata assets, address receiver, address owner) external;
+  function solverWithdrawAssets(address[] calldata vaults, uint256[] calldata assets, address receiver, address owner) external returns (uint256 totalWithdrawn);
 
   /**
    * @notice Solver-facing withdrawal method using share amounts
@@ -71,5 +71,5 @@ interface IDStakeRouter {
    * @param receiver The address that will receive the withdrawn dStable asset
    * @param owner The original owner initiating the withdrawal
    */
-  function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares, address receiver, address owner) external;
+  function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares, address receiver, address owner) external returns (uint256 totalWithdrawn);
 }

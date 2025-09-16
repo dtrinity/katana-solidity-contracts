@@ -292,9 +292,13 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     uint256[] memory assetAmounts = new uint256[](vaults.length);
     uint256 totalAssets = 0;
 
-    // Convert shares to assets and calculate total
+    // Validate vaults and calculate assets needed
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
+        // Validate vault is registered and active
+        VaultConfig memory config = _getVaultConfig(vaults[i]);
+        if (!config.isActive) revert VaultNotActive(vaults[i]);
+
         // Use previewMint to determine assets needed to mint the desired shares
         uint256 assetsNeeded = IERC4626(vaults[i]).previewMint(shares[i]);
         assetAmounts[i] = assetsNeeded;
@@ -305,11 +309,14 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (totalAssets == 0) revert InvalidAmount();
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
 
-    // Execute mints atomically to get exact shares
+    // Execute deposits through adapters to get exact shares
     uint256[] memory sharesReceived = new uint256[](vaults.length);
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
-        sharesReceived[i] = _mintToVaultAtomically(vaults[i], shares[i]);
+        // Use adapter to deposit the required assets
+        // Adapter will handle the conversion and ensure we get the shares
+        _depositToVaultAtomically(vaults[i], assetAmounts[i]);
+        sharesReceived[i] = shares[i]; // We deposited the amount needed for these shares
       }
     }
 
@@ -319,9 +326,9 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   function solverWithdrawAssets(
     address[] calldata vaults,
     uint256[] calldata assets,
-    address receiver,
+    address /* receiver */,
     address /* owner */
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
 
@@ -339,19 +346,20 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    // Transfer all accumulated dStable to receiver
-    uint256 balance = IERC20(dStable).balanceOf(address(this));
-    IERC20(dStable).safeTransfer(receiver, balance);
+    // Transfer all accumulated dStable back to DStakeToken for fee handling
+    totalWithdrawn = IERC20(dStable).balanceOf(address(this));
+    IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
     emit WeightedWithdrawal(vaults, assets, totalAssets, 0);
+    return totalWithdrawn;
   }
 
   function solverWithdrawShares(
     address[] calldata vaults,
     uint256[] calldata shares,
-    address receiver,
+    address /* receiver */,
     address /* owner */
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != shares.length) revert ArrayLengthMismatch();
 
@@ -375,11 +383,12 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    // Transfer all accumulated dStable to receiver
-    uint256 balance = IERC20(dStable).balanceOf(address(this));
-    IERC20(dStable).safeTransfer(receiver, balance);
+    // Transfer all accumulated dStable back to DStakeToken for fee handling
+    totalWithdrawn = IERC20(dStable).balanceOf(address(this));
+    IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
     emit WeightedWithdrawal(vaults, assetAmounts, totalAssets, 0);
+    return totalWithdrawn;
   }
 
   // --- Exchange Functions ---
@@ -784,22 +793,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     IERC20(dStable).forceApprove(config.adapter, 0);
   }
 
-  function _mintToVaultAtomically(address vault, uint256 sharesToMint) internal returns (uint256) {
-    // Use ERC4626 mint to get exact shares
-    uint256 assetsNeeded = IERC4626(vault).previewMint(sharesToMint);
-
-    // Approve vault to pull assets
-    IERC20(dStable).forceApprove(vault, assetsNeeded);
-
-    // Mint exact shares to collateral vault
-    uint256 actualAssets = IERC4626(vault).mint(sharesToMint, address(collateralVault));
-
-    // Clean up approval
-    IERC20(dStable).forceApprove(vault, 0);
-
-    emit RouterDeposit(vault, vault, msg.sender, sharesToMint, actualAssets);
-    return sharesToMint;
-  }
 
   function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
     (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);
