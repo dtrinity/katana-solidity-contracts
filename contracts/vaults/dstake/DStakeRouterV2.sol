@@ -836,17 +836,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     adapter = config.adapter;
     IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
 
+    // Use the vault's direct preview without slippage discount for planning
+    // The adapter's preview includes slippage which is for conservative estimation only
     vaultAssetAmount = IERC4626(vault).previewWithdraw(dStableAmount);
     if (vaultAssetAmount == 0) revert ZeroPreviewWithdrawAmount(vault);
-
-    uint256 expectedDStable = conversionAdapter.previewConvertFromVaultAsset(vaultAssetAmount);
-    if (expectedDStable < dStableAmount) {
-      uint256 buffer = ((dStableAmount - expectedDStable) * 11000) / 10000;
-      if (buffer > 0) {
-        uint256 additionalAssets = IERC4626(vault).previewDeposit(buffer);
-        vaultAssetAmount += additionalAssets;
-      }
-    }
 
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
     if (vaultAssetAmount > availableShares) {
@@ -863,6 +856,14 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     try conversionAdapter.convertFromVaultAsset(vaultAssetAmount) returns (uint256 converted) {
       receivedDStable = converted;
+      // Verify we received at least what was requested
+      // If not, this vault cannot fulfill the request (slippage/fees too high)
+      if (receivedDStable < dStableAmount) {
+        // Clean up and revert - let auto-routing try another vault
+        IERC20(vault).forceApprove(adapter, 0);
+        IERC20(vault).safeTransfer(address(collateralVault), vaultAssetAmount);
+        revert SlippageCheckFailed(vault, receivedDStable, dStableAmount);
+      }
     } catch {
       // If conversion fails (e.g., due to slippage/fees), clean up and return 0
       // This allows the withdrawal plan to continue with other vaults
