@@ -78,6 +78,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Deploy DStakeRouterMorpho for each dSTAKE instance
   for (const instanceKey in config.dStake) {
+    try {
     const _instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
     const morphoRouterDeploymentName = `DStakeRouterMorpho_${instanceKey}`;
 
@@ -132,6 +133,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     console.log(`✅ Deployed DStakeRouterMorpho for ${instanceKey} at ${morphoRouterDeployment.address}`);
+    } catch (error) {
+      console.error(`❌ Failed to deploy DStakeRouterMorpho for ${instanceKey}: ${error}`);
+      throw error;
+    }
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);

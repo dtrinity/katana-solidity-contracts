@@ -191,7 +191,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.tags = ["dStakeConfigure", "dStake"];
-func.dependencies = ["dStakeCore", "dStakeAdapters", "metamorpho-adapters"];
+func.dependencies = ["dStakeCore", "dStakeAdapters"];
 func.runAtTheEnd = true;
 
 // Prevent re-execution after successful run.

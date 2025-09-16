@@ -105,16 +105,20 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
           continue;
         }
 
-        // For initial deployment, we'll use equal weights
-        // In production, these should come from configuration
+        // Use configured target BPS if available, otherwise use equal distribution
         let targetBps: number;
 
-        if (vaultConfigs.length === 0) {
-          targetBps = 5000; // 50% for first vault
-        } else if (vaultConfigs.length === 1) {
-          targetBps = 3000; // 30% for second vault
+        if (adapterConfig.targetBps && typeof adapterConfig.targetBps === "number") {
+          targetBps = adapterConfig.targetBps;
         } else {
-          targetBps = 2000; // 20% for third vault
+          // Fallback to equal distribution for initial deployment
+          if (vaultConfigs.length === 0) {
+            targetBps = 5000; // 50% for first vault
+          } else if (vaultConfigs.length === 1) {
+            targetBps = 3000; // 30% for second vault
+          } else {
+            targetBps = 2000; // 20% for third vault
+          }
         }
 
         vaultConfigs.push({
