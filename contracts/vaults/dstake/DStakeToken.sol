@@ -36,7 +36,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   IDStakeRouter public router;
 
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
-  uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
+  uint256 public constant MAX_REINVEST_INCENTIVE_BPS = 2000; // 20% max incentive
   uint256 public reinvestIncentiveBps;
 
   // --- Initializer ---
@@ -618,7 +618,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   /**
    * @notice Sets the reinvestment incentive.
    * @dev Only callable by FEE_MANAGER_ROLE.
-   * @param _incentiveBps The new reinvestment incentive in basis points (e.g., 100 = 1%).
+   * @param _incentiveBps The new reinvestment incentive in basis points (e.g., 100 = 1%, max 2000 = 20%).
    */
   function setReinvestIncentive(uint256 _incentiveBps) external onlyRole(FEE_MANAGER_ROLE) {
     if (_incentiveBps > MAX_REINVEST_INCENTIVE_BPS) {

@@ -636,15 +636,21 @@ describe("Fee Accounting Regression Test", function () {
         .withArgs(50);
       expect(await dStakeToken.reinvestIncentiveBps()).to.equal(50);
 
-      // Set incentive to maximum 1% (100 bps)
-      await expect(dStakeToken.connect(owner).setReinvestIncentive(100))
+      // Set incentive to 10% (1000 bps)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(1000))
         .to.emit(dStakeToken, "ReinvestIncentiveSet")
-        .withArgs(100);
-      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(100);
+        .withArgs(1000);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(1000);
 
-      // Try to exceed maximum (should revert)
+      // Set incentive to maximum 20% (2000 bps)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(2000))
+        .to.emit(dStakeToken, "ReinvestIncentiveSet")
+        .withArgs(2000);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(2000);
+
+      // Try to exceed maximum 20% (should revert)
       await expect(
-        dStakeToken.connect(owner).setReinvestIncentive(101)
+        dStakeToken.connect(owner).setReinvestIncentive(2001)
       ).to.be.revertedWithCustomError(dStakeToken, "InvalidIncentiveBps");
 
       // Set incentive to 0 (disable incentive)
