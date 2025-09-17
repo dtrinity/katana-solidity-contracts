@@ -95,7 +95,15 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   /**
    * @inheritdoc ERC4626Upgradeable
    * @dev
-   * IMPORTANT: When all vault shares have been redeemed, the router intentionally
+   * IMPORTANT: This function returns the total dStable value, including:
+   * 1. Assets held in the `DStakeCollateralVault` (wrapper tokens that accrue yield)
+   * 2. Any dStable balance held directly by this contract (collected fees from solver withdrawals)
+   *
+   * Including the contract's dStable balance ensures that withdrawal fees collected
+   * from solver withdrawals are properly accounted for in the share pricing, preventing
+   * value leakage from the accounting set.
+   *
+   * When all vault shares have been redeemed, the router intentionally
    * leaves up to `dustTolerance` (1 wei by default) of wrapper tokens in the
    * `DStakeCollateralVault`. These wrapper tokens continue to accrue
    * yield via an ever-increasing price-per-share. As a result, it is
@@ -114,7 +122,8 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     if (address(collateralVault) == address(0)) {
       return 0;
     }
-    return collateralVault.totalValueInDStable();
+    // Include both vault holdings and any dStable balance in this contract (fees)
+    return collateralVault.totalValueInDStable() + IERC20(asset()).balanceOf(address(this));
   }
 
   /**
@@ -390,17 +399,17 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     address owner
   ) public virtual returns (uint256 shares) {
     // Calculate total net assets requested by the solver
-    uint256 totalAssets = 0;
+    uint256 totalNetAssets = 0;
     for (uint256 i = 0; i < assets.length; i++) {
-      totalAssets += assets[i];
+      totalNetAssets += assets[i];
     }
 
-    if (totalAssets == 0) {
+    if (totalNetAssets == 0) {
       revert ZeroShares();
     }
 
     // Preview shares to be burned based on assets requested
-    shares = previewWithdraw(totalAssets);
+    shares = previewWithdraw(totalNetAssets);
     if (shares > maxShares) {
       revert ERC4626ExceedsMaxRedeem(shares, maxShares);
     }
@@ -517,6 +526,36 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     return assets;
   }
 
+  // --- Fee Management ---
+
+  /**
+   * @notice Reinvests accumulated withdrawal fees back into the vault.
+   * @dev This function deposits any dStable balance held by this contract back through the router,
+   *      ensuring fees are reinvested and properly accounted for in the protocol's assets.
+   *      Can be called by anyone since it only benefits the protocol.
+   * @return amount The amount of fees reinvested.
+   */
+  function reinvestFees() external returns (uint256 amount) {
+    amount = IERC20(asset()).balanceOf(address(this));
+
+    if (amount == 0) {
+      return 0;
+    }
+
+    if (address(router) == address(0) || address(collateralVault) == address(0)) {
+      revert ZeroAddress();
+    }
+
+    // Approve router to spend the fees
+    IERC20(asset()).approve(address(router), amount);
+
+    // Reinvest fees through the router (converts to vault assets and deposits)
+    router.deposit(amount);
+
+    emit FeesReinvested(amount);
+    return amount;
+  }
+
   // --- Governance Functions ---
 
   /**
@@ -557,4 +596,5 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   // --- Events ---
   event RouterSet(address indexed router);
   event CollateralVaultSet(address indexed collateralVault);
+  event FeesReinvested(uint256 amount);
 }
