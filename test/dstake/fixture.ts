@@ -148,7 +148,7 @@ async function fetchDStakeComponents(
     dStableToken: dStableToken as unknown as ERC20,
     dStableInfo,
     strategyShareToken: wrappedAToken as unknown as IERC20,
-    strategyShareAddress: vaultAssetAddress,
+    strategyShareAddress: strategyShareAddress,
     adapter,
     adapterAddress,
     deployer: deployerSigner,

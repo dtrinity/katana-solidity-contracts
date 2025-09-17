@@ -203,19 +203,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
@@ -492,13 +492,13 @@ describe("DStakeRouterV2 Integration Tests", function () {
     it("Should validate total allocations equal 100%", async function () {
       const invalidConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% (in correct 1,000,000 basis point scale)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30% - Total = 90%, should fail
           isActive: true
@@ -514,19 +514,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Test that the fix works: configurations totaling exactly ONE_HUNDRED_PERCENT_BPS should pass
       const correctConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% in correct scale (600,000 out of 1,000,000)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 250000, // 25% in correct scale (250,000 out of 1,000,000)
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 150000, // 15% in correct scale (150,000 out of 1,000,000)
           isActive: true
@@ -547,19 +547,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Test that old scale (which was previously accepted due to bug) now correctly fails
       const oldScaleConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 5000, // 50% in old incorrect scale (5,000 out of 10,000)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 3000, // 30% in old incorrect scale (3,000 out of 10,000)
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 2000, // 20% in old incorrect scale (2,000 out of 10,000)
           isActive: true
@@ -815,7 +815,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
           exchangeAmount,
           0 // minToVaultAssetAmount
         )
-      ).to.emit(router, "CollateralExchanged")
+      ).to.emit(router, "StrategySharesExchanged")
         .withArgs(vault1.target, vault2.target, exchangeAmount, collateralExchanger.address);
       
       // Check balances changed appropriately
@@ -882,25 +882,25 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Need to adjust existing allocations to make room
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 400000, // Reduce from 50% to 40%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // Keep at 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // Keep at 20%
           isActive: true
         },
         {
-          vault: newVault.target,
+          strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 100000, // New 10% allocation
           isActive: true
@@ -940,19 +940,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
           isActive: false
@@ -980,19 +980,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
           isActive: false
@@ -1058,11 +1058,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const adapter5 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault5.target, collateralVault.target, owner.address);
 
       await router.setVaultConfigs([
-        { vault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
-        { vault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
-        { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
-        { vault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
-        { vault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
+        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
       ]);
 
       await expect(router.setMaxVaultsPerOperation(5))
@@ -1082,9 +1082,9 @@ describe("DStakeRouterV2 Integration Tests", function () {
 
     it("Should enforce maxVaultsPerOperation in weighted selection", async function () {
       await router.setVaultConfigs([
-        { vault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
-        { vault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
-        { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
+        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
+        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
       ]);
 
       await router.setMaxVaultsPerOperation(1);
@@ -1183,25 +1183,25 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Add zero-balance vault with significant allocation
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: newVault.target,
+          strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 400000, // 40% - Should get high selection weight
           isActive: true
@@ -1364,7 +1364,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
   describe("Deterministic Selection Verification", function () {
     it("Should verify that deterministic selection consistently moves allocations toward targets", async function () {
       const iterations = 30;
-      const results: { [vault: string]: number } = {
+      const results: { [strategyVault: string]: number } = {
         [vault1.target.toString()]: 0,
         [vault2.target.toString()]: 0,
         [vault3.target.toString()]: 0,
@@ -1509,7 +1509,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       // Exchange some collateral
       const exchangeAmount = ethers.parseEther("5000");
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1.target,
         vault2.target,
         exchangeAmount,

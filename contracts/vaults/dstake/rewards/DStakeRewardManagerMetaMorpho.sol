@@ -67,7 +67,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
   event URDUpdated(address oldURD, address newURD);
   event RewardsSkimmed(address indexed token, uint256 amount);
   event RewardsClaimed(address indexed token, uint256 amount);
-  event ExchangeAssetProcessed(address indexed vaultAsset, uint256 vaultAssetAmount, uint256 dStableCompoundedAmount);
+  event ExchangeAssetProcessed(address indexed strategyShare, uint256 strategyShareAmount, uint256 dStableCompoundedAmount);
   event EmergencyWithdraw(address indexed token, uint256 amount, address indexed recipient);
 
   // --- Errors ---
@@ -241,14 +241,14 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    * @param exchangeAmountIn The amount of dStable to compound
    */
   function _processExchangeAssetDeposit(uint256 exchangeAmountIn) internal override {
-    // Get the router's default deposit vault asset
-    address defaultVaultAsset = dStakeRouter.defaultDepositStrategyShare();
-    if (defaultVaultAsset == address(0)) {
+    // Get the router's default deposit strategy share
+    address defaultStrategyShare = dStakeRouter.defaultDepositStrategyShare();
+    if (defaultStrategyShare == address(0)) {
       revert DefaultDepositAssetNotSet();
     }
 
     // Get the adapter for the default strategy share
-    address adapter = dStakeRouter.strategyShareToAdapter(defaultVaultAsset);
+    address adapter = dStakeRouter.strategyShareToAdapter(defaultStrategyShare);
     if (adapter == address(0)) {
       revert AdapterNotSetForDefaultAsset();
     }
@@ -257,25 +257,25 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
     // Check collateral vault balance before conversion
-    uint256 balanceBefore = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
+    uint256 balanceBefore = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
 
     // Convert dStable to strategy share via adapter
     (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapter(adapter).depositIntoStrategy(exchangeAmountIn);
 
     // Verify the adapter returned the expected strategy share
-    if (returnedStrategyShare != defaultVaultAsset) {
-      revert AdapterReturnedUnexpectedAsset(defaultVaultAsset, returnedStrategyShare);
+    if (returnedStrategyShare != defaultStrategyShare) {
+      revert AdapterReturnedUnexpectedAsset(defaultStrategyShare, returnedStrategyShare);
     }
 
     // Verify that the collateral vault actually received the expected assets
-    uint256 balanceAfter = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
+    uint256 balanceAfter = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
     uint256 actualReceived = balanceAfter - balanceBefore;
     if (actualReceived < strategyShareAmount) {
       revert InsufficientAssetsReceived(strategyShareAmount, actualReceived);
     }
 
     // Emit event for tracking (use actualReceived for accuracy)
-    emit ExchangeAssetProcessed(defaultVaultAsset, actualReceived, exchangeAmountIn);
+    emit ExchangeAssetProcessed(defaultStrategyShare, actualReceived, exchangeAmountIn);
 
     // Clear any remaining approval
     IERC20(exchangeAsset).forceApprove(adapter, 0);

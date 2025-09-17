@@ -202,19 +202,19 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     // Setup vault configurations with target allocations
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
@@ -886,13 +886,13 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Execute exchange
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
           0 // minToVaultAssetAmount
         )
-      ).to.emit(router, "CollateralExchanged")
+      ).to.emit(router, "StrategySharesExchanged")
         .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
 
       // Check that the correct number of shares were withdrawn
@@ -921,7 +921,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,
@@ -952,7 +952,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,
@@ -981,7 +981,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Should revert when trying to exchange from inactive vault
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -998,7 +998,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Should revert when trying to exchange to inactive vault
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1380,13 +1380,13 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
         // Execute exchange with slippage protection
         await expect(
-          router.connect(collateralExchanger).exchangeCollateral(
+          router.connect(collateralExchanger).rebalanceStrategiesByValue(
             vault1Address,
             vault2Address,
             exchangeAmount,
             minToVaultAssetAmount
           )
-        ).to.emit(router, "CollateralExchanged")
+        ).to.emit(router, "StrategySharesExchanged")
           .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
 
         // Verify balances changed appropriately
@@ -1411,7 +1411,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
         // This should revert due to slippage protection
         await expect(
-          router.connect(collateralExchanger).exchangeCollateral(
+          router.connect(collateralExchanger).rebalanceStrategiesByValue(
             vault1Address,
             vault2Address,
             exchangeAmount,
@@ -1430,7 +1430,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
         // Should succeed even with 0 minimum
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1459,7 +1459,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const minToVaultAssetAmount = (expectedToVaultShares * 999n) / 1000n;
 
         // Should succeed with tight tolerance when no fees
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1477,7 +1477,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const exchangeAmount = ethers.parseEther("500");
 
         // Normal call should work
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1493,7 +1493,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const exchangeAmount = ethers.parseEther("200");
 
         // First exchange: vault1 -> vault2
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1501,7 +1501,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         );
 
         // Second exchange: vault2 -> vault3 (immediately after)
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault2Address,
           vault3Address,
           exchangeAmount,
@@ -1509,7 +1509,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         );
 
         // Third exchange: vault3 -> vault1 (completing the cycle)
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault3Address,
           vault1Address,
           exchangeAmount,
@@ -1531,7 +1531,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1733,7 +1733,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // 5. Test exchange collateral using previewWithdraw WITH slippage protection
       const exchangeAmount = ethers.parseEther("1000");
       const minToVaultAssetAmount = 0; // Accept any amount for integration test
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,

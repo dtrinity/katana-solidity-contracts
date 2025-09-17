@@ -202,19 +202,19 @@ describe("DStake Solver Mode Tests", function () {
     // Setup vault configurations with target allocations
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
