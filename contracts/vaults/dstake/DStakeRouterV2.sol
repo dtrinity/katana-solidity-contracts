@@ -180,6 +180,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
     // Try vaults in allocation-aware order until one succeeds
+    // This maintains balance across vaults according to target allocations
     for (uint256 i = 0; i < sortedVaults.length; i++) {
       address targetVault = sortedVaults[i];
       try this._depositToVaultWithRetry(targetVault, dStableAmount) {
@@ -191,9 +192,9 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         emit WeightedDeposit(vaultArray, amountArray, dStableAmount, 0);
         return;
       } catch {
-        // Continue to next vault on any error
+        // Continue to next vault on any error (transient or permanent)
         if (i == sortedVaults.length - 1) {
-          // Last vault failed, revert
+          // All vaults failed, no liquidity available
           revert NoLiquidityAvailable();
         }
       }
@@ -218,6 +219,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
     // Get vaults sorted by over-allocation (most over-allocated first)
+    // Prioritizes over-allocated vaults to rebalance the system
     (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
       activeVaults,
       currentAllocations,
@@ -237,9 +239,9 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         emit WeightedWithdrawal(vaultArray, amountArray, dStableAmount, 0);
         return;
       } catch {
-        // Continue to next vault on any error
+        // Continue to next vault on any error (transient or permanent)
         if (i == sortedVaults.length - 1) {
-          // Last vault failed, revert
+          // All vaults failed, no liquidity available
           revert NoLiquidityAvailable();
         }
       }

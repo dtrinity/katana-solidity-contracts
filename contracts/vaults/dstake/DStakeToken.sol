@@ -372,11 +372,12 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing withdrawal method using asset amounts
-   * @dev Allows solvers to withdraw from specific vaults using asset amounts
+   * @dev Allows solvers to withdraw from specific vaults using asset amounts.
+   *      The router returns gross amounts, and this function handles fee calculation.
    * @param vaults Array of vault addresses to withdraw from
-   * @param assets Array of asset amounts to withdraw from each vault
+   * @param assets Array of asset amounts to withdraw from each vault (net amounts requested)
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
-   * @param receiver Address to receive the withdrawn assets
+   * @param receiver Address to receive the withdrawn assets (after fees)
    * @param owner Address that owns the dSTAKE shares being burned
    * @return shares The amount of dSTAKE shares burned
    */
@@ -387,7 +388,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     address receiver,
     address owner
   ) public virtual returns (uint256 shares) {
-    // Calculate total assets to withdraw
+    // Calculate total net assets requested by the solver
     uint256 totalAssets = 0;
     for (uint256 i = 0; i < assets.length; i++) {
       totalAssets += assets[i];
@@ -415,10 +416,11 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Burn shares from owner
     _burn(owner, shares);
 
-    // Delegate to router's solver withdrawal method - router returns gross assets
+    // Delegate to router's solver withdrawal method
+    // Router withdraws from vaults and returns gross assets to this contract
     uint256 grossWithdrawn = router.solverWithdrawAssets(vaults, assets, receiver, owner);
 
-    // Calculate fee and net amount
+    // Calculate fee on gross amount and determine net amount for receiver
     uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
     uint256 netAmount = grossWithdrawn - fee;
 
@@ -438,13 +440,14 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing withdrawal method using share amounts
-   * @dev Allows solvers to withdraw from specific vaults using share amounts
+   * @dev Allows solvers to withdraw from specific vaults using share amounts.
+   *      The router returns gross amounts, and this function handles fee calculation.
    * @param vaults Array of vault addresses to withdraw from
    * @param vaultShares Array of share amounts to withdraw from each vault
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
-   * @param receiver Address to receive the withdrawn assets
+   * @param receiver Address to receive the withdrawn assets (after fees)
    * @param owner Address that owns the dSTAKE shares being burned
-   * @return assets The amount of net assets withdrawn
+   * @return assets The amount of net assets withdrawn (after fees)
    */
   function solverWithdrawShares(
     address[] calldata vaults,
