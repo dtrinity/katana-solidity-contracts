@@ -35,6 +35,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   error AdapterAssetMismatch(address adapter, address expectedAsset, address actualAsset);
   error SlippageCheckFailed(address asset, uint256 actualAmount, uint256 requiredAmount);
   error InconsistentState(string message);
+  error DepositConversionFailed(address vault, uint256 amount);
   error InvalidAmount();
   error InvalidVaultConfig();
   error VaultNotActive(address vault);
@@ -160,27 +161,15 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 
-    (
-      address[] memory activeVaults,
-      uint256[] memory currentAllocations,
-      uint256[] memory targetAllocations
-    ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
+    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    // Simple deterministic ordering: pick the most underallocated vault
-    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
-      activeVaults,
-      currentAllocations,
-      targetAllocations,
-      1 // Only select one vault for auto routing
-    );
-
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
-    // Try vaults in order until one succeeds or we run out
-    address targetVault = selectedVaults[0];
-    for (uint256 attempts = 0; attempts < activeVaults.length; attempts++) {
+    // Try vaults in deterministic order until one succeeds
+    for (uint256 i = 0; i < activeVaults.length; i++) {
+      address targetVault = activeVaults[i];
       try this._depositToVaultWithRetry(targetVault, dStableAmount) {
         // Success - emit event and return
         address[] memory vaultArray = new address[](1);
@@ -189,15 +178,11 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         amountArray[0] = dStableAmount;
         emit WeightedDeposit(vaultArray, amountArray, dStableAmount, 0);
         return;
-      } catch (bytes memory reason) {
-        if (_isTransientError(reason) && attempts < activeVaults.length - 1) {
-          // Try next vault in deterministic order
-          targetVault = activeVaults[(attempts + 1) % activeVaults.length];
-        } else {
-          // Non-transient error or last attempt, propagate
-          assembly {
-            revert(add(reason, 0x20), mload(reason))
-          }
+      } catch {
+        // Continue to next vault on any error
+        if (i == activeVaults.length - 1) {
+          // Last vault failed, revert
+          revert NoLiquidityAvailable();
         }
       }
     }
@@ -212,25 +197,13 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 
-    (
-      address[] memory activeVaults,
-      uint256[] memory currentAllocations,
-      uint256[] memory targetAllocations
-    ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
+    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    // Simple deterministic ordering: pick the most overallocated vault
-    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
-      activeVaults,
-      currentAllocations,
-      targetAllocations,
-      1 // Only select one vault for auto routing
-    );
-
-    // Try vaults in order until one succeeds or we run out
-    address targetVault = selectedVaults[0];
-    for (uint256 attempts = 0; attempts < activeVaults.length; attempts++) {
+    // Try vaults in deterministic order until one succeeds
+    for (uint256 i = 0; i < activeVaults.length; i++) {
+      address targetVault = activeVaults[i];
       try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, receiver, owner) {
         // Success - emit event and return
         address[] memory vaultArray = new address[](1);
@@ -239,15 +212,11 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         amountArray[0] = dStableAmount;
         emit WeightedWithdrawal(vaultArray, amountArray, dStableAmount, 0);
         return;
-      } catch (bytes memory reason) {
-        if (_isTransientError(reason) && attempts < activeVaults.length - 1) {
-          // Try next vault in deterministic order
-          targetVault = activeVaults[(attempts + 1) % activeVaults.length];
-        } else {
-          // Non-transient error or last attempt, propagate
-          assembly {
-            revert(add(reason, 0x20), mload(reason))
-          }
+      } catch {
+        // Continue to next vault on any error
+        if (i == activeVaults.length - 1) {
+          // Last vault failed, revert
+          revert NoLiquidityAvailable();
         }
       }
     }
@@ -709,98 +678,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     return maxVaultsPerOperation < activeCount ? maxVaultsPerOperation : activeCount;
   }
 
-  function _isTransientError(bytes memory reason) internal pure returns (bool) {
-    // Check for common transient error signatures
-    if (reason.length >= 4) {
-      bytes4 selector;
-      assembly {
-        selector := mload(add(reason, 0x20))
-      }
-
-      // These errors should trigger retries (transient errors)
-      // - NoLiquidityAvailable: vault may be temporarily drained
-      // - VaultNotActive: vault may be temporarily paused
-      // - SlippageCheckFailed: temporary price movement
-      // - Also check for common ERC20 errors (insufficient balance/allowance)
-      if (
-        selector == NoLiquidityAvailable.selector ||
-        selector == VaultNotActive.selector ||
-        selector == SlippageCheckFailed.selector ||
-        selector == bytes4(keccak256("ERC20InsufficientBalance(address,uint256,uint256)")) ||
-        selector == bytes4(keccak256("ERC20InsufficientAllowance(address,uint256,uint256)"))
-      ) {
-        return true;
-      }
-
-      // Handle standard Error(string) reverts (selector: 0x08c379a0)
-      if (selector == 0x08c379a0 && reason.length >= 100) {
-        // Decode the string message and check for transient conditions
-        bytes memory strData;
-        assembly {
-          // Skip selector (4) + offset (32) + string length (32) = 68 bytes
-          let strLen := mload(add(reason, 0x44))
-          // Cap string length to prevent excessive memory usage
-          if gt(strLen, 256) {
-            strLen := 256
-          }
-          strData := mload(0x40)
-          mstore(strData, strLen)
-          // Copy string data
-          let dataPtr := add(strData, 0x20)
-          let reasonPtr := add(reason, 0x64)
-          for {
-            let i := 0
-          } lt(i, strLen) {
-            i := add(i, 32)
-          } {
-            mstore(add(dataPtr, i), mload(add(reasonPtr, i)))
-          }
-          mstore(0x40, add(dataPtr, strLen))
-        }
-
-        // Check if the error message indicates a transient condition
-        // Common patterns: "paused", "Pausable", "insufficient", "not enough"
-        if (_containsTransientKeyword(strData)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  function _containsTransientKeyword(bytes memory str) internal pure returns (bool) {
-    // Check for common transient error keywords
-    bytes32[4] memory keywords = [bytes32("paused"), bytes32("Pausable"), bytes32("insufficient"), bytes32("not enough")];
-
-    for (uint256 i = 0; i < keywords.length; i++) {
-      if (_contains(str, keywords[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function _contains(bytes memory haystack, bytes32 needle) internal pure returns (bool) {
-    uint256 needleLen = 0;
-    for (uint256 i = 0; i < 32; i++) {
-      if (needle[i] == 0) break;
-      needleLen++;
-    }
-
-    if (haystack.length < needleLen) return false;
-
-    for (uint256 i = 0; i <= haystack.length - needleLen; i++) {
-      bool found = true;
-      for (uint256 j = 0; j < needleLen; j++) {
-        if (haystack[i + j] != needle[j]) {
-          found = false;
-          break;
-        }
-      }
-      if (found) return true;
-    }
-    return false;
-  }
 
   function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
     require(msg.sender == address(this), "Only self-callable");
@@ -849,12 +726,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
 
       emit RouterDeposit(config.adapter, vault, msg.sender, actualShares, dStableAmount);
-    } catch (bytes memory reason) {
+    } catch {
       IERC20(dStable).forceApprove(config.adapter, 0);
-      // Re-throw the original error so _isTransientError can check it
-      assembly {
-        revert(add(32, reason), mload(reason))
-      }
+      // Re-throw the error
+      revert DepositConversionFailed(vault, dStableAmount);
     }
 
     IERC20(dStable).forceApprove(config.adapter, 0);
