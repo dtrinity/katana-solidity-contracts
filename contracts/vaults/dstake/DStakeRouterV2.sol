@@ -161,15 +161,27 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 
-    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
+    (
+      address[] memory activeVaults,
+      uint256[] memory currentAllocations,
+      uint256[] memory targetAllocations
+    ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
+    // Get vaults sorted by under-allocation (most under-allocated first)
+    (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
+      activeVaults,
+      currentAllocations,
+      targetAllocations,
+      activeVaults.length
+    );
+
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
-    // Try vaults in deterministic order until one succeeds
-    for (uint256 i = 0; i < activeVaults.length; i++) {
-      address targetVault = activeVaults[i];
+    // Try vaults in allocation-aware order until one succeeds
+    for (uint256 i = 0; i < sortedVaults.length; i++) {
+      address targetVault = sortedVaults[i];
       try this._depositToVaultWithRetry(targetVault, dStableAmount) {
         // Success - emit event and return
         address[] memory vaultArray = new address[](1);
@@ -180,7 +192,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         return;
       } catch {
         // Continue to next vault on any error
-        if (i == activeVaults.length - 1) {
+        if (i == sortedVaults.length - 1) {
           // Last vault failed, revert
           revert NoLiquidityAvailable();
         }
@@ -197,13 +209,25 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 
-    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
+    (
+      address[] memory activeVaults,
+      uint256[] memory currentAllocations,
+      uint256[] memory targetAllocations
+    ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    // Try vaults in deterministic order until one succeeds
-    for (uint256 i = 0; i < activeVaults.length; i++) {
-      address targetVault = activeVaults[i];
+    // Get vaults sorted by over-allocation (most over-allocated first)
+    (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
+      activeVaults,
+      currentAllocations,
+      targetAllocations,
+      activeVaults.length
+    );
+
+    // Try vaults in allocation-aware order until one succeeds
+    for (uint256 i = 0; i < sortedVaults.length; i++) {
+      address targetVault = sortedVaults[i];
       try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, receiver, owner) {
         // Success - emit event and return
         address[] memory vaultArray = new address[](1);
@@ -214,7 +238,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         return;
       } catch {
         // Continue to next vault on any error
-        if (i == activeVaults.length - 1) {
+        if (i == sortedVaults.length - 1) {
           // Last vault failed, revert
           revert NoLiquidityAvailable();
         }
