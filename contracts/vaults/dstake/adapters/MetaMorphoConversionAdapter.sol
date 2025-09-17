@@ -104,11 +104,11 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
   /**
    * @inheritdoc IDStableConversionAdapter
-   * @dev Converts dStable to MetaMorpho strategy shares with slippage protection
+   * @dev Converts dStable to MetaMorpho vault shares with slippage protection
    */
-  function depositIntoStrategy(
+  function convertToVaultAsset(
     uint256 dStableAmount
-  ) external override nonReentrant returns (address _strategyShare, uint256 strategyShareAmount) {
+  ) external override nonReentrant returns (address _vaultAsset, uint256 vaultAssetAmount) {
     if (dStableAmount == 0) revert InvalidAmount();
 
     // 1. Pull dStable from caller (router)
@@ -165,17 +165,17 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
   /**
    * @inheritdoc IDStableConversionAdapter
-   * @dev Converts MetaMorpho strategy shares back to dStable with slippage protection
+   * @dev Converts MetaMorpho vault shares back to dStable with slippage protection
    */
-  function withdrawFromStrategy(uint256 strategyShareAmount) external override nonReentrant returns (uint256 dStableAmount) {
-    if (strategyShareAmount == 0) revert InvalidAmount();
+  function convertFromVaultAsset(uint256 vaultAssetAmount) external override nonReentrant returns (uint256 dStableAmount) {
+    if (vaultAssetAmount == 0) revert InvalidAmount();
 
-    // 1. Pull strategy shares from caller (router)
-    IERC20(address(metaMorphoVault)).safeTransferFrom(msg.sender, address(this), strategyShareAmount);
+    // 1. Pull vault shares from caller (router)
+    IERC20(address(metaMorphoVault)).safeTransferFrom(msg.sender, address(this), vaultAssetAmount);
 
     // 2. Preview expected assets with slippage tolerance
     uint256 expectedAssets;
-    try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
+    try metaMorphoVault.previewRedeem(vaultAssetAmount) returns (uint256 assets) {
       expectedAssets = assets;
     } catch {
       revert VaultOperationFailed();
@@ -190,7 +190,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
 
     // 3. Redeem shares for dStable, sending directly to caller
     uint256 actualAssets;
-    try metaMorphoVault.redeem(strategyShareAmount, msg.sender, address(this)) returns (uint256 assets) {
+    try metaMorphoVault.redeem(vaultAssetAmount, msg.sender, address(this)) returns (uint256 assets) {
       actualAssets = assets;
     } catch {
       // If redeem fails, revert immediately without transferring shares
@@ -214,25 +214,25 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
       }
     }
 
-    emit ConversionFromVault(msg.sender, strategyShareAmount, actualAssets);
+    emit ConversionFromVault(msg.sender, vaultAssetAmount, actualAssets);
     return actualAssets;
   }
 
   /**
    * @inheritdoc IDStableConversionAdapter
-   * @dev Returns the current value of strategy shares in dStable terms
+   * @dev Returns the current value of vault shares in dStable terms
    */
-  function strategyShareValueInDStable(address _strategyShare, uint256 strategyShareAmount) external view override returns (uint256) {
-    if (_strategyShare != address(metaMorphoVault)) {
-      revert AssetMismatch(address(metaMorphoVault), _strategyShare);
+  function assetValueInDStable(address _vaultAsset, uint256 vaultAssetAmount) external view override returns (uint256) {
+    if (_vaultAsset != address(metaMorphoVault)) {
+      revert AssetMismatch(address(metaMorphoVault), _vaultAsset);
     }
 
     // Use try-catch to handle potential revert from external vault
-    try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
+    try metaMorphoVault.previewRedeem(vaultAssetAmount) returns (uint256 assets) {
       return assets;
     } catch {
       // If preview fails, use convertToAssets as fallback
-      try metaMorphoVault.convertToAssets(strategyShareAmount) returns (uint256 assets) {
+      try metaMorphoVault.convertToAssets(vaultAssetAmount) returns (uint256 assets) {
         return assets;
       } catch {
         // If both fail, return 0 (caller should handle this case)
@@ -244,8 +244,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function previewWithdrawFromStrategy(uint256 strategyShareAmount) external view override returns (uint256 dStableAmount) {
-    try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
+  function previewConvertFromVaultAsset(uint256 vaultAssetAmount) external view override returns (uint256 dStableAmount) {
+    try metaMorphoVault.previewRedeem(vaultAssetAmount) returns (uint256 assets) {
       // Apply slippage for preview (conservative estimate)
       return
         assets.mulDiv(
@@ -261,9 +261,9 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function previewDepositIntoStrategy(
+  function previewConvertToVaultAsset(
     uint256 dStableAmount
-  ) external view override returns (address _strategyShare, uint256 strategyShareAmount) {
+  ) external view override returns (address _vaultAsset, uint256 vaultAssetAmount) {
     try metaMorphoVault.previewDeposit(dStableAmount) returns (uint256 shares) {
       // Apply slippage for preview (conservative estimate)
       uint256 expectedShares = shares.mulDiv(
@@ -280,7 +280,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function strategyShare() external view override returns (address) {
+  function vaultAsset() external view override returns (address) {
     return address(metaMorphoVault);
   }
 

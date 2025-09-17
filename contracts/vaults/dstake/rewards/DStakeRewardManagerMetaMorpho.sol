@@ -242,13 +242,13 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    */
   function _processExchangeAssetDeposit(uint256 exchangeAmountIn) internal override {
     // Get the router's default deposit vault asset
-    address defaultStrategyShare = dStakeRouter.defaultDepositStrategyShare();
-    if (defaultStrategyShare == address(0)) {
+    address defaultVaultAsset = dStakeRouter.defaultDepositVaultAsset();
+    if (defaultVaultAsset == address(0)) {
       revert DefaultDepositAssetNotSet();
     }
 
-    // Get the adapter for the default strategy share
-    address adapter = dStakeRouter.strategyShareToAdapter(defaultStrategyShare);
+    // Get the adapter for the default vault asset
+    address adapter = dStakeRouter.vaultAssetToAdapter(defaultVaultAsset);
     if (adapter == address(0)) {
       revert AdapterNotSetForDefaultAsset();
     }
@@ -257,25 +257,25 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
     // Check collateral vault balance before conversion
-    uint256 balanceBefore = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
+    uint256 balanceBefore = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
 
-    // Convert dStable to strategy share via adapter
-    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapter(adapter).depositIntoStrategy(exchangeAmountIn);
+    // Convert dStable to vault asset via adapter
+    (address returnedVaultAsset, uint256 vaultAssetAmount) = IDStableConversionAdapter(adapter).convertToVaultAsset(exchangeAmountIn);
 
-    // Verify the adapter returned the expected strategy share
-    if (returnedStrategyShare != defaultStrategyShare) {
-      revert AdapterReturnedUnexpectedAsset(defaultStrategyShare, returnedStrategyShare);
+    // Verify the adapter returned the expected vault asset
+    if (returnedVaultAsset != defaultVaultAsset) {
+      revert AdapterReturnedUnexpectedAsset(defaultVaultAsset, returnedVaultAsset);
     }
 
     // Verify that the collateral vault actually received the expected assets
-    uint256 balanceAfter = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
+    uint256 balanceAfter = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
     uint256 actualReceived = balanceAfter - balanceBefore;
-    if (actualReceived < strategyShareAmount) {
-      revert InsufficientAssetsReceived(strategyShareAmount, actualReceived);
+    if (actualReceived < vaultAssetAmount) {
+      revert InsufficientAssetsReceived(vaultAssetAmount, actualReceived);
     }
 
     // Emit event for tracking (use actualReceived for accuracy)
-    emit ExchangeAssetProcessed(defaultStrategyShare, actualReceived, exchangeAmountIn);
+    emit ExchangeAssetProcessed(defaultVaultAsset, actualReceived, exchangeAmountIn);
 
     // Clear any remaining approval
     IERC20(exchangeAsset).forceApprove(adapter, 0);

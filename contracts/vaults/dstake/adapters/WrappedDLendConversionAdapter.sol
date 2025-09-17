@@ -55,7 +55,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
    *      The StaticATokenLM contract MUST be pre-approved to spend dStable held by this adapter.
    *      The StaticATokenLM contract mints the wrappedDLendToken directly to the collateralVault.
    */
-  function depositIntoStrategy(uint256 dStableAmount) external override returns (address _strategyShare, uint256 strategyShareAmount) {
+  function convertToVaultAsset(uint256 dStableAmount) external override returns (address _vaultAsset, uint256 vaultAssetAmount) {
     if (dStableAmount == 0) {
       revert InvalidAmount();
     }
@@ -67,9 +67,9 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
     IERC20(dStable).forceApprove(address(wrappedDLendToken), dStableAmount);
 
     // 3. Deposit dStable into the StaticATokenLM wrapper, minting wrappedDLendToken to collateralVault
-    strategyShareAmount = IERC4626(address(wrappedDLendToken)).deposit(dStableAmount, collateralVault);
+    vaultAssetAmount = IERC4626(address(wrappedDLendToken)).deposit(dStableAmount, collateralVault);
 
-    return (address(wrappedDLendToken), strategyShareAmount);
+    return (address(wrappedDLendToken), vaultAssetAmount);
   }
 
   /**
@@ -77,16 +77,16 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
    * @dev Converts wrappedDLendToken -> dStable by withdrawing from StaticATokenLM.
    *      The StaticATokenLM contract sends the dStable directly to msg.sender.
    */
-  function withdrawFromStrategy(uint256 strategyShareAmount) external override returns (uint256 dStableAmount) {
-    if (strategyShareAmount == 0) {
+  function convertFromVaultAsset(uint256 vaultAssetAmount) external override returns (uint256 dStableAmount) {
+    if (vaultAssetAmount == 0) {
       revert InvalidAmount();
     }
 
     // 1. Pull wrappedDLendToken (shares) from caller (Router)
-    IERC20(address(wrappedDLendToken)).safeTransferFrom(msg.sender, address(this), strategyShareAmount);
+    IERC20(address(wrappedDLendToken)).safeTransferFrom(msg.sender, address(this), vaultAssetAmount);
 
     // 2. Withdraw from StaticATokenLM, sending dStable to msg.sender
-    dStableAmount = IERC4626(address(wrappedDLendToken)).redeem(strategyShareAmount, msg.sender, address(this));
+    dStableAmount = IERC4626(address(wrappedDLendToken)).redeem(vaultAssetAmount, msg.sender, address(this));
 
     if (dStableAmount == 0) {
       revert InvalidAmount();
@@ -99,18 +99,18 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
    * @inheritdoc IDStableConversionAdapter
    * @dev Uses StaticATokenLM's previewRedeem function to get the underlying value (dStable).
    */
-  function strategyShareValueInDStable(address _strategyShare, uint256 strategyShareAmount) external view override returns (uint256 dStableValue) {
-    if (_strategyShare != address(wrappedDLendToken)) {
-      revert InconsistentState("Incorrect strategy share address");
+  function assetValueInDStable(address _vaultAsset, uint256 vaultAssetAmount) external view override returns (uint256 dStableValue) {
+    if (_vaultAsset != address(wrappedDLendToken)) {
+      revert InconsistentState("Incorrect vault asset address");
     }
-    // previewRedeem takes shares (strategyShareAmount) and returns assets (dStableValue)
-    return IERC4626(address(wrappedDLendToken)).previewRedeem(strategyShareAmount);
+    // previewRedeem takes shares (vaultAssetAmount) and returns assets (dStableValue)
+    return IERC4626(address(wrappedDLendToken)).previewRedeem(vaultAssetAmount);
   }
 
   /**
    * @inheritdoc IDStableConversionAdapter
    */
-  function strategyShare() external view override returns (address) {
+  function vaultAsset() external view override returns (address) {
     return address(wrappedDLendToken);
   }
 
@@ -118,21 +118,21 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
    * @inheritdoc IDStableConversionAdapter
    * @dev Preview the result of converting a given dSTABLE amount to wrappedDLendToken.
    * @param dStableAmount Amount of dSTABLE to convert
-   * @return _strategyShare Address of the strategy share (wrapped dLend token)
-   * @return strategyShareAmount Amount of strategy share that would be received
+   * @return _vaultAsset Address of the vault asset (wrapped dLend token)
+   * @return vaultAssetAmount Amount of vault asset that would be received
    */
-  function previewDepositIntoStrategy(uint256 dStableAmount) public view override returns (address _strategyShare, uint256 strategyShareAmount) {
-    _strategyShare = address(wrappedDLendToken);
-    strategyShareAmount = IERC4626(address(wrappedDLendToken)).previewDeposit(dStableAmount);
+  function previewConvertToVaultAsset(uint256 dStableAmount) public view override returns (address _vaultAsset, uint256 vaultAssetAmount) {
+    _vaultAsset = address(wrappedDLendToken);
+    vaultAssetAmount = IERC4626(address(wrappedDLendToken)).previewDeposit(dStableAmount);
   }
 
   /**
    * @inheritdoc IDStableConversionAdapter
    * @dev Preview the result of converting a given wrappedDLendToken amount to dSTABLE.
-   * @param strategyShareAmount Amount of strategy share to convert
+   * @param vaultAssetAmount Amount of vault asset to convert
    * @return dStableAmount Amount of dSTABLE that would be received
    */
-  function previewWithdrawFromStrategy(uint256 strategyShareAmount) public view override returns (uint256 dStableAmount) {
-    dStableAmount = IERC4626(address(wrappedDLendToken)).previewRedeem(strategyShareAmount);
+  function previewConvertFromVaultAsset(uint256 vaultAssetAmount) public view override returns (uint256 dStableAmount) {
+    dStableAmount = IERC4626(address(wrappedDLendToken)).previewRedeem(vaultAssetAmount);
   }
 }
