@@ -14,12 +14,12 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 // full router contract (avoids circular dependencies).
 // ---------------------------------------------------------------------------
 interface IAdapterProvider {
-  function vaultAssetToAdapter(address) external view returns (address);
+  function strategyShareToAdapter(address) external view returns (address);
 }
 
 /**
  * @title DStakeCollateralVault
- * @notice Holds various yield-bearing/convertible ERC20 tokens (`vault assets`) managed by dSTAKE.
+ * @notice Holds various yield-bearing/convertible ERC20 tokens (`strategy shares`) managed by dSTAKE.
  * @dev Calculates the total value of these assets in terms of the underlying dStable asset
  *      using registered adapters. This contract is non-upgradeable but replaceable via
  *      DStakeToken governance.
@@ -34,8 +34,8 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
 
   // --- Errors ---
   error ZeroAddress();
-  error AssetNotSupported(address asset);
-  error AssetAlreadySupported(address asset);
+  error StrategyShareNotSupported(address strategyShare);
+  error StrategyShareAlreadySupported(address strategyShare);
   error NonZeroBalance(address asset);
   error CannotRescueRestrictedToken(address token);
   error ETHTransferFailed(address receiver, uint256 amount);
@@ -50,7 +50,7 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
 
   address public router; // The DStakeRouter allowed to interact
 
-  EnumerableSet.AddressSet private _supportedAssets; // Set of supported vault assets
+  EnumerableSet.AddressSet private _supportedStrategyShares; // Set of supported strategy shares
 
   // --- Constructor ---
   constructor(address _dStakeVaultShare, address _dStableAsset) {
@@ -71,10 +71,10 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
    */
   function totalValueInDStable() external view override returns (uint256 dStableValue) {
     uint256 totalValue = 0;
-    uint256 len = _supportedAssets.length();
+    uint256 len = _supportedStrategyShares.length();
     for (uint256 i = 0; i < len; i++) {
-      address vaultAsset = _supportedAssets.at(i);
-      address adapterAddress = IAdapterProvider(router).vaultAssetToAdapter(vaultAsset);
+      address strategyShare = _supportedStrategyShares.at(i);
+      address adapterAddress = IAdapterProvider(router).strategyShareToAdapter(strategyShare);
 
       if (adapterAddress == address(0)) {
         // If there is no adapter configured, simply skip this asset to
@@ -83,9 +83,9 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
         continue;
       }
 
-      uint256 balance = IERC20(vaultAsset).balanceOf(address(this));
+      uint256 balance = IERC20(strategyShare).balanceOf(address(this));
       if (balance > 0) {
-        totalValue += IDStableConversionAdapter(adapterAddress).assetValueInDStable(vaultAsset, balance);
+        totalValue += IDStableConversionAdapter(adapterAddress).strategyShareValueInDStable(strategyShare, balance);
       }
     }
     return totalValue;
@@ -94,44 +94,44 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
   // --- External Functions (Router Interactions) ---
 
   /**
-   * @notice Transfers `amount` of `vaultAsset` from this vault to `recipient`.
+   * @notice Transfers `amount` of `strategyShare` from this vault to `recipient`.
    * @dev Only callable by the registered router (ROUTER_ROLE).
-   * @param vaultAsset The vault asset to transfer
+   * @param strategyShare The strategy share to transfer
    * @param amount Amount of tokens to transfer
    * @param recipient Address to receive the tokens
    */
-  function sendAsset(address vaultAsset, uint256 amount, address recipient) external onlyRole(ROUTER_ROLE) {
-    if (!_isSupported(vaultAsset)) revert AssetNotSupported(vaultAsset);
-    IERC20(vaultAsset).safeTransfer(recipient, amount);
+  function transferStrategyShares(address strategyShare, uint256 amount, address recipient) external onlyRole(ROUTER_ROLE) {
+    if (!_isSupported(strategyShare)) revert StrategyShareNotSupported(strategyShare);
+    IERC20(strategyShare).safeTransfer(recipient, amount);
   }
 
   /**
-   * @notice Adds a new supported vault asset. Can only be invoked by the router.
+   * @notice Adds a new supported strategy share. Can only be invoked by the router.
    * @dev Only callable by the registered router (ROUTER_ROLE).
-   * @param vaultAsset Address of the vault asset to add
+   * @param strategyShare Address of the strategy share to add
    */
-  function addSupportedAsset(address vaultAsset) external onlyRole(ROUTER_ROLE) {
-    if (vaultAsset == address(0)) revert ZeroAddress();
-    if (_isSupported(vaultAsset)) revert AssetAlreadySupported(vaultAsset);
+  function addSupportedStrategyShare(address strategyShare) external onlyRole(ROUTER_ROLE) {
+    if (strategyShare == address(0)) revert ZeroAddress();
+    if (_isSupported(strategyShare)) revert StrategyShareAlreadySupported(strategyShare);
 
-    _supportedAssets.add(vaultAsset);
-    emit SupportedAssetAdded(vaultAsset);
+    _supportedStrategyShares.add(strategyShare);
+    emit StrategyShareSupported(strategyShare);
   }
 
   /**
-   * @notice Removes a supported vault asset. Can only be invoked by the router.
+   * @notice Removes a supported strategy share. Can only be invoked by the router.
    * @dev Only callable by the registered router (ROUTER_ROLE).
-   * @param vaultAsset Address of the vault asset to remove
+   * @param strategyShare Address of the strategy share to remove
    */
-  function removeSupportedAsset(address vaultAsset) external onlyRole(ROUTER_ROLE) {
-    if (!_isSupported(vaultAsset)) revert AssetNotSupported(vaultAsset);
+  function removeSupportedStrategyShare(address strategyShare) external onlyRole(ROUTER_ROLE) {
+    if (!_isSupported(strategyShare)) revert StrategyShareNotSupported(strategyShare);
     // NOTE: Previously this function reverted if the vault still held a
-    // non-zero balance of the asset, causing a griefing / DoS vector:
+    // non-zero balance of the share, causing a griefing / DoS vector:
     // anyone could deposit 1 wei of the token to block removal. The
-    // check has been removed so governance can always delist an asset.
+    // check has been removed so governance can always delist a share.
 
-    _supportedAssets.remove(vaultAsset);
-    emit SupportedAssetRemoved(vaultAsset);
+    _supportedStrategyShares.remove(strategyShare);
+    emit StrategyShareRemoved(strategyShare);
   }
 
   // --- Governance Functions ---
@@ -157,32 +157,32 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
 
   // --- Internal Utilities ---
 
-  function _isSupported(address asset) private view returns (bool) {
-    return _supportedAssets.contains(asset);
+  function _isSupported(address strategyShare) private view returns (bool) {
+    return _supportedStrategyShares.contains(strategyShare);
   }
 
   // --- External Views ---
 
   /**
-   * @notice Returns the vault asset at `index` from the internal supported set.
+   * @notice Returns the strategy share at `index` from the internal supported set.
    *         Kept for backwards-compatibility with the previous public array getter.
    */
-  function supportedAssets(uint256 index) external view override returns (address) {
-    return _supportedAssets.at(index);
+  function supportedStrategyShares(uint256 index) external view override returns (address) {
+    return _supportedStrategyShares.at(index);
   }
 
   /**
-   * @notice Returns the entire list of supported vault assets. Useful for UIs & off-chain tooling.
+   * @notice Returns the entire list of supported strategy shares. Useful for UIs & off-chain tooling.
    */
-  function getSupportedAssets() external view returns (address[] memory) {
-    return _supportedAssets.values();
+  function getSupportedStrategyShares() external view returns (address[] memory) {
+    return _supportedStrategyShares.values();
   }
 
   // --- Recovery Functions ---
 
   /**
    * @notice Rescues tokens accidentally sent to the contract
-   * @dev Cannot rescue supported vault assets or the dStable token
+   * @dev Cannot rescue supported strategy shares or the dStable token
    * @param token Address of the token to rescue
    * @param receiver Address to receive the rescued tokens
    * @param amount Amount of tokens to rescue
@@ -224,16 +224,16 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
    * @return restrictedTokens Array of restricted token addresses
    */
   function getRestrictedRescueTokens() external view returns (address[] memory) {
-    address[] memory assets = _supportedAssets.values();
-    address[] memory restrictedTokens = new address[](assets.length + 1);
+    address[] memory shares = _supportedStrategyShares.values();
+    address[] memory restrictedTokens = new address[](shares.length + 1);
 
-    // Add all supported assets
-    for (uint256 i = 0; i < assets.length; i++) {
-      restrictedTokens[i] = assets[i];
+    // Add all supported strategy shares
+    for (uint256 i = 0; i < shares.length; i++) {
+      restrictedTokens[i] = shares[i];
     }
 
     // Add dStable token
-    restrictedTokens[assets.length] = dStable;
+    restrictedTokens[shares.length] = dStable;
 
     return restrictedTokens;
   }

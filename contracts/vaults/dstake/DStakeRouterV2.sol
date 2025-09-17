@@ -27,10 +27,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   // --- Errors ---
   error ZeroAddress();
-  error AdapterNotFound(address vaultAsset);
-  error ZeroPreviewWithdrawAmount(address vaultAsset);
-  error InsufficientDStableFromAdapter(address vaultAsset, uint256 expected, uint256 actual);
-  error VaultAssetManagedByDifferentAdapter(address vaultAsset, address existingAdapter);
+  error AdapterNotFound(address strategyShare);
+  error ZeroPreviewWithdrawAmount(address strategyShare);
+  error InsufficientDStableFromAdapter(address strategyShare, uint256 expected, uint256 actual);
+  error VaultAssetManagedByDifferentAdapter(address strategyShare, address existingAdapter);
   error ZeroInputDStableValue(address fromAsset, uint256 fromAmount);
   error AdapterAssetMismatch(address adapter, address expectedAsset, address actualAsset);
   error SlippageCheckFailed(address asset, uint256 actualAmount, uint256 requiredAmount);
@@ -56,7 +56,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
-  bytes32 public constant COLLATERAL_EXCHANGER_ROLE = keccak256("COLLATERAL_EXCHANGER_ROLE");
+  bytes32 public constant STRATEGY_REBALANCER_ROLE = keccak256("STRATEGY_REBALANCER_ROLE");
   bytes32 public constant ADAPTER_MANAGER_ROLE = keccak256("ADAPTER_MANAGER_ROLE");
   bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");
   bytes32 public constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
@@ -71,8 +71,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   uint256 public maxVaultsPerOperation = 1;
   uint256 public maxVaultCount = 10;
 
-  mapping(address => address) private _vaultAssetToAdapter;
-  address public defaultDepositVaultAsset;
+  mapping(address => address) private _strategyShareToAdapter;
+  address public defaultDepositStrategyShare;
 
   struct ExchangeLocals {
     address fromAdapterAddress;
@@ -89,7 +89,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   struct VaultConfig {
-    address vault;
+    address strategyVault;
     address adapter;
     uint256 targetBps;
     bool isActive;
@@ -102,33 +102,33 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   // --- Events ---
   event RouterDeposit(
     address indexed adapter,
-    address indexed vaultAsset,
+    address indexed strategyShare,
     address indexed dStakeToken,
-    uint256 vaultAssetAmount,
+    uint256 strategyShareAmount,
     uint256 dStableAmount
   );
-  event Withdrawn(address indexed vaultAsset, uint256 vaultAssetAmount, uint256 dStableAmount, address owner, address receiver);
-  event Exchanged(
-    address indexed fromAsset,
-    address indexed toAsset,
-    uint256 fromAssetAmount,
-    uint256 toAssetAmount,
+  event Withdrawn(address indexed strategyShare, uint256 strategyShareAmount, uint256 dStableAmount, address owner, address receiver);
+  event StrategySharesExchanged(
+    address indexed fromStrategyShare,
+    address indexed toStrategyShare,
+    uint256 fromShareAmount,
+    uint256 toShareAmount,
     uint256 dStableAmountEquivalent,
     address indexed exchanger
   );
-  event AdapterSet(address indexed vaultAsset, address adapterAddress);
-  event AdapterRemoved(address indexed vaultAsset, address adapterAddress);
-  event DefaultDepositVaultAssetSet(address indexed vaultAsset);
+  event AdapterSet(address indexed strategyShare, address adapterAddress);
+  event AdapterRemoved(address indexed strategyShare, address adapterAddress);
+  event DefaultDepositStrategyShareSet(address indexed strategyShare);
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusHeld(uint256 amount);
   event SurplusSwept(uint256 amount, address vaultAsset);
   event ShortfallCovered(uint256 amount);
-  event WeightedDeposit(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount, uint256 randomSeed);
-  event WeightedWithdrawal(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount, uint256 randomSeed);
+  event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount, uint256 randomSeed);
+  event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount, uint256 randomSeed);
   event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps);
   event VaultConfigUpdated(address indexed vault, address indexed adapter, uint256 targetBps, bool isActive);
   event VaultConfigRemoved(address indexed vault);
-  event CollateralExchanged(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
+  event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
   event MaxVaultsPerOperationUpdated(uint256 oldCount, uint256 newCount);
 
@@ -154,8 +154,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   // --- Core Router Functions ---
 
-  function vaultAssetToAdapter(address vaultAsset) external view returns (address) {
-    return _vaultAssetToAdapter[vaultAsset];
+  function strategyShareToAdapter(address strategyShare) external view returns (address) {
+    return _strategyShareToAdapter[strategyShare];
   }
 
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
@@ -189,7 +189,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         uint256[] memory amountArray = new uint256[](1);
         vaultArray[0] = targetVault;
         amountArray[0] = dStableAmount;
-        emit WeightedDeposit(vaultArray, amountArray, dStableAmount, 0);
+        emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount, 0);
         return;
       } catch {
         // Continue to next vault on any error (transient or permanent)
@@ -236,7 +236,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
         uint256[] memory amountArray = new uint256[](1);
         vaultArray[0] = targetVault;
         amountArray[0] = dStableAmount;
-        emit WeightedWithdrawal(vaultArray, amountArray, dStableAmount, 0);
+        emit StrategyWithdrawalRouted(vaultArray, amountArray, dStableAmount, 0);
         return;
       } catch {
         // Continue to next vault on any error (transient or permanent)
@@ -274,7 +274,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    emit WeightedDeposit(vaults, assets, totalAssets, 0);
+    emit StrategyDepositRouted(vaults, assets, totalAssets, 0);
   }
 
   function solverDepositShares(
@@ -315,7 +315,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    emit WeightedDeposit(vaults, assetAmounts, totalAssets, 0);
+    emit StrategyDepositRouted(vaults, assetAmounts, totalAssets, 0);
   }
 
   function solverWithdrawAssets(
@@ -345,7 +345,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     totalWithdrawn = IERC20(dStable).balanceOf(address(this));
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit WeightedWithdrawal(vaults, assets, totalAssets, 0);
+    emit StrategyWithdrawalRouted(vaults, assets, totalAssets, 0);
     return totalWithdrawn;
   }
 
@@ -382,114 +382,114 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     totalWithdrawn = IERC20(dStable).balanceOf(address(this));
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit WeightedWithdrawal(vaults, assetAmounts, totalAssets, 0);
+    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalAssets, 0);
     return totalWithdrawn;
   }
 
   // --- Exchange Functions ---
 
-  function exchangeAssetsUsingAdapters(
-    address fromVaultAsset,
-    address toVaultAsset,
-    uint256 fromVaultAssetAmount,
-    uint256 minToVaultAssetAmount
-  ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) nonReentrant {
-    _exchangeAssetsUsingAdapters(fromVaultAsset, toVaultAsset, fromVaultAssetAmount, minToVaultAssetAmount);
+  function exchangeStrategySharesInternal(
+    address fromStrategyShare,
+    address toStrategyShare,
+    uint256 fromShareAmount,
+    uint256 minToShareAmount
+  ) external onlyRole(STRATEGY_REBALANCER_ROLE) nonReentrant {
+    _exchangeStrategyShares(fromStrategyShare, toStrategyShare, fromShareAmount, minToShareAmount);
   }
 
-  function _exchangeAssetsUsingAdapters(
-    address fromVaultAsset,
-    address toVaultAsset,
-    uint256 fromVaultAssetAmount,
-    uint256 minToVaultAssetAmount
+  function _exchangeStrategyShares(
+    address fromStrategyShare,
+    address toStrategyShare,
+    uint256 fromShareAmount,
+    uint256 minToShareAmount
   ) internal {
-    address fromAdapterAddress = _vaultAssetToAdapter[fromVaultAsset];
-    address toAdapterAddress = _vaultAssetToAdapter[toVaultAsset];
-    if (fromAdapterAddress == address(0)) revert AdapterNotFound(fromVaultAsset);
-    if (toAdapterAddress == address(0)) revert AdapterNotFound(toVaultAsset);
+    address fromAdapterAddress = _strategyShareToAdapter[fromStrategyShare];
+    address toAdapterAddress = _strategyShareToAdapter[toStrategyShare];
+    if (fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
+    if (toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
 
     IDStableConversionAdapter fromAdapter = IDStableConversionAdapter(fromAdapterAddress);
     IDStableConversionAdapter toAdapter = IDStableConversionAdapter(toAdapterAddress);
 
-    uint256 dStableAmountEquivalent = fromAdapter.previewConvertFromVaultAsset(fromVaultAssetAmount);
-    collateralVault.sendAsset(fromVaultAsset, fromVaultAssetAmount, address(this));
+    uint256 dStableAmountEquivalent = fromAdapter.previewWithdrawFromStrategy(fromShareAmount);
+    collateralVault.transferStrategyShares(fromStrategyShare, fromShareAmount, address(this));
 
-    IERC20(fromVaultAsset).forceApprove(fromAdapterAddress, fromVaultAssetAmount);
-    uint256 receivedDStable = fromAdapter.convertFromVaultAsset(fromVaultAssetAmount);
+    IERC20(fromStrategyShare).forceApprove(fromAdapterAddress, fromShareAmount);
+    uint256 receivedDStable = fromAdapter.withdrawFromStrategy(fromShareAmount);
 
     IERC20(dStable).forceApprove(toAdapterAddress, receivedDStable);
-    (address actualToVaultAsset, uint256 resultingToVaultAssetAmount) = toAdapter.convertToVaultAsset(receivedDStable);
-    if (actualToVaultAsset != toVaultAsset) {
-      revert AdapterAssetMismatch(toAdapterAddress, toVaultAsset, actualToVaultAsset);
+    (address actualToStrategyShare, uint256 resultingToShareAmount) = toAdapter.depositIntoStrategy(receivedDStable);
+    if (actualToStrategyShare != toStrategyShare) {
+      revert AdapterAssetMismatch(toAdapterAddress, toStrategyShare, actualToStrategyShare);
     }
-    if (resultingToVaultAssetAmount < minToVaultAssetAmount) {
-      revert SlippageCheckFailed(toVaultAsset, resultingToVaultAssetAmount, minToVaultAssetAmount);
+    if (resultingToShareAmount < minToShareAmount) {
+      revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
 
     {
-      uint256 previewValue = toAdapter.previewConvertFromVaultAsset(resultingToVaultAssetAmount);
+      uint256 previewValue = toAdapter.previewWithdrawFromStrategy(resultingToShareAmount);
       uint256 minRequired = dStableAmountEquivalent - dustTolerance;
       if (previewValue < minRequired) {
         revert SlippageCheckFailed(dStable, previewValue, minRequired);
       }
     }
 
-    emit Exchanged(fromVaultAsset, toVaultAsset, fromVaultAssetAmount, resultingToVaultAssetAmount, dStableAmountEquivalent, msg.sender);
+    emit StrategySharesExchanged(fromStrategyShare, toStrategyShare, fromShareAmount, resultingToShareAmount, dStableAmountEquivalent, msg.sender);
   }
 
-  function exchangeAssets(
-    address fromVaultAsset,
-    address toVaultAsset,
-    uint256 fromVaultAssetAmount,
-    uint256 minToVaultAssetAmount
-  ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) nonReentrant {
-    if (fromVaultAssetAmount == 0) revert ZeroInputDStableValue(fromVaultAsset, 0);
-    if (fromVaultAsset == address(0) || toVaultAsset == address(0)) revert ZeroAddress();
+  function swapStrategySharesWithOperator(
+    address fromStrategyShare,
+    address toStrategyShare,
+    uint256 fromShareAmount,
+    uint256 minToShareAmount
+  ) external onlyRole(STRATEGY_REBALANCER_ROLE) nonReentrant {
+    if (fromShareAmount == 0) revert ZeroInputDStableValue(fromStrategyShare, 0);
+    if (fromStrategyShare == address(0) || toStrategyShare == address(0)) revert ZeroAddress();
 
     ExchangeLocals memory locals;
-    locals.fromAdapterAddress = _vaultAssetToAdapter[fromVaultAsset];
-    locals.toAdapterAddress = _vaultAssetToAdapter[toVaultAsset];
+    locals.fromAdapterAddress = _strategyShareToAdapter[fromStrategyShare];
+    locals.toAdapterAddress = _strategyShareToAdapter[toStrategyShare];
 
-    if (locals.fromAdapterAddress == address(0)) revert AdapterNotFound(fromVaultAsset);
-    if (locals.toAdapterAddress == address(0)) revert AdapterNotFound(toVaultAsset);
+    if (locals.fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
+    if (locals.toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
 
     locals.fromAdapter = IDStableConversionAdapter(locals.fromAdapterAddress);
     locals.toAdapter = IDStableConversionAdapter(locals.toAdapterAddress);
 
-    locals.dStableValueIn = locals.fromAdapter.previewConvertFromVaultAsset(fromVaultAssetAmount);
-    if (locals.dStableValueIn == 0) revert ZeroInputDStableValue(fromVaultAsset, fromVaultAssetAmount);
+    locals.dStableValueIn = locals.fromAdapter.previewWithdrawFromStrategy(fromShareAmount);
+    if (locals.dStableValueIn == 0) revert ZeroInputDStableValue(fromStrategyShare, fromShareAmount);
 
-    (address expectedToAsset, uint256 tmpToAmount) = locals.toAdapter.previewConvertToVaultAsset(locals.dStableValueIn);
-    if (expectedToAsset != toVaultAsset) revert AdapterAssetMismatch(locals.toAdapterAddress, toVaultAsset, expectedToAsset);
+    (address expectedToShare, uint256 tmpToAmount) = locals.toAdapter.previewDepositIntoStrategy(locals.dStableValueIn);
+    if (expectedToShare != toStrategyShare) revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, expectedToShare);
     locals.calculatedToVaultAssetAmount = tmpToAmount;
 
-    if (locals.calculatedToVaultAssetAmount < minToVaultAssetAmount) {
-      revert SlippageCheckFailed(toVaultAsset, locals.calculatedToVaultAssetAmount, minToVaultAssetAmount);
+    if (locals.calculatedToVaultAssetAmount < minToShareAmount) {
+      revert SlippageCheckFailed(toStrategyShare, locals.calculatedToVaultAssetAmount, minToShareAmount);
     }
 
-    collateralVault.sendAsset(toVaultAsset, locals.calculatedToVaultAssetAmount, msg.sender);
+    collateralVault.transferStrategyShares(toStrategyShare, locals.calculatedToVaultAssetAmount, msg.sender);
 
-    IERC20(fromVaultAsset).safeTransferFrom(msg.sender, address(this), fromVaultAssetAmount);
-    IERC20(fromVaultAsset).forceApprove(locals.fromAdapterAddress, fromVaultAssetAmount);
-    uint256 receivedDStable = locals.fromAdapter.convertFromVaultAsset(fromVaultAssetAmount);
+    IERC20(fromStrategyShare).safeTransferFrom(msg.sender, address(this), fromShareAmount);
+    IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, fromShareAmount);
+    uint256 receivedDStable = locals.fromAdapter.withdrawFromStrategy(fromShareAmount);
 
     IERC20(dStable).forceApprove(locals.toAdapterAddress, receivedDStable);
-    (address actualToVaultAsset, uint256 resultingToVaultAssetAmount) = locals.toAdapter.convertToVaultAsset(receivedDStable);
-    if (actualToVaultAsset != toVaultAsset) revert AdapterAssetMismatch(locals.toAdapterAddress, toVaultAsset, actualToVaultAsset);
+    (address actualToStrategyShare, uint256 resultingToShareAmount) = locals.toAdapter.depositIntoStrategy(receivedDStable);
+    if (actualToStrategyShare != toStrategyShare) revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
-    if (resultingToVaultAssetAmount < minToVaultAssetAmount) {
-      revert SlippageCheckFailed(toVaultAsset, resultingToVaultAssetAmount, minToVaultAssetAmount);
+    if (resultingToShareAmount < minToShareAmount) {
+      revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
 
-    emit Exchanged(fromVaultAsset, toVaultAsset, fromVaultAssetAmount, resultingToVaultAssetAmount, locals.dStableValueIn, msg.sender);
+    emit StrategySharesExchanged(fromStrategyShare, toStrategyShare, fromShareAmount, resultingToShareAmount, locals.dStableValueIn, msg.sender);
   }
 
-  function exchangeCollateral(
+  function rebalanceStrategiesByValue(
     address fromVault,
     address toVault,
     uint256 amount,
-    uint256 minToVaultAssetAmount
-  ) external onlyRole(COLLATERAL_EXCHANGER_ROLE) nonReentrant {
+    uint256 minToShareAmount
+  ) external onlyRole(STRATEGY_REBALANCER_ROLE) nonReentrant {
     if (amount == 0) revert InvalidAmount();
     if (fromVault == toVault) revert InvalidVaultConfig();
 
@@ -504,45 +504,45 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (!_isVaultHealthyForWithdrawals(fromVault)) revert VaultNotActive(fromVault);
 
     uint256 requiredVaultAssetAmount = IERC4626(fromVault).previewWithdraw(amount);
-    _exchangeAssetsUsingAdapters(fromVault, toVault, requiredVaultAssetAmount, minToVaultAssetAmount);
+    _exchangeStrategyShares(fromVault, toVault, requiredVaultAssetAmount, minToShareAmount);
 
-    emit CollateralExchanged(fromVault, toVault, amount, msg.sender);
+    emit StrategiesRebalanced(fromVault, toVault, amount, msg.sender);
   }
 
   // --- Adapter Management ---
 
-  function addAdapter(address vaultAsset, address adapterAddress) external onlyRole(ADAPTER_MANAGER_ROLE) {
-    _addAdapter(vaultAsset, adapterAddress);
+  function addAdapter(address strategyShare, address adapterAddress) external onlyRole(ADAPTER_MANAGER_ROLE) {
+    _addAdapter(strategyShare, adapterAddress);
   }
 
-  function _addAdapter(address vaultAsset, address adapterAddress) internal {
-    if (adapterAddress == address(0) || vaultAsset == address(0)) revert ZeroAddress();
-    address adapterVaultAsset = IDStableConversionAdapter(adapterAddress).vaultAsset();
-    if (adapterVaultAsset != vaultAsset) revert AdapterAssetMismatch(adapterAddress, vaultAsset, adapterVaultAsset);
-    if (_vaultAssetToAdapter[vaultAsset] != address(0) && _vaultAssetToAdapter[vaultAsset] != adapterAddress) {
-      revert VaultAssetManagedByDifferentAdapter(vaultAsset, _vaultAssetToAdapter[vaultAsset]);
+  function _addAdapter(address strategyShare, address adapterAddress) internal {
+    if (adapterAddress == address(0) || strategyShare == address(0)) revert ZeroAddress();
+    address adapterStrategyShare = IDStableConversionAdapter(adapterAddress).strategyShare();
+    if (adapterStrategyShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, adapterStrategyShare);
+    if (_strategyShareToAdapter[strategyShare] != address(0) && _strategyShareToAdapter[strategyShare] != adapterAddress) {
+      revert VaultAssetManagedByDifferentAdapter(strategyShare, _strategyShareToAdapter[strategyShare]);
     }
-    _vaultAssetToAdapter[vaultAsset] = adapterAddress;
+    _strategyShareToAdapter[strategyShare] = adapterAddress;
 
-    try collateralVault.addSupportedAsset(vaultAsset) {} catch {}
+    try collateralVault.addSupportedStrategyShare(strategyShare) {} catch {}
 
-    emit AdapterSet(vaultAsset, adapterAddress);
+    emit AdapterSet(strategyShare, adapterAddress);
   }
 
-  function removeAdapter(address vaultAsset) external onlyRole(ADAPTER_MANAGER_ROLE) {
-    address adapterAddress = _vaultAssetToAdapter[vaultAsset];
-    if (adapterAddress == address(0)) revert AdapterNotFound(vaultAsset);
-    delete _vaultAssetToAdapter[vaultAsset];
+  function removeAdapter(address strategyShare) external onlyRole(ADAPTER_MANAGER_ROLE) {
+    address adapterAddress = _strategyShareToAdapter[strategyShare];
+    if (adapterAddress == address(0)) revert AdapterNotFound(strategyShare);
+    delete _strategyShareToAdapter[strategyShare];
 
-    collateralVault.removeSupportedAsset(vaultAsset);
+    collateralVault.removeSupportedStrategyShare(strategyShare);
 
-    emit AdapterRemoved(vaultAsset, adapterAddress);
+    emit AdapterRemoved(strategyShare, adapterAddress);
   }
 
-  function setDefaultDepositVaultAsset(address vaultAsset) external onlyRole(CONFIG_MANAGER_ROLE) {
-    if (_vaultAssetToAdapter[vaultAsset] == address(0)) revert AdapterNotFound(vaultAsset);
-    defaultDepositVaultAsset = vaultAsset;
-    emit DefaultDepositVaultAssetSet(vaultAsset);
+  function setDefaultDepositStrategyShare(address strategyShare) external onlyRole(CONFIG_MANAGER_ROLE) {
+    if (_strategyShareToAdapter[strategyShare] == address(0)) revert AdapterNotFound(strategyShare);
+    defaultDepositStrategyShare = strategyShare;
+    emit DefaultDepositStrategyShareSet(strategyShare);
   }
 
   function setDustTolerance(uint256 _dustTolerance) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -555,15 +555,15 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (balance == 0) revert ZeroInputDStableValue(dStable, 0);
 
     uint256 amountToSweep = (maxAmount == 0 || maxAmount > balance) ? balance : maxAmount;
-    address adapterAddress = _vaultAssetToAdapter[defaultDepositVaultAsset];
-    if (adapterAddress == address(0)) revert AdapterNotFound(defaultDepositVaultAsset);
+    address adapterAddress = _strategyShareToAdapter[defaultDepositStrategyShare];
+    if (adapterAddress == address(0)) revert AdapterNotFound(defaultDepositStrategyShare);
 
     IDStableConversionAdapter adapter = IDStableConversionAdapter(adapterAddress);
-    address vaultAsset = adapter.vaultAsset();
+    address strategyShare = adapter.strategyShare();
 
     IERC20(dStable).approve(adapterAddress, amountToSweep);
-    (address mintedAsset, ) = adapter.convertToVaultAsset(amountToSweep);
-    if (mintedAsset != vaultAsset) revert AdapterAssetMismatch(adapterAddress, vaultAsset, mintedAsset);
+    (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
+    if (mintedShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, mintedShare);
 
     emit SurplusSwept(amountToSweep, mintedAsset);
   }
@@ -590,7 +590,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   function addVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
-    _addVaultConfig(VaultConfig({ vault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
+    _addVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
   function updateVaultConfig(VaultConfig calldata config) external onlyRole(VAULT_MANAGER_ROLE) {
@@ -598,7 +598,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
-    _updateVaultConfig(VaultConfig({ vault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
+    _updateVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
   function removeVault(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
@@ -726,13 +726,13 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
 
-    (address vaultAssetExpected, uint256 expectedShares) = adapter.previewConvertToVaultAsset(dStableAmount);
-    if (vaultAssetExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultAssetExpected);
+    (address vaultExpected, uint256 expectedShares) = adapter.previewDepositIntoStrategy(dStableAmount);
+    if (vaultExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultExpected);
 
     uint256 beforeBal = IERC20(vault).balanceOf(address(collateralVault));
 
     IERC20(dStable).forceApprove(config.adapter, dStableAmount);
-    try adapter.convertToVaultAsset(dStableAmount) returns (address actualVault, uint256 reportedShares) {
+    try adapter.depositIntoStrategy(dStableAmount) returns (address actualVault, uint256 reportedShares) {
       if (actualVault != vault) {
         IERC20(dStable).forceApprove(config.adapter, 0);
         revert AdapterAssetMismatch(config.adapter, vault, actualVault);
@@ -779,10 +779,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
     if (shares > availableShares) revert NoLiquidityAvailable();
 
-    collateralVault.sendAsset(vault, shares, address(this));
+    collateralVault.transferStrategyShares(vault, shares, address(this));
     IERC20(vault).forceApprove(adapter, shares);
 
-    try conversionAdapter.convertFromVaultAsset(shares) returns (uint256 receivedDStable) {
+    try conversionAdapter.withdrawFromStrategy(shares) returns (uint256 receivedDStable) {
       IERC20(vault).forceApprove(adapter, 0);
       emit Withdrawn(vault, shares, receivedDStable, msg.sender, msg.sender);
     } catch {
@@ -818,10 +818,10 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       return (0, 0, adapter);
     }
 
-    collateralVault.sendAsset(vault, vaultAssetAmount, address(this));
+    collateralVault.transferStrategyShares(vault, vaultAssetAmount, address(this));
     IERC20(vault).forceApprove(adapter, vaultAssetAmount);
 
-    try conversionAdapter.convertFromVaultAsset(vaultAssetAmount) returns (uint256 converted) {
+    try conversionAdapter.withdrawFromStrategy(vaultAssetAmount) returns (uint256 converted) {
       receivedDStable = converted;
       // Verify we received at least what was requested
       // If not, this vault cannot fulfill the request (slippage/fees too high)
@@ -845,7 +845,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   ) internal view returns (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) {
     uint256 activeCount = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      if (vaultConfigs[i].isActive && _isVaultHealthyForOperation(vaultConfigs[i].vault, operationType)) {
+      if (vaultConfigs[i].isActive && _isVaultHealthyForOperation(vaultConfigs[i].strategyVault, operationType)) {
         activeCount++;
       }
     }
@@ -859,9 +859,9 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     uint256 activeIndex = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       VaultConfig memory config = vaultConfigs[i];
-      if (config.isActive && _isVaultHealthyForOperation(config.vault, operationType)) {
-        activeVaults[activeIndex] = config.vault;
-        balances[activeIndex] = _getVaultBalance(config.vault);
+      if (config.isActive && _isVaultHealthyForOperation(config.strategyVault, operationType)) {
+        activeVaults[activeIndex] = config.strategyVault;
+        balances[activeIndex] = _getVaultBalance(config.strategyVault);
         targetAllocations[activeIndex] = config.targetBps;
         activeIndex++;
       }
@@ -883,8 +883,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     for (uint256 i = 0; i < vaultCount; i++) {
       VaultConfig memory config = vaultConfigs[i];
-      vaults[i] = config.vault;
-      balances[i] = _getVaultBalance(config.vault);
+      vaults[i] = config.strategyVault;
+      balances[i] = _getVaultBalance(config.strategyVault);
       targetAllocations[i] = config.targetBps;
     }
 
@@ -900,11 +900,11 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       if (shares == 0) return 0;
 
       if (adapter == address(0)) {
-        adapter = _vaultAssetToAdapter[vault];
+        adapter = _strategyShareToAdapter[vault];
       }
       if (adapter == address(0)) return 0;
 
-      try IDStableConversionAdapter(adapter).assetValueInDStable(vault, shares) returns (uint256 value) {
+      try IDStableConversionAdapter(adapter).strategyShareValueInDStable(vault, shares) returns (uint256 value) {
         return value;
       } catch {
         return 0;
@@ -965,35 +965,35 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   function _addVaultConfig(VaultConfig memory config) internal {
-    if (config.vault == address(0) || config.adapter == address(0)) revert ZeroAddress();
-    if (vaultExists[config.vault]) revert VaultAlreadyExists(config.vault);
+    if (config.strategyVault == address(0) || config.adapter == address(0)) revert ZeroAddress();
+    if (vaultExists[config.strategyVault]) revert VaultAlreadyExists(config.strategyVault);
     if (vaultConfigs.length >= maxVaultCount) revert InvalidVaultConfig();
 
     uint256 index = vaultConfigs.length;
     vaultConfigs.push(config);
-    vaultToIndex[config.vault] = index;
-    vaultExists[config.vault] = true;
+    vaultToIndex[config.strategyVault] = index;
+    vaultExists[config.strategyVault] = true;
 
     if (config.isActive) {
-      _addAdapter(config.vault, config.adapter);
+      _addAdapter(config.strategyVault, config.adapter);
     }
 
-    emit VaultConfigAdded(config.vault, config.adapter, config.targetBps);
+    emit VaultConfigAdded(config.strategyVault, config.adapter, config.targetBps);
   }
 
   function _updateVaultConfig(VaultConfig memory config) internal {
-    if (!vaultExists[config.vault]) revert AdapterNotFound(config.vault);
+    if (!vaultExists[config.strategyVault]) revert AdapterNotFound(config.strategyVault);
 
-    uint256 index = vaultToIndex[config.vault];
+    uint256 index = vaultToIndex[config.strategyVault];
     vaultConfigs[index] = config;
 
     if (config.isActive) {
-      _addAdapter(config.vault, config.adapter);
+      _addAdapter(config.strategyVault, config.adapter);
     } else {
-      try this.removeAdapter(config.vault) {} catch {}
+      try this.removeAdapter(config.strategyVault) {} catch {}
     }
 
-    emit VaultConfigUpdated(config.vault, config.adapter, config.targetBps, config.isActive);
+    emit VaultConfigUpdated(config.strategyVault, config.adapter, config.targetBps, config.isActive);
   }
 
   function _removeVault(address vault) internal {
@@ -1003,14 +1003,14 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (indexToRemove != lastIndex) {
       VaultConfig memory lastConfig = vaultConfigs[lastIndex];
       vaultConfigs[indexToRemove] = lastConfig;
-      vaultToIndex[lastConfig.vault] = indexToRemove;
+      vaultToIndex[lastConfig.strategyVault] = indexToRemove;
     }
 
     vaultConfigs.pop();
     delete vaultToIndex[vault];
     delete vaultExists[vault];
 
-    if (_vaultAssetToAdapter[vault] != address(0)) {
+    if (_strategyShareToAdapter[vault] != address(0)) {
       try this.removeAdapter(vault) {} catch {}
     }
 
@@ -1019,7 +1019,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   function _clearVaultConfigs() internal {
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      address vault = vaultConfigs[i].vault;
+      address vault = vaultConfigs[i].strategyVault;
       delete vaultToIndex[vault];
       delete vaultExists[vault];
       try this.removeAdapter(vault) {} catch {}

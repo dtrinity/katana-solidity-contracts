@@ -8,7 +8,7 @@ pragma solidity ^0.8.20;
  */
 interface IDStakeCollateralVault {
   /**
-   * @notice Calculates the total value of all managed `vault assets` held by the vault,
+   * @notice Calculates the total value of all managed `strategy shares` held by the vault,
    *         denominated in the underlying dStable asset.
    * @dev This is typically called by the DStakeToken's `totalAssets()` function.
    * @return dStableValue The total value of managed assets in terms of the dStable asset.
@@ -32,23 +32,23 @@ interface IDStakeCollateralVault {
   function router() external view returns (address);
 
   /**
-   * @notice Returns the vault asset at `index` from the internal supported list.
+   * @notice Returns the strategy share at `index` from the internal supported list.
    */
-  function supportedAssets(uint256 index) external view returns (address);
+  function supportedStrategyShares(uint256 index) external view returns (address);
 
   /**
-   * @notice Returns the entire list of supported vault assets. Convenient for UIs & off-chain analytics.
+   * @notice Returns the entire list of supported strategy shares. Convenient for UIs & off-chain analytics.
    */
-  function getSupportedAssets() external view returns (address[] memory);
+  function getSupportedStrategyShares() external view returns (address[] memory);
 
   /**
-   * @notice Transfers `amount` of `vaultAsset` from this vault to the `recipient`.
+   * @notice Transfers `amount` of `strategyShare` from this vault to the `recipient`.
    * @dev Only callable by the registered router.
-   * @param vaultAsset The address of the vault asset to send.
+   * @param strategyShare The address of the strategy share to send.
    * @param amount The amount to send.
-   * @param recipient The address to receive the asset.
+   * @param recipient The address to receive the shares.
    */
-  function sendAsset(address vaultAsset, uint256 amount, address recipient) external;
+  function transferStrategyShares(address strategyShare, uint256 amount, address recipient) external;
 
   /**
    * @notice Sets the address of the DStakeRouter contract.
@@ -58,14 +58,14 @@ interface IDStakeCollateralVault {
   function setRouter(address _newRouter) external;
 
   /**
-   * @notice Adds a vault asset to the supported list. Callable only by the router.
+   * @notice Adds a strategy share to the supported list. Callable only by the router.
    */
-  function addSupportedAsset(address vaultAsset) external;
+  function addSupportedStrategyShare(address strategyShare) external;
 
   /**
-   * @notice Removes a vault asset from the supported list. Callable only by the router.
+   * @notice Removes a strategy share from the supported list. Callable only by the router.
    */
-  function removeSupportedAsset(address vaultAsset) external;
+  function removeSupportedStrategyShare(address strategyShare) external;
 
   /**
    * @notice Emitted when the router address is set.
@@ -74,12 +74,12 @@ interface IDStakeCollateralVault {
   event RouterSet(address indexed router);
 
   /**
-   * @notice Emitted when a new vault asset is added to the supported list.
+   * @notice Emitted when a new strategy share is added to the supported list.
    */
-  event SupportedAssetAdded(address indexed vaultAsset);
+  event StrategyShareSupported(address indexed strategyShare);
 
   /**
-   * @notice Emitted when a vault asset is removed from the supported list.
+   * @notice Emitted when a strategy share is removed from the supported list.
    */
-  event SupportedAssetRemoved(address indexed vaultAsset);
+  event StrategyShareRemoved(address indexed strategyShare);
 }
