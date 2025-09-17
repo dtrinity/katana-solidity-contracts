@@ -731,6 +731,73 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       ) {
         return true;
       }
+
+      // Handle standard Error(string) reverts (selector: 0x08c379a0)
+      if (selector == 0x08c379a0 && reason.length >= 100) {
+        // Decode the string message and check for transient conditions
+        bytes memory strData;
+        assembly {
+          // Skip selector (4) + offset (32) + string length (32) = 68 bytes
+          let strLen := mload(add(reason, 0x44))
+          // Cap string length to prevent excessive memory usage
+          if gt(strLen, 256) {
+            strLen := 256
+          }
+          strData := mload(0x40)
+          mstore(strData, strLen)
+          // Copy string data
+          let dataPtr := add(strData, 0x20)
+          let reasonPtr := add(reason, 0x64)
+          for {
+            let i := 0
+          } lt(i, strLen) {
+            i := add(i, 32)
+          } {
+            mstore(add(dataPtr, i), mload(add(reasonPtr, i)))
+          }
+          mstore(0x40, add(dataPtr, strLen))
+        }
+
+        // Check if the error message indicates a transient condition
+        // Common patterns: "paused", "Pausable", "insufficient", "not enough"
+        if (_containsTransientKeyword(strData)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function _containsTransientKeyword(bytes memory str) internal pure returns (bool) {
+    // Check for common transient error keywords
+    bytes32[4] memory keywords = [bytes32("paused"), bytes32("Pausable"), bytes32("insufficient"), bytes32("not enough")];
+
+    for (uint256 i = 0; i < keywords.length; i++) {
+      if (_contains(str, keywords[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function _contains(bytes memory haystack, bytes32 needle) internal pure returns (bool) {
+    uint256 needleLen = 0;
+    for (uint256 i = 0; i < 32; i++) {
+      if (needle[i] == 0) break;
+      needleLen++;
+    }
+
+    if (haystack.length < needleLen) return false;
+
+    for (uint256 i = 0; i <= haystack.length - needleLen; i++) {
+      bool found = true;
+      for (uint256 j = 0; j < needleLen; j++) {
+        if (haystack[i + j] != needle[j]) {
+          found = false;
+          break;
+        }
+      }
+      if (found) return true;
     }
     return false;
   }
@@ -792,7 +859,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     IERC20(dStable).forceApprove(config.adapter, 0);
   }
-
 
   function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
     (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);

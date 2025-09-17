@@ -374,7 +374,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    * @notice Solver-facing withdrawal method using asset amounts
    * @dev Allows solvers to withdraw from specific vaults using asset amounts
    * @param vaults Array of vault addresses to withdraw from
-   * @param assets Array of asset amounts to withdraw from each vault
+   * @param assets Array of asset amounts to withdraw from each vault (net amounts)
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
    * @param receiver Address to receive the withdrawn assets
    * @param owner Address that owns the dSTAKE shares being burned
@@ -387,21 +387,18 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     address receiver,
     address owner
   ) public virtual returns (uint256 shares) {
-    // Calculate total net assets (after fees)
-    uint256 totalGrossAssets = 0;
+    // Calculate total net assets to withdraw
+    uint256 totalNetAssets = 0;
     for (uint256 i = 0; i < assets.length; i++) {
-      totalGrossAssets += assets[i];
+      totalNetAssets += assets[i];
     }
 
-    if (totalGrossAssets == 0) {
+    if (totalNetAssets == 0) {
       revert ZeroShares();
     }
 
-    // Calculate gross assets required to get net assets after fees
-    uint256 grossAssetsRequired = _getGrossAmountRequiredForNet(totalGrossAssets);
-
-    // Preview shares to be burned based on gross assets
-    shares = previewWithdraw(totalGrossAssets); // This already accounts for fees
+    // Preview shares to be burned based on net assets (previewWithdraw handles fee calculation)
+    shares = previewWithdraw(totalNetAssets);
     if (shares > maxShares) {
       revert ERC4626ExceedsMaxRedeem(shares, maxShares);
     }
@@ -418,21 +415,14 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Burn shares from owner
     _burn(owner, shares);
 
-    // Delegate to router's solver withdrawal method - router returns gross assets
-    uint256 grossWithdrawn = router.solverWithdrawAssets(vaults, assets, receiver, owner);
+    // Delegate to router's solver withdrawal method - router handles the net amounts directly
+    uint256 netWithdrawn = router.solverWithdrawAssets(vaults, assets, receiver, owner);
 
-    // Calculate fee and net amount
-    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
-    uint256 netAmount = grossWithdrawn - fee;
-
-    // Retain fee in contract and transfer net amount to receiver
-    if (fee > 0) {
-      emit WithdrawalFee(owner, receiver, fee);
-    }
-    IERC20(asset()).safeTransfer(receiver, netAmount);
+    // Transfer the net amount to receiver (no additional fee deduction)
+    IERC20(asset()).safeTransfer(receiver, netWithdrawn);
 
     // Emit ERC4626 Withdraw event with net assets
-    emit Withdraw(_msgSender(), receiver, owner, netAmount, shares);
+    emit Withdraw(_msgSender(), receiver, owner, netWithdrawn, shares);
 
     return shares;
   }
@@ -445,7 +435,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
    * @param receiver Address to receive the withdrawn assets
    * @param owner Address that owns the dSTAKE shares being burned
-   * @return assets The amount of net assets withdrawn (after fees)
+   * @return assets The amount of net assets withdrawn
    */
   function solverWithdrawShares(
     address[] calldata vaults,
@@ -454,22 +444,26 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     address receiver,
     address owner
   ) public virtual returns (uint256 assets) {
-    // Calculate total gross assets by converting vault shares to assets
-    uint256 totalGrossAssets = 0;
+    // Calculate expected net assets by converting vault shares to assets
+    uint256 totalExpectedAssets = 0;
     for (uint256 i = 0; i < vaults.length; i++) {
       if (vaultShares[i] > 0) {
         // Use the vault's previewRedeem to convert shares to assets
         uint256 assetAmount = IERC4626(vaults[i]).previewRedeem(vaultShares[i]);
-        totalGrossAssets += assetAmount;
+        totalExpectedAssets += assetAmount;
       }
     }
 
-    if (totalGrossAssets == 0) {
+    if (totalExpectedAssets == 0) {
       revert ZeroShares();
     }
 
-    // Preview dSTAKE shares to be burned (gross assets → shares)
-    uint256 shares = convertToShares(totalGrossAssets);
+    // Calculate withdrawal fee from the expected assets
+    uint256 fee = _calculateWithdrawalFee(totalExpectedAssets);
+    uint256 netExpectedAssets = totalExpectedAssets - fee;
+
+    // Preview dSTAKE shares to be burned based on net assets
+    uint256 shares = previewWithdraw(netExpectedAssets);
     if (shares > maxShares) {
       revert ERC4626ExceedsMaxRedeem(shares, maxShares);
     }
@@ -486,18 +480,16 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     // Burn shares from owner
     _burn(owner, shares);
 
-    // Delegate to router's solver withdrawal method - router returns gross assets
-    uint256 grossWithdrawn = router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
+    // Delegate to router's solver withdrawal method - router returns net assets
+    assets = router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
 
-    // Calculate net assets after withdrawal fee
-    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
-    assets = grossWithdrawn - fee;
+    // Transfer the net amount to receiver (no additional fee deduction)
+    IERC20(asset()).safeTransfer(receiver, assets);
 
-    // Retain fee in contract and transfer net amount to receiver
+    // Emit fee event if applicable
     if (fee > 0) {
       emit WithdrawalFee(owner, receiver, fee);
     }
-    IERC20(asset()).safeTransfer(receiver, assets);
 
     // Emit ERC4626 Withdraw event with net assets
     emit Withdraw(_msgSender(), receiver, owner, assets, shares);
