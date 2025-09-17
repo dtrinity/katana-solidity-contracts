@@ -86,7 +86,7 @@ describe("Fee Accounting Regression Test", function () {
     // Set withdrawal fee for testing
     const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
     await dStakeToken.grantRole(FEE_MANAGER_ROLE, owner.address);
-    await dStakeToken.connect(owner).setWithdrawalFee(500); // 0.05% fee
+    await dStakeToken.connect(owner).setWithdrawalFee(5000); // 0.05% fee (with 2 decimal precision)
 
     // Setup initial balances
     await dStable.mint(alice.address, ethers.parseEther("10000"));
@@ -577,11 +577,11 @@ describe("Fee Accounting Regression Test", function () {
       // Setup: Enable withdrawal fees and verify reinvest incentive
       const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
       await dStakeToken.connect(owner).grantRole(FEE_MANAGER_ROLE, owner.address);
-      await dStakeToken.connect(owner).setWithdrawalFee(100); // 1% fee for larger accumulation
+      await dStakeToken.connect(owner).setWithdrawalFee(10000); // 1% fee for larger accumulation
 
-      // Verify initial incentive is 1% (100 bps)
+      // Verify initial incentive is 1% (10000 with 2 decimal precision)
       const initialIncentive = await dStakeToken.reinvestIncentiveBps();
-      expect(initialIncentive).to.equal(100);
+      expect(initialIncentive).to.equal(10000);
 
       // User deposits
       const depositAmount = ethers.parseEther("10000");
@@ -630,27 +630,27 @@ describe("Fee Accounting Regression Test", function () {
       const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
       await dStakeToken.connect(owner).grantRole(FEE_MANAGER_ROLE, owner.address);
 
-      // Set incentive to 0.5% (50 bps)
-      await expect(dStakeToken.connect(owner).setReinvestIncentive(50))
+      // Set incentive to 0.5% (5000 with 2 decimal precision)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(5000))
         .to.emit(dStakeToken, "ReinvestIncentiveSet")
-        .withArgs(50);
-      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(50);
+        .withArgs(5000);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(5000);
 
-      // Set incentive to 10% (1000 bps)
-      await expect(dStakeToken.connect(owner).setReinvestIncentive(1000))
+      // Set incentive to 10% (100000 with 2 decimal precision)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(100000))
         .to.emit(dStakeToken, "ReinvestIncentiveSet")
-        .withArgs(1000);
-      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(1000);
+        .withArgs(100000);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(100000);
 
-      // Set incentive to maximum 20% (2000 bps)
-      await expect(dStakeToken.connect(owner).setReinvestIncentive(2000))
+      // Set incentive to maximum 20% (200000 with 2 decimal precision)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(200000))
         .to.emit(dStakeToken, "ReinvestIncentiveSet")
-        .withArgs(2000);
-      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(2000);
+        .withArgs(200000);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(200000);
 
       // Try to exceed maximum 20% (should revert)
       await expect(
-        dStakeToken.connect(owner).setReinvestIncentive(2001)
+        dStakeToken.connect(owner).setReinvestIncentive(200001)
       ).to.be.revertedWithCustomError(dStakeToken, "InvalidIncentiveBps");
 
       // Set incentive to 0 (disable incentive)
@@ -666,7 +666,7 @@ describe("Fee Accounting Regression Test", function () {
 
       // Disable reinvest incentive
       await dStakeToken.connect(owner).setReinvestIncentive(0);
-      await dStakeToken.connect(owner).setWithdrawalFee(100); // 1% fee
+      await dStakeToken.connect(owner).setWithdrawalFee(10000); // 1% fee
 
       // User deposits and withdraws to generate fees
       const depositAmount = ethers.parseEther("1000");
