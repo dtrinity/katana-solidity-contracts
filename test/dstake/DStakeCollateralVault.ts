@@ -488,7 +488,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           .withArgs(strategyShareAddress);
 
         // Asset should no longer be in supported list
-        const supported = await collateralVault.getSupportedAssets();
+        const supported = await collateralVault.getSupportedStrategyShares();
         expect(supported).to.not.include(strategyShareAddress);
       });
 
@@ -721,7 +721,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       describe("getRestrictedRescueTokens", function () {
         it("Should return dStable token when no assets are supported", async function () {
           // Remove all supported assets
-          const supportedAssets = await collateralVault.getSupportedAssets();
+          const supportedAssets = await collateralVault.getSupportedStrategyShares();
 
           for (const asset of supportedAssets) {
             await collateralVault
@@ -748,7 +748,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
               .addAdapter(strategyShareAddress, adapterAddress);
           }
 
-          const supportedAssets = await collateralVault.getSupportedAssets();
+          const supportedAssets = await collateralVault.getSupportedStrategyShares();
           const restrictedTokens =
             await collateralVault.getRestrictedRescueTokens();
 
@@ -767,7 +767,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           if (!adapter) this.skip();
 
           // Start with no supported assets
-          const supportedAssets = await collateralVault.getSupportedAssets();
+          const supportedAssets = await collateralVault.getSupportedStrategyShares();
 
           for (const asset of supportedAssets) {
             await collateralVault

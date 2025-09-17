@@ -311,11 +311,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     await routerContract.setVaultConfigs(vaultConfigs);
 
     // Verify that vault assets are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
 
     // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const strategyShare = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
 
       if (!supportedAssets.includes(strategyShare)) {

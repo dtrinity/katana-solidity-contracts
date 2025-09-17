@@ -331,12 +331,12 @@ describe("DStakeRouterV2 Integration Tests", function () {
     console.log("✅ Set vault configurations and added supported assets to collateralVault");
     
     // Verify that strategy shares are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Supported assets in collateralVault:", supportedAssets);
     
     // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const strategyShare = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
 
       if (!supportedAssets.includes(strategyShare)) {
@@ -348,7 +348,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
     }
     
     // Verify all assets are now supported
-    supportedAssets = await collateralVaultContract.getSupportedAssets();
+    supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Final supported assets in collateralVault:", supportedAssets);
     
     // Configure dStakeToken router
@@ -467,17 +467,17 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       // Check each vault configuration
       const config1 = await router.getVaultConfig(vault1Address);
-      expect(config1.vault).to.equal(vault1Address);
+      expect(config1.strategyVault).to.equal(vault1Address);
       expect(config1.adapter).to.equal(adapter1Address);
       expect(config1.targetBps).to.equal(500000);
       expect(config1.isActive).to.be.true;
 
       const config2 = await router.getVaultConfig(vault2Address);
-      expect(config2.vault).to.equal(vault2Address);
+      expect(config2.strategyVault).to.equal(vault2Address);
       expect(config2.targetBps).to.equal(300000);
 
       const config3 = await router.getVaultConfig(vault3Address);
-      expect(config3.vault).to.equal(vault3Address);
+      expect(config3.strategyVault).to.equal(vault3Address);
       expect(config3.targetBps).to.equal(200000);
     });
 

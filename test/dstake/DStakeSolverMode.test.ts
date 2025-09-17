@@ -330,12 +330,12 @@ describe("DStake Solver Mode Tests", function () {
     console.log("✅ Set vault configurations and added supported assets to collateralVault");
 
     // Verify that strategy shares are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Supported assets in collateralVault:", supportedAssets);
 
     // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const strategyShare = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
 
       if (!supportedAssets.includes(strategyShare)) {
@@ -347,7 +347,7 @@ describe("DStake Solver Mode Tests", function () {
     }
 
     // Verify all assets are now supported
-    supportedAssets = await collateralVaultContract.getSupportedAssets();
+    supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Final supported assets in collateralVault:", supportedAssets);
 
     // Configure dStakeToken router

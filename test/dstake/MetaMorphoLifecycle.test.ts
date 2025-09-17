@@ -198,7 +198,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     if (vaultCount === 0n) {
       // Manually configure the vault since deployment scripts may not have run
       const vaultConfig = {
-        vault: metaMorphoVaultContract.target,
+        strategyVault: metaMorphoVaultContract.target,
         adapter: adapterContract.target,
         targetBps: 1000000, // 100% allocation to single vault (1,000,000 basis points = 100%)
         isActive: true
