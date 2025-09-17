@@ -565,7 +565,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
     if (mintedShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, mintedShare);
 
-    emit SurplusSwept(amountToSweep, mintedAsset);
+    emit SurplusSwept(amountToSweep, mintedShare);
   }
 
   // --- Vault Configuration ---
