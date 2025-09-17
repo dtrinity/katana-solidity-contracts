@@ -353,6 +353,14 @@ contract MockMetaMorphoVault is ERC4626 {
     return pendingRewards[user] + accruedRewards;
   }
 
+  /**
+   * @notice Get the current withdrawal fee
+   * @return The withdrawal fee in basis points
+   */
+  function withdrawalFee() external view returns (uint256) {
+    return mockWithdrawFee;
+  }
+
   // --- Internal Overrides ---
 
   function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {

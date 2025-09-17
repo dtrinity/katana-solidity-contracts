@@ -550,11 +550,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       expect(received).to.be.gt(0);
 
-      // Verify the WeightedWithdrawal event was emitted with proper data
+      // Verify the StrategyWithdrawalRouted event was emitted with proper data
       const withdrawalEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedWithdrawal";
+          return decoded?.name === "StrategyWithdrawalRouted";
         } catch {
           return false;
         }
@@ -658,11 +658,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(deposit, alice.address);
       const receipt = await tx.wait();
 
-      // Find the WeightedDeposit event
+      // Find the StrategyDepositRouted event
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -729,7 +729,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -769,11 +769,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(deposit, alice.address);
       const receipt = await tx.wait();
 
-      // Find the WeightedDeposit event
+      // Find the StrategyDepositRouted event
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -824,7 +824,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -885,15 +885,34 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await expect(
-        router.connect(collateralExchanger).rebalanceStrategiesByValue(
-          vault1Address,
-          vault2Address,
-          exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
-      ).to.emit(router, "StrategySharesExchanged")
-        .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
+      const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+        vault1Address,
+        vault2Address,
+        exchangeAmount,
+        0 // minToVaultAssetAmount
+      );
+      const receipt = await tx.wait();
+
+      // Verify the StrategySharesExchanged event was emitted with correct parameters
+      const exchangeEvent = receipt.logs.find(log => {
+        try {
+          const decoded = router.interface.parseLog(log);
+          return decoded?.name === "StrategySharesExchanged";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(exchangeEvent).to.not.be.undefined;
+      if (exchangeEvent) {
+        const decoded = router.interface.parseLog(exchangeEvent);
+        expect(decoded.args.fromStrategyShare).to.equal(vault1Address);
+        expect(decoded.args.toStrategyShare).to.equal(vault2Address);
+        expect(decoded.args.fromShareAmount).to.be.gt(0);
+        expect(decoded.args.toShareAmount).to.be.gt(0);
+        expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+        expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+      }
 
       // Check that the correct number of shares were withdrawn
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -1379,15 +1398,34 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
         // Execute exchange with slippage protection
-        await expect(
-          router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            minToVaultAssetAmount
-          )
-        ).to.emit(router, "StrategySharesExchanged")
-          .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
+        const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+          vault1Address,
+          vault2Address,
+          exchangeAmount,
+          minToVaultAssetAmount
+        );
+        const receipt = await tx.wait();
+
+        // Verify the StrategySharesExchanged event was emitted with correct parameters
+        const exchangeEvent = receipt.logs.find(log => {
+          try {
+            const decoded = router.interface.parseLog(log);
+            return decoded?.name === "StrategySharesExchanged";
+          } catch {
+            return false;
+          }
+        });
+
+        expect(exchangeEvent).to.not.be.undefined;
+        if (exchangeEvent) {
+          const decoded = router.interface.parseLog(exchangeEvent);
+          expect(decoded.args.fromStrategyShare).to.equal(vault1Address);
+          expect(decoded.args.toStrategyShare).to.equal(vault2Address);
+          expect(decoded.args.fromShareAmount).to.be.gt(0);
+          expect(decoded.args.toShareAmount).to.be.gt(0);
+          expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+          expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+        }
 
         // Verify balances changed appropriately
         const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);

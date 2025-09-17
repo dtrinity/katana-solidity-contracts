@@ -808,15 +808,34 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Exchange 1000 dStable equivalent from vault1 to vault2
       const exchangeAmount = ethers.parseEther("1000");
       
-      await expect(
-        router.connect(collateralExchanger).rebalanceStrategiesByValue(
-          vault1.target,
-          vault2.target,
-          exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
-      ).to.emit(router, "StrategySharesExchanged")
-        .withArgs(vault1.target, vault2.target, exchangeAmount, collateralExchanger.address);
+      const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+        vault1.target,
+        vault2.target,
+        exchangeAmount,
+        0 // minToVaultAssetAmount
+      );
+      const receipt = await tx.wait();
+
+      // Verify the StrategySharesExchanged event was emitted with correct parameters
+      const exchangeEvent = receipt.logs.find(log => {
+        try {
+          const decoded = router.interface.parseLog(log);
+          return decoded?.name === "StrategySharesExchanged";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(exchangeEvent).to.not.be.undefined;
+      if (exchangeEvent) {
+        const decoded = router.interface.parseLog(exchangeEvent);
+        expect(decoded.args.fromStrategyShare).to.equal(vault1.target);
+        expect(decoded.args.toStrategyShare).to.equal(vault2.target);
+        expect(decoded.args.fromShareAmount).to.be.gt(0);
+        expect(decoded.args.toShareAmount).to.be.gt(0);
+        expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+        expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+      }
       
       // Check balances changed appropriately
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
