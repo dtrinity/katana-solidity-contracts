@@ -12,6 +12,7 @@ import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 import { SupportsWithdrawalFee } from "../../common/SupportsWithdrawalFee.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title DStakeToken
@@ -470,8 +471,15 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
       revert ZeroShares();
     }
 
-    // Preview dSTAKE shares to be burned (using convertToShares for gross amount)
-    uint256 shares = convertToShares(totalGrossAssets);
+    // Preview dSTAKE shares to be burned (using rounding up to prevent exploitation)
+    // Use _convertToShares with Math.Rounding.Ceil to ensure non-zero shares for non-zero withdrawals
+    uint256 shares = _convertToShares(totalGrossAssets, Math.Rounding.Ceil);
+
+    // Critical: Prevent zero-share withdrawals that would drain collateral without burning shares
+    if (shares == 0 && totalGrossAssets > 0) {
+      revert ZeroShares();
+    }
+
     if (shares > maxShares) {
       revert ERC4626ExceedsMaxRedeem(shares, maxShares);
     }
