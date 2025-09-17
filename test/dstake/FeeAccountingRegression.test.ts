@@ -94,6 +94,12 @@ describe("Fee Accounting Regression Test", function () {
     await dStable.mint(charlie.address, ethers.parseEther("10000"));
     await dStable.mint(solver.address, ethers.parseEther("10000"));
 
+    // Set router and collateral vault on DStakeToken (critical for deposit/withdraw to work)
+    const DEFAULT_ADMIN_ROLE = await dStakeToken.DEFAULT_ADMIN_ROLE();
+    await dStakeToken.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, owner.address);
+    await dStakeToken.connect(owner).setRouter(await router.getAddress());
+    await dStakeToken.connect(owner).setCollateralVault(await collateralVault.getAddress());
+
     // Ensure collateral vault has vault shares for withdrawals
     // The vault mint function requires the caller to provide assets, so give the owner the assets
     await dStable.mint(owner.address, ethers.parseEther("20000"));
@@ -565,6 +571,130 @@ describe("Fee Accounting Regression Test", function () {
       // Accounting should be consistent
       const finalVaultValue = await collateralVault.totalValueInDStable();
       expect(finalTotalAssets).to.equal(finalVaultValue + finalFees);
+    });
+
+    it("Should pay reinvestment incentive to caller", async function () {
+      // Setup: Enable withdrawal fees and verify reinvest incentive
+      const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
+      await dStakeToken.connect(owner).grantRole(FEE_MANAGER_ROLE, owner.address);
+      await dStakeToken.connect(owner).setWithdrawalFee(100); // 1% fee for larger accumulation
+
+      // Verify initial incentive is 1% (100 bps)
+      const initialIncentive = await dStakeToken.reinvestIncentiveBps();
+      expect(initialIncentive).to.equal(100);
+
+      // User deposits
+      const depositAmount = ethers.parseEther("10000");
+      await dStable.connect(owner).mint(alice.address, depositAmount);
+      await dStable.connect(alice).approve(await dStakeToken.getAddress(), depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      // Perform withdrawal to accumulate fees
+      const shares = await dStakeToken.balanceOf(alice.address);
+      const vaultShares = await vault.balanceOf(await collateralVault.getAddress());
+      await dStakeToken.connect(alice).solverWithdrawShares(
+        [await vault.getAddress()],
+        [vaultShares / 2n],
+        shares / 2n,
+        alice.address,
+        alice.address
+      );
+
+      // Check accumulated fees
+      const accumulatedFees = await dStable.balanceOf(await dStakeToken.getAddress());
+      expect(accumulatedFees).to.be.gt(0);
+
+      // Calculate expected incentive (1% of accumulated fees)
+      const expectedIncentive = accumulatedFees / 100n;
+
+      // Track caller balance before reinvesting
+      const callerBalanceBefore = await dStable.balanceOf(bob.address);
+
+      // Bob calls reinvestFees and should receive incentive
+      const tx = await dStakeToken.connect(bob).reinvestFees();
+      await expect(tx).to.emit(dStakeToken, "FeesReinvested");
+
+      // Verify Bob received the incentive
+      const callerBalanceAfter = await dStable.balanceOf(bob.address);
+      const receivedIncentive = callerBalanceAfter - callerBalanceBefore;
+
+      // Allow small rounding difference
+      expect(receivedIncentive).to.be.closeTo(expectedIncentive, 1);
+
+      // Verify no fees remain in contract
+      const remainingFees = await dStable.balanceOf(await dStakeToken.getAddress());
+      expect(remainingFees).to.equal(0);
+    });
+
+    it("Should allow governance to configure reinvestment incentive", async function () {
+      const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
+      await dStakeToken.connect(owner).grantRole(FEE_MANAGER_ROLE, owner.address);
+
+      // Set incentive to 0.5% (50 bps)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(50))
+        .to.emit(dStakeToken, "ReinvestIncentiveSet")
+        .withArgs(50);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(50);
+
+      // Set incentive to maximum 1% (100 bps)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(100))
+        .to.emit(dStakeToken, "ReinvestIncentiveSet")
+        .withArgs(100);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(100);
+
+      // Try to exceed maximum (should revert)
+      await expect(
+        dStakeToken.connect(owner).setReinvestIncentive(101)
+      ).to.be.revertedWithCustomError(dStakeToken, "InvalidIncentiveBps");
+
+      // Set incentive to 0 (disable incentive)
+      await expect(dStakeToken.connect(owner).setReinvestIncentive(0))
+        .to.emit(dStakeToken, "ReinvestIncentiveSet")
+        .withArgs(0);
+      expect(await dStakeToken.reinvestIncentiveBps()).to.equal(0);
+    });
+
+    it("Should handle reinvestment with zero incentive", async function () {
+      const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
+      await dStakeToken.connect(owner).grantRole(FEE_MANAGER_ROLE, owner.address);
+
+      // Disable reinvest incentive
+      await dStakeToken.connect(owner).setReinvestIncentive(0);
+      await dStakeToken.connect(owner).setWithdrawalFee(100); // 1% fee
+
+      // User deposits and withdraws to generate fees
+      const depositAmount = ethers.parseEther("1000");
+      await dStable.connect(owner).mint(alice.address, depositAmount);
+      await dStable.connect(alice).approve(await dStakeToken.getAddress(), depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const shares = await dStakeToken.balanceOf(alice.address);
+      const vaultShares = await vault.balanceOf(await collateralVault.getAddress());
+      await dStakeToken.connect(alice).solverWithdrawShares(
+        [await vault.getAddress()],
+        [vaultShares / 2n],
+        shares / 2n,
+        alice.address,
+        alice.address
+      );
+
+      // Check accumulated fees
+      const accumulatedFees = await dStable.balanceOf(await dStakeToken.getAddress());
+      expect(accumulatedFees).to.be.gt(0);
+
+      // Track caller balance
+      const callerBalanceBefore = await dStable.balanceOf(bob.address);
+
+      // Bob calls reinvestFees but should receive no incentive
+      await dStakeToken.connect(bob).reinvestFees();
+
+      // Verify Bob received no incentive
+      const callerBalanceAfter = await dStable.balanceOf(bob.address);
+      expect(callerBalanceAfter).to.equal(callerBalanceBefore);
+
+      // Verify all fees were reinvested
+      const remainingFees = await dStable.balanceOf(await dStakeToken.getAddress());
+      expect(remainingFees).to.equal(0);
     });
   });
 });

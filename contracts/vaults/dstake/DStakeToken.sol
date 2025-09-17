@@ -29,12 +29,15 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   error ZeroShares();
   error ERC4626ExceedsMaxWithdraw(uint256 assets, uint256 maxAssets);
   error ERC4626ExceedsMaxRedeem(uint256 shares, uint256 maxShares);
+  error InvalidIncentiveBps(uint256 incentiveBps, uint256 maxIncentiveBps);
 
   // --- State ---
   IDStakeCollateralVault public collateralVault;
   IDStakeRouter public router;
 
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
+  uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
+  uint256 public reinvestIncentiveBps;
 
   // --- Initializer ---
   /// @custom:oz-upgrades-unsafe-allow constructor
@@ -69,6 +72,9 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
     _grantRole(DEFAULT_ADMIN_ROLE, _initialAdmin);
     _grantRole(FEE_MANAGER_ROLE, _initialFeeManager);
+
+    // Initialize reinvest incentive to 1% (100 bps)
+    reinvestIncentiveBps = 100;
   }
 
   // --- SupportsWithdrawalFee Implementation ---
@@ -532,13 +538,13 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    * @notice Reinvests accumulated withdrawal fees back into the vault.
    * @dev This function deposits any dStable balance held by this contract back through the router,
    *      ensuring fees are reinvested and properly accounted for in the protocol's assets.
-   *      Can be called by anyone since it only benefits the protocol.
-   * @return amount The amount of fees reinvested.
+   *      The caller receives a small incentive (configurable by governance) to encourage regular reinvestment.
+   * @return amountReinvested The amount of fees reinvested (after incentive).
    */
-  function reinvestFees() external returns (uint256 amount) {
-    amount = IERC20(asset()).balanceOf(address(this));
+  function reinvestFees() external returns (uint256 amountReinvested) {
+    uint256 totalAmount = IERC20(asset()).balanceOf(address(this));
 
-    if (amount == 0) {
+    if (totalAmount == 0) {
       return 0;
     }
 
@@ -546,14 +552,30 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
       revert ZeroAddress();
     }
 
-    // Approve router to spend the fees
-    IERC20(asset()).approve(address(router), amount);
+    // Calculate incentive for the caller
+    uint256 incentive = 0;
+    if (reinvestIncentiveBps > 0) {
+      incentive = Math.mulDiv(totalAmount, reinvestIncentiveBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
 
-    // Reinvest fees through the router (converts to vault assets and deposits)
-    router.deposit(amount);
+      // Transfer incentive to caller
+      if (incentive > 0) {
+        IERC20(asset()).safeTransfer(_msgSender(), incentive);
+      }
+    }
 
-    emit FeesReinvested(amount);
-    return amount;
+    // Calculate amount to reinvest (total minus incentive)
+    amountReinvested = totalAmount - incentive;
+
+    if (amountReinvested > 0) {
+      // Approve router to spend the remaining fees
+      IERC20(asset()).approve(address(router), amountReinvested);
+
+      // Reinvest fees through the router (converts to vault assets and deposits)
+      router.deposit(amountReinvested);
+    }
+
+    emit FeesReinvested(amountReinvested, incentive, _msgSender());
+    return amountReinvested;
   }
 
   // --- Governance Functions ---
@@ -593,8 +615,22 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     _setWithdrawalFee(_feeBps);
   }
 
+  /**
+   * @notice Sets the reinvestment incentive.
+   * @dev Only callable by FEE_MANAGER_ROLE.
+   * @param _incentiveBps The new reinvestment incentive in basis points (e.g., 100 = 1%).
+   */
+  function setReinvestIncentive(uint256 _incentiveBps) external onlyRole(FEE_MANAGER_ROLE) {
+    if (_incentiveBps > MAX_REINVEST_INCENTIVE_BPS) {
+      revert InvalidIncentiveBps(_incentiveBps, MAX_REINVEST_INCENTIVE_BPS);
+    }
+    reinvestIncentiveBps = _incentiveBps;
+    emit ReinvestIncentiveSet(_incentiveBps);
+  }
+
   // --- Events ---
   event RouterSet(address indexed router);
   event CollateralVaultSet(address indexed collateralVault);
-  event FeesReinvested(uint256 amount);
+  event FeesReinvested(uint256 amountReinvested, uint256 incentive, address indexed caller);
+  event ReinvestIncentiveSet(uint256 incentiveBps);
 }
