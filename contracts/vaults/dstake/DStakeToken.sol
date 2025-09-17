@@ -272,15 +272,15 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing deposit method using asset amounts
-   * @dev Allows solvers to deposit into specific vaults using asset amounts
-   * @param vaults Array of vault addresses to deposit into
-   * @param assets Array of asset amounts to deposit into each vault
+   * @dev Allows solvers to deposit into specific strategy vaults using asset amounts
+   * @param strategyVaults Array of strategy vault addresses to deposit into
+   * @param assets Array of asset amounts to deposit into each strategy vault
    * @param minShares Minimum dSTAKE shares to mint (slippage protection)
    * @param receiver Address to receive the minted dSTAKE shares
    * @return shares The amount of dSTAKE shares minted
    */
   function solverDepositAssets(
-    address[] calldata vaults,
+    address[] calldata strategyVaults,
     uint256[] calldata assets,
     uint256 minShares,
     address receiver
@@ -312,7 +312,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     IERC20(asset()).forceApprove(address(router), totalAssetAmount);
 
     // Delegate to router's solver deposit method
-    router.solverDepositAssets(vaults, assets);
+    router.solverDepositAssets(strategyVaults, assets);
 
     // Clean up approval
     IERC20(asset()).forceApprove(address(router), 0);
@@ -328,25 +328,25 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing deposit method using share amounts
-   * @dev Allows solvers to deposit into specific vaults using share amounts
-   * @param vaults Array of vault addresses to deposit into
-   * @param shares Array of share amounts to deposit into each vault
+   * @dev Allows solvers to deposit into specific strategy vaults using share amounts
+   * @param strategyVaults Array of strategy vault addresses to deposit into
+   * @param strategyShares Array of strategy share amounts to deposit into each vault
    * @param minShares Minimum dSTAKE shares to mint (slippage protection)
    * @param receiver Address to receive the minted dSTAKE shares
    * @return totalShares The amount of dSTAKE shares minted
    */
   function solverDepositShares(
-    address[] calldata vaults,
-    uint256[] calldata shares,
+    address[] calldata strategyVaults,
+    uint256[] calldata strategyShares,
     uint256 minShares,
     address receiver
   ) public virtual returns (uint256 totalShares) {
-    // Calculate total assets by converting vault shares to asset amounts
+    // Calculate total assets by converting strategy vault shares to asset amounts
     uint256 totalAssetAmount = 0;
-    for (uint256 i = 0; i < vaults.length; i++) {
-      if (shares[i] > 0) {
-        // Use the vault's previewMint to convert shares to assets
-        uint256 assetAmount = IERC4626(vaults[i]).previewMint(shares[i]);
+    for (uint256 i = 0; i < strategyVaults.length; i++) {
+      if (strategyShares[i] > 0) {
+        // Use the strategy vault's previewMint to convert shares to assets
+        uint256 assetAmount = IERC4626(strategyVaults[i]).previewMint(strategyShares[i]);
         totalAssetAmount += assetAmount;
       }
     }
@@ -372,7 +372,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     IERC20(asset()).forceApprove(address(router), totalAssetAmount);
 
     // Delegate to router's solver deposit method
-    router.solverDepositShares(vaults, shares);
+    router.solverDepositShares(strategyVaults, strategyShares);
 
     // Clean up approval
     IERC20(asset()).forceApprove(address(router), 0);
@@ -388,9 +388,9 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing withdrawal method using asset amounts
-   * @dev Allows solvers to withdraw from specific vaults using asset amounts.
+   * @dev Allows solvers to withdraw from specific strategy vaults using asset amounts.
    *      The router returns gross amounts, and this function handles fee calculation.
-   * @param vaults Array of vault addresses to withdraw from
+   * @param strategyVaults Array of strategy vault addresses to withdraw from
    * @param assets Array of asset amounts to withdraw from each vault (net amounts requested)
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
    * @param receiver Address to receive the withdrawn assets (after fees)
@@ -398,7 +398,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    * @return shares The amount of dSTAKE shares burned
    */
   function solverWithdrawAssets(
-    address[] calldata vaults,
+    address[] calldata strategyVaults,
     uint256[] calldata assets,
     uint256 maxShares,
     address receiver,
@@ -433,8 +433,8 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     _burn(owner, shares);
 
     // Delegate to router's solver withdrawal method
-    // Router withdraws from vaults and returns gross assets to this contract
-    uint256 grossWithdrawn = router.solverWithdrawAssets(vaults, assets, receiver, owner);
+    // Router withdraws from strategy vaults and returns gross assets to this contract
+    uint256 grossWithdrawn = router.solverWithdrawAssets(strategyVaults, assets, receiver, owner);
 
     // Calculate fee on gross amount and determine net amount for receiver
     uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
@@ -456,28 +456,28 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
 
   /**
    * @notice Solver-facing withdrawal method using share amounts
-   * @dev Allows solvers to withdraw from specific vaults using share amounts.
+   * @dev Allows solvers to withdraw from specific strategy vaults using share amounts.
    *      The router returns gross amounts, and this function handles fee calculation.
-   * @param vaults Array of vault addresses to withdraw from
-   * @param vaultShares Array of share amounts to withdraw from each vault
+   * @param strategyVaults Array of strategy vault addresses to withdraw from
+   * @param strategyShares Array of strategy share amounts to withdraw from each vault
    * @param maxShares Maximum dSTAKE shares to burn (slippage protection)
    * @param receiver Address to receive the withdrawn assets (after fees)
    * @param owner Address that owns the dSTAKE shares being burned
    * @return assets The amount of net assets withdrawn (after fees)
    */
   function solverWithdrawShares(
-    address[] calldata vaults,
-    uint256[] calldata vaultShares,
+    address[] calldata strategyVaults,
+    uint256[] calldata strategyShares,
     uint256 maxShares,
     address receiver,
     address owner
   ) public virtual returns (uint256 assets) {
-    // Calculate expected gross assets by converting vault shares to assets
+    // Calculate expected gross assets by converting strategy vault shares to assets
     uint256 totalGrossAssets = 0;
-    for (uint256 i = 0; i < vaults.length; i++) {
-      if (vaultShares[i] > 0) {
-        // Use the vault's previewRedeem to convert shares to assets
-        uint256 assetAmount = IERC4626(vaults[i]).previewRedeem(vaultShares[i]);
+    for (uint256 i = 0; i < strategyVaults.length; i++) {
+      if (strategyShares[i] > 0) {
+        // Use the strategy vault's previewRedeem to convert shares to assets
+        uint256 assetAmount = IERC4626(strategyVaults[i]).previewRedeem(strategyShares[i]);
         totalGrossAssets += assetAmount;
       }
     }
@@ -512,7 +512,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     _burn(owner, shares);
 
     // Delegate to router's solver withdrawal method - router returns gross assets
-    uint256 grossWithdrawn = router.solverWithdrawShares(vaults, vaultShares, receiver, owner);
+    uint256 grossWithdrawn = router.solverWithdrawShares(strategyVaults, strategyShares, receiver, owner);
 
     // Calculate fee and net amount
     uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
@@ -535,7 +535,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   // --- Fee Management ---
 
   /**
-   * @notice Reinvests accumulated withdrawal fees back into the vault.
+   * @notice Reinvests accumulated withdrawal fees back into strategy vaults.
    * @dev This function deposits any dStable balance held by this contract back through the router,
    *      ensuring fees are reinvested and properly accounted for in the protocol's assets.
    *      The caller receives a small incentive (configurable by governance) to encourage regular reinvestment.
@@ -570,7 +570,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
       // Approve router to spend the remaining fees
       IERC20(asset()).approve(address(router), amountReinvested);
 
-      // Reinvest fees through the router (converts to vault assets and deposits)
+      // Reinvest fees through the router (converts to strategy shares and deposits)
       router.deposit(amountReinvested);
     }
 

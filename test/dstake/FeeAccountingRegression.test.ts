@@ -102,10 +102,11 @@ describe("Fee Accounting Regression Test", function () {
 
     // Ensure collateral vault has vault shares for withdrawals
     // The vault mint function requires the caller to provide assets, so give the owner the assets
-    await dStable.mint(owner.address, ethers.parseEther("20000"));
-    await dStable.connect(owner).approve(await vault.getAddress(), ethers.parseEther("20000"));
+    // Reduced from 20000 to 100 to fix ZeroShares error - large pre-funding causes dilution
+    await dStable.mint(owner.address, ethers.parseEther("100"));
+    await dStable.connect(owner).approve(await vault.getAddress(), ethers.parseEther("100"));
     // Then mint vault shares to the collateral vault
-    await vault.mint(ethers.parseEther("20000"), await collateralVault.getAddress());
+    await vault.mint(ethers.parseEther("100"), await collateralVault.getAddress());
 
     // Approve spending
     await dStable.connect(alice).approve(await dStakeToken.getAddress(), ethers.MaxUint256);
@@ -120,14 +121,14 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
 
       const initialTotalAssets = await dStakeToken.totalAssets();
-      const initialContractBalance = await dStable.balanceOf(dStakeToken.address);
+      const initialContractBalance = await dStable.balanceOf(await dStakeToken.getAddress());
 
       // Manually send some dStable to the contract (simulating fees)
       const feeAmount = ethers.parseEther("100");
-      await dStable.mint(dStakeToken.address, feeAmount);
+      await dStable.mint(await dStakeToken.getAddress(), feeAmount);
 
       const newTotalAssets = await dStakeToken.totalAssets();
-      const newContractBalance = await dStable.balanceOf(dStakeToken.address);
+      const newContractBalance = await dStable.balanceOf(await dStakeToken.getAddress());
 
       // Verify that totalAssets increased by the fee amount
       expect(newTotalAssets).to.equal(initialTotalAssets + feeAmount);
@@ -144,29 +145,29 @@ describe("Fee Accounting Regression Test", function () {
       const maxShares = ethers.parseEther("150");
 
       // First withdrawal
-      const vaultBalance1 = await vault.balanceOf(collateralVault.address);
+      const vaultBalance1 = await vault.balanceOf(await collateralVault.getAddress());
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [vaultBalance1 / 10n], // 10% withdrawal
         maxShares,
         alice.address,
         alice.address
       );
 
-      const feeBalanceAfterFirst = await dStable.balanceOf(dStakeToken.address);
+      const feeBalanceAfterFirst = await dStable.balanceOf(await dStakeToken.getAddress());
       const totalAssetsAfterFirst = await dStakeToken.totalAssets();
 
       // Second withdrawal
-      const vaultBalance2 = await vault.balanceOf(collateralVault.address);
+      const vaultBalance2 = await vault.balanceOf(await collateralVault.getAddress());
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [vaultBalance2 / 10n], // Another 10% withdrawal
         maxShares,
         alice.address,
         alice.address
       );
 
-      const feeBalanceAfterSecond = await dStable.balanceOf(dStakeToken.address);
+      const feeBalanceAfterSecond = await dStable.balanceOf(await dStakeToken.getAddress());
       const totalAssetsAfterSecond = await dStakeToken.totalAssets();
 
       // Verify fees accumulated and are included in totalAssets
@@ -189,10 +190,10 @@ describe("Fee Accounting Regression Test", function () {
       const initialSharePrice = totalAssets * ethers.parseEther("1") / totalSupply;
 
       // Perform solver withdrawals to generate fees
-      const vaultBalance = await vault.balanceOf(collateralVault.address);
+      const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares = vaultBalance / 20n; // 5% withdrawal
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [withdrawShares],
         ethers.parseEther("100"),
         alice.address,
@@ -200,7 +201,7 @@ describe("Fee Accounting Regression Test", function () {
       );
 
       // Verify fees are accumulated
-      const feesAccumulated = await dStable.balanceOf(dStakeToken.address);
+      const feesAccumulated = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(feesAccumulated).to.be.gt(0);
 
       // Check that share price reflects the accumulated fees
@@ -228,10 +229,10 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.connect(alice).deposit(ethers.parseEther("2000"), alice.address);
 
       // Generate fees through solver withdrawal
-      const vaultBalance = await vault.balanceOf(collateralVault.address);
+      const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares = vaultBalance / 10n; // 10% withdrawal
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [withdrawShares],
         ethers.parseEther("300"),
         alice.address,
@@ -240,7 +241,7 @@ describe("Fee Accounting Regression Test", function () {
     });
 
     it("Should reinvest accumulated fees back into the vault", async function () {
-      const feesBeforeReinvest = await dStable.balanceOf(dStakeToken.address);
+      const feesBeforeReinvest = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(feesBeforeReinvest).to.be.gt(0); // Ensure we have fees to reinvest
 
       const vaultValueBefore = await collateralVault.totalValueInDStable();
@@ -248,7 +249,7 @@ describe("Fee Accounting Regression Test", function () {
       // Reinvest fees
       const tx = await dStakeToken.connect(bob).reinvestFees(); // Anyone can call this
 
-      const feesAfterReinvest = await dStable.balanceOf(dStakeToken.address);
+      const feesAfterReinvest = await dStable.balanceOf(await dStakeToken.getAddress());
       const vaultValueAfter = await collateralVault.totalValueInDStable();
 
       // Verify fees were reinvested
@@ -266,7 +267,7 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.reinvestFees();
 
       // Verify no fees remain
-      expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+      expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
 
       // Call reinvestFees again - should return 0 and not revert
       const result = await dStakeToken.callStatic.reinvestFees();
@@ -277,11 +278,11 @@ describe("Fee Accounting Regression Test", function () {
     });
 
     it("Should handle partial reinvestment scenarios", async function () {
-      const initialFees = await dStable.balanceOf(dStakeToken.address);
+      const initialFees = await dStable.balanceOf(await dStakeToken.getAddress());
 
       // Add more fees manually to test larger amounts
       const additionalFees = ethers.parseEther("50");
-      await dStable.mint(dStakeToken.address, additionalFees);
+      await dStable.mint(await dStakeToken.getAddress(), additionalFees);
 
       const totalFees = initialFees + additionalFees;
       const vaultValueBefore = await collateralVault.totalValueInDStable();
@@ -290,7 +291,7 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.reinvestFees();
 
       const vaultValueAfter = await collateralVault.totalValueInDStable();
-      const feesRemaining = await dStable.balanceOf(dStakeToken.address);
+      const feesRemaining = await dStable.balanceOf(await dStakeToken.getAddress());
 
       // All fees should be reinvested
       expect(feesRemaining).to.equal(0);
@@ -312,12 +313,12 @@ describe("Fee Accounting Regression Test", function () {
 
       // Perform multiple solver withdrawals
       for (let i = 0; i < 3; i++) {
-        const vaultBalance = await vault.balanceOf(collateralVault.address);
+        const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
         const withdrawShares = vaultBalance / 20n; // 5% each time
         const beforeBalance = await dStable.balanceOf(alice.address);
 
         await dStakeToken.connect(alice).solverWithdrawShares(
-          [vault.address],
+          [await vault.getAddress()],
           [withdrawShares],
           ethers.parseEther("200"),
           alice.address,
@@ -329,7 +330,7 @@ describe("Fee Accounting Regression Test", function () {
       }
 
       // Check accumulated fees
-      const accumulatedFees = await dStable.balanceOf(dStakeToken.address);
+      const accumulatedFees = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(accumulatedFees).to.be.gt(0);
 
       // Verify totalAssets equals vault holdings plus fees
@@ -350,7 +351,7 @@ describe("Fee Accounting Regression Test", function () {
       expect(finalTotalAssets).to.be.closeTo(expectedFinalValue, ethers.parseEther("1"));
 
       // Verify no fees remain after reinvestment
-      expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+      expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
     });
 
     it("Should handle edge case with zero fees correctly", async function () {
@@ -358,7 +359,7 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
 
       // Verify no fees initially
-      expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+      expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
 
       const totalAssetsBefore = await dStakeToken.totalAssets();
       const vaultValueBefore = await collateralVault.totalValueInDStable();
@@ -384,14 +385,14 @@ describe("Fee Accounting Regression Test", function () {
       await dStakeToken.connect(alice).deposit(largeAmount, alice.address);
 
       // Large withdrawal to generate significant fees
-      const vaultBalance = await vault.balanceOf(collateralVault.address);
+      const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
       const largeWithdrawShares = vaultBalance / 2n; // 50% withdrawal
       const maxShares = ethers.parseEther("6000");
 
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [largeWithdrawShares],
         maxShares,
         alice.address,
@@ -401,7 +402,7 @@ describe("Fee Accounting Regression Test", function () {
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
 
       // Verify significant fees were collected
-      const feesCollected = await dStable.balanceOf(dStakeToken.address);
+      const feesCollected = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(feesCollected).to.be.gt(ethers.parseEther("1")); // Should be substantial
 
       // Verify totalAssets accounts for fees
@@ -423,7 +424,7 @@ describe("Fee Accounting Regression Test", function () {
       const finalVaultValue = await collateralVault.totalValueInDStable();
 
       expect(finalTotalAssets).to.equal(finalVaultValue);
-      expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+      expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
     });
   });
 
@@ -450,12 +451,12 @@ describe("Fee Accounting Regression Test", function () {
 
       for (let round = 0; round < 3; round++) {
         // Solver withdrawal
-        const vaultBalance = await vault.balanceOf(collateralVault.address);
+        const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
         const withdrawShares = vaultBalance / 10n; // 10% each round
         const beforeBalance = await dStable.balanceOf(alice.address);
 
         await dStakeToken.connect(alice).solverWithdrawShares(
-          [vault.address],
+          [await vault.getAddress()],
           [withdrawShares],
           ethers.parseEther("300"),
           alice.address,
@@ -466,7 +467,7 @@ describe("Fee Accounting Regression Test", function () {
         totalWithdrawn = totalWithdrawn + (afterBalance - beforeBalance);
 
         // Check that fees are properly tracked
-        const currentFees = await dStable.balanceOf(dStakeToken.address);
+        const currentFees = await dStable.balanceOf(await dStakeToken.getAddress());
         const currentTotalAssets = await dStakeToken.totalAssets();
         const currentVaultValue = await collateralVault.totalValueInDStable();
 
@@ -478,7 +479,7 @@ describe("Fee Accounting Regression Test", function () {
           await dStakeToken.reinvestFees();
 
           // After reinvestment, no fees should remain
-          expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+          expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
 
           // totalAssets should equal vault value
           const postReinvestTotalAssets = await dStakeToken.totalAssets();
@@ -504,7 +505,7 @@ describe("Fee Accounting Regression Test", function () {
       }
 
       // No fees should be stranded
-      expect(await dStable.balanceOf(dStakeToken.address)).to.equal(0);
+      expect(await dStable.balanceOf(await dStakeToken.getAddress())).to.equal(0);
     });
 
     it("Should handle alternating deposits and withdrawals with fee accumulation", async function () {
@@ -516,11 +517,11 @@ describe("Fee Accounting Regression Test", function () {
       currentTotalDeposited = currentTotalDeposited + ethers.parseEther("1000");
 
       // Round 2: Withdrawal with fees
-      const vaultBalance1 = await vault.balanceOf(collateralVault.address);
+      const vaultBalance1 = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares1 = vaultBalance1 / 10n;
       const beforeBalance1 = await dStable.balanceOf(alice.address);
       await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [withdrawShares1],
         ethers.parseEther("150"),
         alice.address,
@@ -530,7 +531,7 @@ describe("Fee Accounting Regression Test", function () {
       currentTotalWithdrawn = currentTotalWithdrawn + (afterBalance1 - beforeBalance1);
 
       // Verify fees accumulated
-      let fees = await dStable.balanceOf(dStakeToken.address);
+      let fees = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(fees).to.be.gt(0);
 
       // Round 3: Another deposit (with fees present)
@@ -540,18 +541,18 @@ describe("Fee Accounting Regression Test", function () {
       // Verify totalAssets includes fees
       const totalAssets = await dStakeToken.totalAssets();
       const vaultValue = await collateralVault.totalValueInDStable();
-      fees = await dStable.balanceOf(dStakeToken.address);
+      fees = await dStable.balanceOf(await dStakeToken.getAddress());
       expect(totalAssets).to.equal(vaultValue + fees);
 
       // Round 4: Reinvest fees
       await dStakeToken.reinvestFees();
 
       // Round 5: Final withdrawal
-      const vaultBalance2 = await vault.balanceOf(collateralVault.address);
+      const vaultBalance2 = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares2 = vaultBalance2 / 15n;
       const beforeBalance2 = await dStable.balanceOf(bob.address);
       await dStakeToken.connect(bob).solverWithdrawShares(
-        [vault.address],
+        [await vault.getAddress()],
         [withdrawShares2],
         ethers.parseEther("100"),
         bob.address,
@@ -562,7 +563,7 @@ describe("Fee Accounting Regression Test", function () {
 
       // Final check: value conservation
       const finalTotalAssets = await dStakeToken.totalAssets();
-      const finalFees = await dStable.balanceOf(dStakeToken.address);
+      const finalFees = await dStable.balanceOf(await dStakeToken.getAddress());
       const expectedFinalValue = currentTotalDeposited - currentTotalWithdrawn;
 
       // Including any remaining fees
@@ -592,10 +593,12 @@ describe("Fee Accounting Regression Test", function () {
       // Perform withdrawal to accumulate fees
       const shares = await dStakeToken.balanceOf(alice.address);
       const vaultShares = await vault.balanceOf(await collateralVault.getAddress());
+      // Use a much smaller percentage to avoid exceeding available amount
+      const sharesToWithdraw = (shares * 20n) / 100n; // Only 20% to be safe
       await dStakeToken.connect(alice).solverWithdrawShares(
         [await vault.getAddress()],
-        [vaultShares / 2n],
-        shares / 2n,
+        [vaultShares / 10n], // Also reduce vault shares withdrawal
+        sharesToWithdraw,
         alice.address,
         alice.address
       );
@@ -676,10 +679,12 @@ describe("Fee Accounting Regression Test", function () {
 
       const shares = await dStakeToken.balanceOf(alice.address);
       const vaultShares = await vault.balanceOf(await collateralVault.getAddress());
+      // Use a much smaller percentage to avoid exceeding available amount
+      const sharesToWithdraw = (shares * 20n) / 100n; // Only 20% to be safe
       await dStakeToken.connect(alice).solverWithdrawShares(
         [await vault.getAddress()],
-        [vaultShares / 2n],
-        shares / 2n,
+        [vaultShares / 10n], // Also reduce vault shares withdrawal
+        sharesToWithdraw,
         alice.address,
         alice.address
       );

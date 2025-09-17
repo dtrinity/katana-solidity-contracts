@@ -353,7 +353,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           const extra = parseUnits("50", dStableDecimals);
           await stable.mint(user1.address, extra);
           await dStableToken.connect(user1).approve(adapterAddress, extra);
-          await adapter.connect(user1).convertToVaultAsset(extra);
+          await adapter.connect(user1).depositIntoStrategy(extra);
 
           // now share price > 1:1, so convertToShares returns less shares
           const newShares = await DStakeToken.convertToShares(assetsToDeposit);

@@ -81,10 +81,10 @@ uint256 shares = dStakeToken.solverDepositAssets(
     receiver    // address - recipient of shares
 );
 
-// Deposit targeting specific vault shares
+// Deposit targeting specific strategy shares
 uint256 shares = dStakeToken.solverDepositShares(
     vaults,     // address[] - vault addresses
-    shares,     // uint256[] - vault shares to acquire
+    shares,     // uint256[] - strategy shares to acquire
     minShares,  // uint256 - minimum dSTAKE shares to receive
     receiver    // address - recipient of shares
 );
@@ -98,10 +98,10 @@ uint256 sharesBurned = dStakeToken.solverWithdrawAssets(
     owner       // address - owner of shares
 );
 
-// Withdraw specific vault shares
+// Withdraw specific strategy shares
 uint256 assetsReceived = dStakeToken.solverWithdrawShares(
     vaults,     // address[] - vault addresses
-    shares,     // uint256[] - vault shares to redeem
+    shares,     // uint256[] - strategy shares to redeem
     maxShares,  // uint256 - maximum dSTAKE shares to burn
     receiver,   // address - recipient of assets
     owner       // address - owner of shares

@@ -202,19 +202,19 @@ describe("DStake Solver Mode Tests", function () {
     // Setup vault configurations with target allocations
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
@@ -255,7 +255,7 @@ describe("DStake Solver Mode Tests", function () {
 
     // Setup additional roles and permissions
     const DSTAKE_TOKEN_ROLE = await routerContract.DSTAKE_TOKEN_ROLE();
-    const COLLATERAL_EXCHANGER_ROLE = await routerContract.COLLATERAL_EXCHANGER_ROLE();
+    const STRATEGY_REBALANCER_ROLE = await routerContract.STRATEGY_REBALANCER_ROLE();
     const PAUSER_ROLE = await routerContract.PAUSER_ROLE();
     const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
 
@@ -264,9 +264,9 @@ describe("DStake Solver Mode Tests", function () {
 
     // Grant roles to appropriate addresses
     await routerContract.grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, collateralExchangerSigner.address);
-    // Grant COLLATERAL_EXCHANGER_ROLE to the router contract itself for internal calls
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, routerAddress);
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
+    // Grant STRATEGY_REBALANCER_ROLE to the router contract itself for internal calls
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
     await routerContract.grantRole(PAUSER_ROLE, ownerSigner.address);
 
     console.log("✅ Granted additional roles for testing");
@@ -329,25 +329,25 @@ describe("DStake Solver Mode Tests", function () {
     await routerContract.setVaultConfigs(vaultConfigs);
     console.log("✅ Set vault configurations and added supported assets to collateralVault");
 
-    // Verify that vault assets are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    // Verify that strategy shares are properly added to supportedAssets and fix if needed
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Supported assets in collateralVault:", supportedAssets);
 
-    // Manually ensure each vault asset is supported by calling addAdapter on the router if needed
+    // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const vaultAsset = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
 
-      if (!supportedAssets.includes(vaultAsset)) {
-        console.log(`⚠️ Vault asset ${vaultAsset} not in supported assets, calling addAdapter...`);
-        // Call addAdapter to ensure the vault asset is added to supported assets
-        await routerContract.addAdapter(vaultAsset, adapter);
-        console.log(`✅ Called addAdapter for ${vaultAsset} -> ${adapter}`);
+      if (!supportedAssets.includes(strategyShare)) {
+        console.log(`⚠️ Strategy share ${strategyShare} not in supported assets, calling addAdapter...`);
+        // Call addAdapter to ensure the strategy share is added to supported assets
+        await routerContract.addAdapter(strategyShare, adapter);
+        console.log(`✅ Called addAdapter for ${strategyShare} -> ${adapter}`);
       }
     }
 
     // Verify all assets are now supported
-    supportedAssets = await collateralVaultContract.getSupportedAssets();
+    supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Final supported assets in collateralVault:", supportedAssets);
 
     // Configure dStakeToken router
@@ -910,9 +910,9 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault1.balanceOf(collateralVault.target)).to.be.gt(0);
       expect(await vault2.balanceOf(collateralVault.target)).to.be.gt(0);
 
-      // Verify WeightedDeposit event was emitted
+      // Verify StrategyDepositRouted event was emitted
       await expect(tx)
-        .to.emit(router, "WeightedDeposit")
+        .to.emit(router, "StrategyDepositRouted")
         .withArgs(vaults, assets, totalAssets, 0);
     });
 
@@ -962,9 +962,9 @@ describe("DStake Solver Mode Tests", function () {
       // Verify assets were returned to msg.sender (alice) for fee handling
       expect(aliceBalanceAfter).to.be.gt(aliceBalanceBefore);
 
-      // Verify WeightedWithdrawal event was emitted
+      // Verify StrategyWithdrawalRouted event was emitted
       await expect(tx)
-        .to.emit(router, "WeightedWithdrawal");
+        .to.emit(router, "StrategyWithdrawalRouted");
     });
   });
 
@@ -988,9 +988,9 @@ describe("DStake Solver Mode Tests", function () {
       await expect(tx)
         .to.emit(dStakeToken, "Deposit");
 
-      // Verify router WeightedDeposit event
+      // Verify router StrategyDepositRouted event
       await expect(tx)
-        .to.emit(router, "WeightedDeposit")
+        .to.emit(router, "StrategyDepositRouted")
         .withArgs(vaults, assets, totalAssets, 0);
     });
 
@@ -1035,9 +1035,9 @@ describe("DStake Solver Mode Tests", function () {
       await expect(tx)
         .to.emit(dStakeToken, "WithdrawalFee");
 
-      // Verify router WeightedWithdrawal event
+      // Verify router StrategyWithdrawalRouted event
       await expect(tx)
-        .to.emit(router, "WeightedWithdrawal");
+        .to.emit(router, "StrategyWithdrawalRouted");
     });
   });
 

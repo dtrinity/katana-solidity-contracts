@@ -202,19 +202,19 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     // Setup vault configurations with target allocations
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
@@ -253,7 +253,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
     // Setup additional roles and permissions
     const DSTAKE_TOKEN_ROLE = await routerContract.DSTAKE_TOKEN_ROLE();
-    const COLLATERAL_EXCHANGER_ROLE = await routerContract.COLLATERAL_EXCHANGER_ROLE();
+    const STRATEGY_REBALANCER_ROLE = await routerContract.STRATEGY_REBALANCER_ROLE();
     const PAUSER_ROLE = await routerContract.PAUSER_ROLE();
     const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
 
@@ -262,9 +262,9 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
     // Grant roles to appropriate addresses
     await routerContract.grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, collateralExchangerSigner.address);
-    // Grant COLLATERAL_EXCHANGER_ROLE to the router contract itself for internal calls
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, routerAddress);
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
+    // Grant STRATEGY_REBALANCER_ROLE to the router contract itself for internal calls
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
     await routerContract.grantRole(PAUSER_ROLE, ownerSigner.address);
 
     // Properly configure collateralVault with router BEFORE setting vault configs
@@ -311,16 +311,16 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     await routerContract.setVaultConfigs(vaultConfigs);
 
     // Verify that vault assets are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
 
-    // Manually ensure each vault asset is supported by calling addAdapter on the router if needed
+    // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const vaultAsset = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
 
-      if (!supportedAssets.includes(vaultAsset)) {
-        // Call addAdapter to ensure the vault asset is added to supported assets
-        await routerContract.addAdapter(vaultAsset, adapter);
+      if (!supportedAssets.includes(strategyShare)) {
+        // Call addAdapter to ensure the strategy share is added to supported assets
+        await routerContract.addAdapter(strategyShare, adapter);
       }
     }
 
@@ -550,11 +550,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       expect(received).to.be.gt(0);
 
-      // Verify the WeightedWithdrawal event was emitted with proper data
+      // Verify the StrategyWithdrawalRouted event was emitted with proper data
       const withdrawalEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedWithdrawal";
+          return decoded?.name === "StrategyWithdrawalRouted";
         } catch {
           return false;
         }
@@ -658,11 +658,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(deposit, alice.address);
       const receipt = await tx.wait();
 
-      // Find the WeightedDeposit event
+      // Find the StrategyDepositRouted event
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -729,7 +729,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -769,11 +769,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(deposit, alice.address);
       const receipt = await tx.wait();
 
-      // Find the WeightedDeposit event
+      // Find the StrategyDepositRouted event
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -824,7 +824,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -885,15 +885,34 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
-          vault1Address,
-          vault2Address,
-          exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
-      ).to.emit(router, "CollateralExchanged")
-        .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
+      const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+        vault1Address,
+        vault2Address,
+        exchangeAmount,
+        0 // minToVaultAssetAmount
+      );
+      const receipt = await tx.wait();
+
+      // Verify the StrategySharesExchanged event was emitted with correct parameters
+      const exchangeEvent = receipt.logs.find(log => {
+        try {
+          const decoded = router.interface.parseLog(log);
+          return decoded?.name === "StrategySharesExchanged";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(exchangeEvent).to.not.be.undefined;
+      if (exchangeEvent) {
+        const decoded = router.interface.parseLog(exchangeEvent);
+        expect(decoded.args.fromStrategyShare).to.equal(vault1Address);
+        expect(decoded.args.toStrategyShare).to.equal(vault2Address);
+        expect(decoded.args.fromShareAmount).to.be.gt(0);
+        expect(decoded.args.toShareAmount).to.be.gt(0);
+        expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+        expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+      }
 
       // Check that the correct number of shares were withdrawn
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -921,7 +940,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,
@@ -952,7 +971,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
       // Execute exchange
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,
@@ -981,7 +1000,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Should revert when trying to exchange from inactive vault
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -998,7 +1017,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Should revert when trying to exchange to inactive vault
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1140,14 +1159,14 @@ describe("DStakeRouterV2 Fixes Tests", function () {
           // which uses _getVaultBalance internally
 
           // Get adapter for this vault
-          const adapter = await router.vaultAssetToAdapter(vault);
+          const adapter = await router.strategyShareToAdapter(vault);
           expect(adapter).to.not.equal(ethers.ZeroAddress);
 
           // Verify adapter can calculate value
           const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", adapter);
 
           if (vaultShares > 0n) {
-            const value = await adapterContract.assetValueInDStable(vault, vaultShares);
+            const value = await adapterContract.strategyShareValueInDStable(vault, vaultShares);
             expect(value).to.be.gt(0);
           }
         }
@@ -1188,7 +1207,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Both methods should return 0 for empty vault
       const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", emptyAdapterAddress);
-      const value = await adapterContract.assetValueInDStable(emptyVaultAddress, 0);
+      const value = await adapterContract.strategyShareValueInDStable(emptyVaultAddress, 0);
       expect(value).to.equal(0);
     });
 
@@ -1199,7 +1218,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // Get vault with balance
       const [vaults] = await router.getCurrentAllocations();
       const testVault = vaults[0];
-      const adapter = await router.vaultAssetToAdapter(testVault);
+      const adapter = await router.strategyShareToAdapter(testVault);
 
       expect(adapter).to.not.equal(ethers.ZeroAddress);
 
@@ -1211,7 +1230,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const shares = await testVaultContract.balanceOf(collateralVault.target);
 
       if (shares > 0n) {
-        const value = await adapterContract.assetValueInDStable(testVault, shares);
+        const value = await adapterContract.strategyShareValueInDStable(testVault, shares);
         expect(value).to.be.gt(0);
       }
     });
@@ -1230,8 +1249,8 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Don't add adapter for this vault
 
-      // Check that vaultAssetToAdapter returns zero address
-      const noAdapter = await router.vaultAssetToAdapter(noAdapterVaultAddress);
+      // Check that strategyShareToAdapter returns zero address
+      const noAdapter = await router.strategyShareToAdapter(noAdapterVaultAddress);
       expect(noAdapter).to.equal(ethers.ZeroAddress);
 
       // The balance calculation should return 0 when no adapter exists
@@ -1242,7 +1261,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // Create scenario where adapter exists but conversion might fail
       const [vaults] = await router.getCurrentAllocations();
       const testVault = vaults[0];
-      const adapter = await router.vaultAssetToAdapter(testVault);
+      const adapter = await router.strategyShareToAdapter(testVault);
 
       const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", adapter);
 
@@ -1251,7 +1270,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // This should either work or revert gracefully
       try {
-        const value = await adapterContract.assetValueInDStable(testVault, maxUint256);
+        const value = await adapterContract.strategyShareValueInDStable(testVault, maxUint256);
         // If it works, value should be reasonable or max
         expect(value).to.be.gte(0);
       } catch (error) {
@@ -1293,7 +1312,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     describe("Test 1: Allowance Clearing", function () {
       it("Should clear allowances after deposit operations", async function () {
         // Get an adapter to test directly
-        const adapter = await router.vaultAssetToAdapter(vault1Address);
+        const adapter = await router.strategyShareToAdapter(vault1Address);
         const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", adapter);
 
         // Get initial allowances
@@ -1322,9 +1341,9 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const withdrawShares = aliceShares / 10n; // 10% withdrawal
 
         // Get adapter addresses
-        const adapter1 = await router.vaultAssetToAdapter(vault1Address);
-        const adapter2 = await router.vaultAssetToAdapter(vault2Address);
-        const adapter3 = await router.vaultAssetToAdapter(vault3Address);
+        const adapter1 = await router.strategyShareToAdapter(vault1Address);
+        const adapter2 = await router.strategyShareToAdapter(vault2Address);
+        const adapter3 = await router.strategyShareToAdapter(vault3Address);
 
         // Perform withdrawal
         await dStakeToken.connect(alice).redeem(withdrawShares, alice.address, alice.address);
@@ -1341,7 +1360,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       it("Should not leave residual allowances in adapter contracts", async function () {
         // Direct test of adapter contract allowance clearing
-        const adapter = await router.vaultAssetToAdapter(vault1Address);
+        const adapter = await router.strategyShareToAdapter(vault1Address);
         const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", adapter);
 
         // Grant some dStable to the adapter for testing
@@ -1351,11 +1370,11 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const allowanceToVault = await dStable.allowance(adapter, vault1Address);
         expect(allowanceToVault).to.equal(0);
 
-        // Verify convertToVaultAsset clears allowances properly
+        // Verify depositIntoStrategy clears allowances properly
         const convertAmount = ethers.parseEther("50");
         await dStable.connect(alice).approve(adapter, convertAmount);
 
-        // Call convertToVaultAsset through the router (which calls the adapter)
+        // Call depositIntoStrategy through the router (which calls the adapter)
         await dStable.connect(alice).approve(dStakeToken.target, convertAmount);
         await dStakeToken.connect(alice).deposit(convertAmount, alice.address);
 
@@ -1379,15 +1398,34 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
         // Execute exchange with slippage protection
-        await expect(
-          router.connect(collateralExchanger).exchangeCollateral(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            minToVaultAssetAmount
-          )
-        ).to.emit(router, "CollateralExchanged")
-          .withArgs(vault1Address, vault2Address, exchangeAmount, collateralExchanger.address);
+        const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+          vault1Address,
+          vault2Address,
+          exchangeAmount,
+          minToVaultAssetAmount
+        );
+        const receipt = await tx.wait();
+
+        // Verify the StrategySharesExchanged event was emitted with correct parameters
+        const exchangeEvent = receipt.logs.find(log => {
+          try {
+            const decoded = router.interface.parseLog(log);
+            return decoded?.name === "StrategySharesExchanged";
+          } catch {
+            return false;
+          }
+        });
+
+        expect(exchangeEvent).to.not.be.undefined;
+        if (exchangeEvent) {
+          const decoded = router.interface.parseLog(exchangeEvent);
+          expect(decoded.args.fromStrategyShare).to.equal(vault1Address);
+          expect(decoded.args.toStrategyShare).to.equal(vault2Address);
+          expect(decoded.args.fromShareAmount).to.be.gt(0);
+          expect(decoded.args.toShareAmount).to.be.gt(0);
+          expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+          expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+        }
 
         // Verify balances changed appropriately
         const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -1411,7 +1449,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
         // This should revert due to slippage protection
         await expect(
-          router.connect(collateralExchanger).exchangeCollateral(
+          router.connect(collateralExchanger).rebalanceStrategiesByValue(
             vault1Address,
             vault2Address,
             exchangeAmount,
@@ -1430,7 +1468,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
         // Should succeed even with 0 minimum
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1459,7 +1497,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const minToVaultAssetAmount = (expectedToVaultShares * 999n) / 1000n;
 
         // Should succeed with tight tolerance when no fees
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1477,7 +1515,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const exchangeAmount = ethers.parseEther("500");
 
         // Normal call should work
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1493,7 +1531,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const exchangeAmount = ethers.parseEther("200");
 
         // First exchange: vault1 -> vault2
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1501,7 +1539,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         );
 
         // Second exchange: vault2 -> vault3 (immediately after)
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault2Address,
           vault3Address,
           exchangeAmount,
@@ -1509,7 +1547,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         );
 
         // Third exchange: vault3 -> vault1 (completing the cycle)
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault3Address,
           vault1Address,
           exchangeAmount,
@@ -1531,7 +1569,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
         const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
-        await router.connect(collateralExchanger).exchangeCollateral(
+        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1Address,
           vault2Address,
           exchangeAmount,
@@ -1644,7 +1682,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         // Test that collateralVault (which also gets admin role) can call setMaxSlippage
         // This would typically be done through governance/multisig controlling the vault
 
-        const existingAdapter = await router.vaultAssetToAdapter(vault1Address);
+        const existingAdapter = await router.strategyShareToAdapter(vault1Address);
         const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", existingAdapter);
 
         // Check if collateralVault has admin role
@@ -1733,7 +1771,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // 5. Test exchange collateral using previewWithdraw WITH slippage protection
       const exchangeAmount = ethers.parseEther("1000");
       const minToVaultAssetAmount = 0; // Accept any amount for integration test
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1Address,
         vault2Address,
         exchangeAmount,
@@ -1757,15 +1795,15 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         const vaultBalance = await vaultContract.balanceOf(collateralVault.target);
 
         if (vaultBalance > 0n) {
-          const adapter = await router.vaultAssetToAdapter(vaultsAfter[i]);
+          const adapter = await router.strategyShareToAdapter(vaultsAfter[i]);
           expect(adapter).to.not.equal(ethers.ZeroAddress);
         }
       }
 
       // 8. Verify all allowances are cleared (security fix test)
-      const adapter1 = await router.vaultAssetToAdapter(vault1Address);
-      const adapter2 = await router.vaultAssetToAdapter(vault2Address);
-      const adapter3 = await router.vaultAssetToAdapter(vault3Address);
+      const adapter1 = await router.strategyShareToAdapter(vault1Address);
+      const adapter2 = await router.strategyShareToAdapter(vault2Address);
+      const adapter3 = await router.strategyShareToAdapter(vault3Address);
 
       const allowance1 = await dStable.allowance(adapter1, vault1Address);
       const allowance2 = await dStable.allowance(adapter2, vault2Address);

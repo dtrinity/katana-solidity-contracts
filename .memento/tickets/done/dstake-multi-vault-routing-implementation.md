@@ -18,7 +18,7 @@ Research has identified that successful DeFi protocols use hybrid approaches com
 ```solidity
 // DStakeRouterV2.sol additions
 struct VaultConfig {
-    address vaultAsset;
+    address strategyShare;
     uint256 riskTier; // 0: Conservative, 1: Balanced, 2: Aggressive
     uint256 currentAllocation;
     uint256 supplyCap;

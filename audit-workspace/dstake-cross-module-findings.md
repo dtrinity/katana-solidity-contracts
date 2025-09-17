@@ -21,7 +21,7 @@ This analysis identifies critical cross-module vulnerabilities in the dTRINITY e
 **Attack Vector**: Oracle price manipulation triggering cascading liquidations
 
 **Description**:
-An attacker manipulates oracle prices for underlying assets (e.g., ETH, stETH) that back dSTAKE vault assets. The DStakeCollateralVault.totalValueInDStable() function relies entirely on adapter price feeds via `IDStableConversionAdapter.assetValueInDStable()`, which in turn depends on external oracle prices. When dSTAKE is used as collateral in the dETH system, oracle manipulation can trigger liquidations that cascade across modules.
+An attacker manipulates oracle prices for underlying assets (e.g., ETH, stETH) that back dSTAKE strategy shares. The DStakeCollateralVault.totalValueInDStable() function relies entirely on adapter price feeds via `IDStableConversionAdapter.assetValueInDStable()`, which in turn depends on external oracle prices. When dSTAKE is used as collateral in the dETH system, oracle manipulation can trigger liquidations that cascade across modules.
 
 **Impact**:
 - Immediate devaluation of dSTAKE collateral triggers dETH position liquidations

@@ -18,16 +18,16 @@ This audit examined the dSTAKE router contracts integrating with Morpho markets,
 
 ## [DSTAKE-ROUTER-CRITICAL-01] Exchange Rate Manipulation via Morpho Vault Share Inflation
 **Contract**: DStakeRouterMorpho.sol:260-294
-**Function**: exchangeCollateral()
+**Function**: rebalanceStrategiesByValue()
 **Severity**: Critical
 
 **Description**: The collateral exchange function uses `IERC4626.previewWithdraw()` without considering potential vault share inflation attacks that could manipulate exchange rates.
 
-**Impact**: Attacker could inflate vault shares by donating underlying assets, causing dramatic changes in exchange rates and allowing extraction of value during collateral exchanges.
+**Impact**: Attacker could inflate strategy shares by donating underlying assets, causing dramatic changes in exchange rates and allowing extraction of value during collateral exchanges.
 
 **PoC**:
 ```solidity
-// Attacker inflates vault shares by donating assets directly to Morpho vault
+// Attacker inflates strategy shares by donating assets directly to Morpho vault
 // This changes the exchange rate dramatically
 vault.asset().transfer(vault, LARGE_AMOUNT);
 
@@ -35,7 +35,7 @@ vault.asset().transfer(vault, LARGE_AMOUNT);
 uint256 requiredShares = IERC4626(fromVault).previewWithdraw(amount); // Very low due to inflation
 
 // Attacker profits from the exchange at manipulated rate
-router.exchangeCollateral(fromVault, toVault, amount, minToVaultAssetAmount);
+router.rebalanceStrategiesByValue(fromVault, toVault, amount, minStrategyShareAmount);
 ```
 
 **Fix**: Implement exchange rate bounds checking and use time-weighted average rates or oracle-based validation for large exchanges.
@@ -166,17 +166,17 @@ _grantRole(PAUSER_ROLE, msg.sender);
 **Function**: _executeMultiVaultDeposits()
 **Severity**: High
 
-**Description**: Asset mismatch check only validates expected vs actual vault asset but doesn't validate adapter configuration consistency across operations.
+**Description**: Asset mismatch check only validates expected vs actual strategy shares but doesn't validate adapter configuration consistency across operations.
 
 **Impact**: Inconsistent adapter configurations could lead to funds being sent to wrong vaults or lost during multi-vault operations.
 
 **PoC**:
 ```solidity
 // Adapter configured for vaultA but points to vaultB
-if (vaultAssetExpected != selectedVaults[i]) {
+if (strategyShareExpected != selectedVaults[i]) {
     revert AdapterAssetMismatch(...); // Checks expected vs vault
 }
-// But doesn't check if adapter.vaultAsset() == expectedVault
+// But doesn't check if adapter.strategyShare() == expectedVault
 // Could route funds to wrong destination
 ```
 

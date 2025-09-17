@@ -203,19 +203,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     const vaultConfigs = [
       {
-        vault: vault1Address,
+        strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000, // 50% (500,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault2Address,
+        strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000, // 30% (300,000 out of 1,000,000)
         isActive: true
       },
       {
-        vault: vault3Address,
+        strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000, // 20% (200,000 out of 1,000,000)
         isActive: true
@@ -256,7 +256,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     // Setup additional roles and permissions
     const DSTAKE_TOKEN_ROLE = await routerContract.DSTAKE_TOKEN_ROLE();
-    const COLLATERAL_EXCHANGER_ROLE = await routerContract.COLLATERAL_EXCHANGER_ROLE();
+    const STRATEGY_REBALANCER_ROLE = await routerContract.STRATEGY_REBALANCER_ROLE();
     const PAUSER_ROLE = await routerContract.PAUSER_ROLE();
     const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
     
@@ -265,9 +265,9 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     // Grant roles to appropriate addresses
     await routerContract.grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, collateralExchangerSigner.address);
-    // Grant COLLATERAL_EXCHANGER_ROLE to the router contract itself for internal calls
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, routerAddress);
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
+    // Grant STRATEGY_REBALANCER_ROLE to the router contract itself for internal calls
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
     await routerContract.grantRole(PAUSER_ROLE, ownerSigner.address);
     
     console.log("✅ Granted additional roles for testing");
@@ -330,25 +330,25 @@ describe("DStakeRouterV2 Integration Tests", function () {
     await routerContract.setVaultConfigs(vaultConfigs);
     console.log("✅ Set vault configurations and added supported assets to collateralVault");
     
-    // Verify that vault assets are properly added to supportedAssets and fix if needed
-    let supportedAssets = await collateralVaultContract.getSupportedAssets();
+    // Verify that strategy shares are properly added to supportedAssets and fix if needed
+    let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Supported assets in collateralVault:", supportedAssets);
     
-    // Manually ensure each vault asset is supported by calling addAdapter on the router if needed
+    // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const vaultAsset = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].strategyVault;
       const adapter = vaultConfigs[i].adapter;
-      
-      if (!supportedAssets.includes(vaultAsset)) {
-        console.log(`⚠️ Vault asset ${vaultAsset} not in supported assets, calling addAdapter...`);
-        // Call addAdapter to ensure the vault asset is added to supported assets
-        await routerContract.addAdapter(vaultAsset, adapter);
-        console.log(`✅ Called addAdapter for ${vaultAsset} -> ${adapter}`);
+
+      if (!supportedAssets.includes(strategyShare)) {
+        console.log(`⚠️ Strategy share ${strategyShare} not in supported assets, calling addAdapter...`);
+        // Call addAdapter to ensure the strategy share is added to supported assets
+        await routerContract.addAdapter(strategyShare, adapter);
+        console.log(`✅ Called addAdapter for ${strategyShare} -> ${adapter}`);
       }
     }
     
     // Verify all assets are now supported
-    supportedAssets = await collateralVaultContract.getSupportedAssets();
+    supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     console.log("✅ Final supported assets in collateralVault:", supportedAssets);
     
     // Configure dStakeToken router
@@ -467,17 +467,17 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       // Check each vault configuration
       const config1 = await router.getVaultConfig(vault1Address);
-      expect(config1.vault).to.equal(vault1Address);
+      expect(config1.strategyVault).to.equal(vault1Address);
       expect(config1.adapter).to.equal(adapter1Address);
       expect(config1.targetBps).to.equal(500000);
       expect(config1.isActive).to.be.true;
 
       const config2 = await router.getVaultConfig(vault2Address);
-      expect(config2.vault).to.equal(vault2Address);
+      expect(config2.strategyVault).to.equal(vault2Address);
       expect(config2.targetBps).to.equal(300000);
 
       const config3 = await router.getVaultConfig(vault3Address);
-      expect(config3.vault).to.equal(vault3Address);
+      expect(config3.strategyVault).to.equal(vault3Address);
       expect(config3.targetBps).to.equal(200000);
     });
 
@@ -492,13 +492,13 @@ describe("DStakeRouterV2 Integration Tests", function () {
     it("Should validate total allocations equal 100%", async function () {
       const invalidConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% (in correct 1,000,000 basis point scale)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30% - Total = 90%, should fail
           isActive: true
@@ -514,19 +514,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Test that the fix works: configurations totaling exactly ONE_HUNDRED_PERCENT_BPS should pass
       const correctConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% in correct scale (600,000 out of 1,000,000)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 250000, // 25% in correct scale (250,000 out of 1,000,000)
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 150000, // 15% in correct scale (150,000 out of 1,000,000)
           isActive: true
@@ -547,19 +547,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Test that old scale (which was previously accepted due to bug) now correctly fails
       const oldScaleConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 5000, // 50% in old incorrect scale (5,000 out of 10,000)
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 3000, // 30% in old incorrect scale (3,000 out of 10,000)
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 2000, // 20% in old incorrect scale (2,000 out of 10,000)
           isActive: true
@@ -631,11 +631,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
       
-      // Find DeterministicDeposit event (or WeightedDeposit for backward compatibility)
+      // Find DeterministicDeposit event (or StrategyDepositRouted for backward compatibility)
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit" || decoded?.name === "DeterministicDeposit";
+          return decoded?.name === "StrategyDepositRouted" || decoded?.name === "DeterministicDeposit";
         } catch {
           return false;
         }
@@ -808,15 +808,34 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Exchange 1000 dStable equivalent from vault1 to vault2
       const exchangeAmount = ethers.parseEther("1000");
       
-      await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
-          vault1.target,
-          vault2.target,
-          exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
-      ).to.emit(router, "CollateralExchanged")
-        .withArgs(vault1.target, vault2.target, exchangeAmount, collateralExchanger.address);
+      const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
+        vault1.target,
+        vault2.target,
+        exchangeAmount,
+        0 // minToVaultAssetAmount
+      );
+      const receipt = await tx.wait();
+
+      // Verify the StrategySharesExchanged event was emitted with correct parameters
+      const exchangeEvent = receipt.logs.find(log => {
+        try {
+          const decoded = router.interface.parseLog(log);
+          return decoded?.name === "StrategySharesExchanged";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(exchangeEvent).to.not.be.undefined;
+      if (exchangeEvent) {
+        const decoded = router.interface.parseLog(exchangeEvent);
+        expect(decoded.args.fromStrategyShare).to.equal(vault1.target);
+        expect(decoded.args.toStrategyShare).to.equal(vault2.target);
+        expect(decoded.args.fromShareAmount).to.be.gt(0);
+        expect(decoded.args.toShareAmount).to.be.gt(0);
+        expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
+        expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
+      }
       
       // Check balances changed appropriately
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -838,7 +857,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const exchangeAmount = ethers.parseEther("1000");
       
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1.target,
           vault2.target,
           exchangeAmount,
@@ -851,7 +870,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const exchangeAmount = ethers.parseEther("1000");
       
       await expect(
-        router.connect(alice).exchangeCollateral(
+        router.connect(alice).rebalanceStrategiesByValue(
           vault1.target,
           vault2.target,
           exchangeAmount,
@@ -882,25 +901,25 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Need to adjust existing allocations to make room
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 400000, // Reduce from 50% to 40%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // Keep at 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // Keep at 20%
           isActive: true
         },
         {
-          vault: newVault.target,
+          strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 100000, // New 10% allocation
           isActive: true
@@ -940,19 +959,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
           isActive: false
@@ -980,19 +999,19 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
           isActive: false
@@ -1058,11 +1077,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const adapter5 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault5.target, collateralVault.target, owner.address);
 
       await router.setVaultConfigs([
-        { vault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
-        { vault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
-        { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
-        { vault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
-        { vault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
+        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
+        { strategyVault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
       ]);
 
       await expect(router.setMaxVaultsPerOperation(5))
@@ -1082,9 +1101,9 @@ describe("DStakeRouterV2 Integration Tests", function () {
 
     it("Should enforce maxVaultsPerOperation in weighted selection", async function () {
       await router.setVaultConfigs([
-        { vault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
-        { vault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
-        { vault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
+        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
+        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
       ]);
 
       await router.setMaxVaultsPerOperation(1);
@@ -1099,7 +1118,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1117,7 +1136,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const weightedDepositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1183,25 +1202,25 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Add zero-balance vault with significant allocation
       const newConfigs = [
         {
-          vault: vault1.target,
+          strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: vault2.target,
+          strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: vault3.target,
+          strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // 20%
           isActive: true
         },
         {
-          vault: newVault.target,
+          strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 400000, // 40% - Should get high selection weight
           isActive: true
@@ -1364,7 +1383,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
   describe("Deterministic Selection Verification", function () {
     it("Should verify that deterministic selection consistently moves allocations toward targets", async function () {
       const iterations = 30;
-      const results: { [vault: string]: number } = {
+      const results: { [strategyVault: string]: number } = {
         [vault1.target.toString()]: 0,
         [vault2.target.toString()]: 0,
         [vault3.target.toString()]: 0,
@@ -1387,15 +1406,15 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const depositAmount = ethers.parseEther("500");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         
-        // Listen for WeightedDeposit event to see which vaults were selected
+        // Listen for StrategyDepositRouted event to see which vaults were selected
         const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
         const receipt = await tx.wait();
         
-        // Find WeightedDeposit event
+        // Find StrategyDepositRouted event
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1463,7 +1482,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1509,7 +1528,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       // Exchange some collateral
       const exchangeAmount = ethers.parseEther("5000");
-      await router.connect(collateralExchanger).exchangeCollateral(
+      await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1.target,
         vault2.target,
         exchangeAmount,
@@ -1542,11 +1561,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
       
-      // Verify WeightedDeposit was emitted
+      // Verify StrategyDepositRouted was emitted
       const weightedDepositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1649,7 +1668,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1740,7 +1759,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const depositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }

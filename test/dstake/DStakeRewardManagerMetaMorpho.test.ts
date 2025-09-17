@@ -87,7 +87,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     
     // Configure router
     await router.addAdapter(metaMorphoVault.target, adapter.target);
-    await router.setDefaultDepositVaultAsset(metaMorphoVault.target);
+    await router.setDefaultDepositStrategyShare(metaMorphoVault.target);
     
     // Deploy reward manager
     const RewardManagerFactory = await ethers.getContractFactory("DStakeRewardManagerMetaMorpho");
@@ -525,7 +525,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       const filter = rewardManager.filters.ExchangeAssetProcessed();
       const events = await rewardManager.queryFilter(filter);
       expect(events).to.have.lengthOf(1);
-      expect(events[0].args.vaultAsset).to.equal(metaMorphoVault.target);
+      expect(events[0].args.strategyShare).to.equal(metaMorphoVault.target);
       expect(events[0].args.dStableCompoundedAmount).to.equal(compoundAmount);
     });
     
@@ -700,7 +700,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       );
       
       await router.addAdapter(wrongVault.target, maliciousAdapter.target);
-      await router.setDefaultDepositVaultAsset(wrongVault.target);
+      await router.setDefaultDepositStrategyShare(wrongVault.target);
       
       const compoundAmount = ethers.parseEther("50");
       await dStable.connect(user).approve(rewardManager.target, compoundAmount);

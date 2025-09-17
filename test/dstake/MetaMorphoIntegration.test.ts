@@ -172,7 +172,7 @@ describe("MetaMorpho Integration", function () {
         });
         
         it("should have correct adapter registered in router", async function () {
-          const registeredAdapter = await router.vaultAssetToAdapter(metaMorphoVault.target);
+          const registeredAdapter = await router.strategyShareToAdapter(metaMorphoVault.target);
           expect(registeredAdapter).to.equal(adapter.target);
         });
       });

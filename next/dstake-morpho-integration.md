@@ -5,12 +5,12 @@ Migrate dSTAKE from dLEND (Aave v3 fork) to Morpho Blue on Katana with minimal c
 
 ## Summary of Changes
 - Keep `IDStableConversionAdapter` and the router/adapters pattern unchanged.
-- Introduce a non-rebasing ERC-4626 wrapper over Morpho Blue supply positions to serve as the dSTAKE `vault asset`.
+- Introduce a non-rebasing ERC-4626 wrapper over Morpho Blue supply positions to serve as the dSTAKE `strategy shares`.
 - Implement a new adapter `WrappedMorphoConversionAdapter` that converts dSTABLE <-> wrapper shares and mints/burns shares directly to/from `DStakeCollateralVault`.
 - Provide `IMorpho` interfaces and `MockMorphoBlue` contract to enable local tests without forking.
 
 ## Why a Wrapper Is Still Needed
-dSTAKE expects a concrete ERC20 `vault asset` (non-rebasing) that the `DStakeCollateralVault` can hold. Morpho Blue accounts supplier positions with internal shares, not with an ERC20 receipt token. Therefore, we introduce an ERC-4626 wrapper that:
+dSTAKE expects a concrete ERC20 `strategy shares` (non-rebasing) that the `DStakeCollateralVault` can hold. Morpho Blue accounts supplier positions with internal shares, not with an ERC20 receipt token. Therefore, we introduce an ERC-4626 wrapper that:
 - Accepts dSTABLE deposits and supplies them to Morpho Blue.
 - Holds the Morpho position on behalf of the wrapper.
 - Issues non-rebasing ERC20 shares to represent proportional ownership of the Morpho supply position.
@@ -38,8 +38,8 @@ This mirrors our existing `StaticATokenLM` approach while adapting to Morpho Blu
 3) Adapter (dSTAKE bridge)
 - `contracts/vaults/dstake/adapters/WrappedMorphoConversionAdapter.sol` (new):
   - Implements `IDStableConversionAdapter` against the wrapper vault.
-  - `convertToVaultAsset(stableAmount)`: pulls dSTABLE from router, approves wrapper, deposits and mints shares directly to `DStakeCollateralVault`.
-  - `convertFromVaultAsset(shares)`: pulls wrapper shares from router, redeems to receive dSTABLE, returns it to caller.
+  - `convertToStrategyShare(stableAmount)`: pulls dSTABLE from router, approves wrapper, deposits and mints shares directly to `DStakeCollateralVault`.
+  - `convertFromStrategyShare(shares)`: pulls wrapper shares from router, redeems to receive dSTABLE, returns it to caller.
   - `preview*` and `assetValueInDStable()` proxy to wrapper `previewDeposit/previewRedeem` and conversions.
 
 4) Reward manager
@@ -47,7 +47,7 @@ This mirrors our existing `StaticATokenLM` approach while adapting to Morpho Blu
 
 ## Contract Wiring
 - Use the unified `DStakeRouterV2` which already handles deterministic multi-vault routing; configure MetaMorpho vaults via `setVaultConfigs`.
-- `DStakeCollateralVault` remains unchanged (holds the wrapper shares as the vault asset).
+- `DStakeCollateralVault` remains unchanged (holds the wrapper shares as the strategy shares).
 
 ## Deployment/Config Changes
 - Add Morpho addresses to Katana config (if needed) and market params for the chosen market:
@@ -57,8 +57,8 @@ This mirrors our existing `StaticATokenLM` approach while adapting to Morpho Blu
 - New deploy flow:
   1. Deploy `Morpho4626Vault` with `IMorpho` address and `MarketParams`.
   2. Deploy `WrappedMorphoConversionAdapter` with dSTABLE, vault address, collateral vault address.
-  3. Register adapter in the router with the wrapper share token as `vault asset`.
-  4. Set `defaultDepositVaultAsset` to the wrapper share token.
+  3. Register adapter in the router with the wrapper share token as `strategy shares`.
+  4. Set `defaultDepositStrategyShare` to the wrapper share token.
 - Update `deploy/08_dstake/02_deploy_dstake_adapters.ts` to support `WrappedMorphoConversionAdapter` similarly to `WrappedDLendConversionAdapter`.
 
 ## Testing Plan (using provided mocks)
@@ -80,7 +80,7 @@ We will add a configurable `MockMorphoBlue` that implements the `IMorpho` surfac
 - Core test flows:
   - Deposit dSTABLE into dSTAKE → expect wrapper shares in `DStakeCollateralVault`.
   - Withdraw from dSTAKE → shares redeemed via adapter → receive dSTABLE.
-  - Exchange between adapters (if multiple vault assets configured) ensures value parity checks pass with dust tolerance.
+  - Exchange between adapters (if multiple strategy shares configured) ensures value parity checks pass with dust tolerance.
   - Preview functions return consistent conversions with on-chain state.
 
 ## Risks & Considerations

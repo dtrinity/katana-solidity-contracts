@@ -34,7 +34,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const sdUSDRouterContract = await hre.ethers.getContractAt("DStakeRouterV2", sdUSDRouter.address, deployerSigner);
 
   // Check if adapter is already registered
-  const currentAdapter = await sdUSDRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdUSD.address);
+  const currentAdapter = await sdUSDRouterContract.strategyShareToAdapter(mockMetaMorphoVaultdUSD.address);
 
   if (currentAdapter === hre.ethers.ZeroAddress) {
     await sdUSDRouterContract.addAdapter(mockMetaMorphoVaultdUSD.address, adapterDUSD.address);
@@ -42,7 +42,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   // Set default deposit vault asset for the router (needed for compounding)
-  await sdUSDRouterContract.setDefaultDepositVaultAsset(mockMetaMorphoVaultdUSD.address);
+  await sdUSDRouterContract.setDefaultDepositStrategyShare(mockMetaMorphoVaultdUSD.address);
   console.log(`Set default deposit vault asset for sdUSD router`);
 
   // These configurations should be handled by 03_configure_dstake.ts
@@ -72,7 +72,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Register adapter with router
   const sdETHRouterContract = await hre.ethers.getContractAt("DStakeRouterV2", sdETHRouter.address, deployerSigner);
 
-  const currentAdapterETH = await sdETHRouterContract.vaultAssetToAdapter(mockMetaMorphoVaultdETH.address);
+  const currentAdapterETH = await sdETHRouterContract.strategyShareToAdapter(mockMetaMorphoVaultdETH.address);
 
   if (currentAdapterETH === hre.ethers.ZeroAddress) {
     await sdETHRouterContract.addAdapter(mockMetaMorphoVaultdETH.address, adapterDETH.address);
@@ -80,7 +80,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   // Set default deposit vault asset for the router (needed for compounding)
-  await sdETHRouterContract.setDefaultDepositVaultAsset(mockMetaMorphoVaultdETH.address);
+  await sdETHRouterContract.setDefaultDepositStrategyShare(mockMetaMorphoVaultdETH.address);
   console.log(`Set default deposit vault asset for sdETH router`);
 
   // These configurations should be handled by 03_configure_dstake.ts

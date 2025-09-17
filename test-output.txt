@@ -1,0 +1,1001 @@
+MNEMONIC_MAINNET_DEPLOYER is not set in the .env file
+No private keys found for katana_mainnet in the .env file
+
+
+  Compare library
+    isWithinTolerance
+      ✔ returns true when values are equal and tolerance is 0 (447ms)
+      ✔ returns false when difference is 1 and tolerance is 0
+      ✔ returns true when difference equals tolerance boundary
+      ✔ returns true when difference is below tolerance and false when above
+      ✔ handles zero values correctly
+      ✔ handles extreme max uint256 values
+      ✔ is symmetric for observed < expected and observed > expected
+    checkBalanceDelta
+      ✔ Increase: direction false when after <= before
+      ✔ Increase: correct delta and tolerance within/at/above boundary
+      ✔ Decrease: direction false when after >= before
+      ✔ Decrease: correct delta and tolerance within/at/above boundary
+      ✔ handles extreme max uint256 delta for Increase
+      ✔ handles extreme max uint256 delta for Decrease
+      ✔ tolerance = max always passes when direction is satisfied
+
+  SwappableVault Tolerance Tests
+    Tolerance Constant
+      ✔ should have BALANCE_DIFF_TOLERANCE = 1
+    Happy Path Tests
+      ✔ should succeed when spent equals returned amount (exact match)
+      ✔ should succeed when difference is +1 (within tolerance)
+      ✔ should succeed when difference is -1 (within tolerance)
+    Failure Cases - Outside Tolerance
+      ✔ should revert when difference is +2 (outside tolerance)
+      ✔ should revert when difference is -2 (outside tolerance)
+    Amount In Maximum Checks
+      ✔ should revert when spent > amountInMaximum (exceeds maximum)
+      ✔ should revert with correct error when spent = amountInMaximum + 1
+    Output Token Validation
+      ✔ should succeed when output amount is exact match
+      ✔ should succeed when receiving +1 output token (within tolerance)
+      ✔ should succeed when receiving -1 output token (within tolerance)
+      ✔ should revert when receiving +2 output tokens (outside tolerance)
+      ✔ should revert when receiving -2 output tokens (outside tolerance)
+      ✔ should revert when output token balance doesn't increase
+    Edge Cases
+      ✔ should handle zero amounts correctly
+      ✔ should handle exactly at tolerance boundary
+    Gas Usage
+      ✔ should not significantly increase gas usage
+
+  WithdrawalFee math overflow protection
+    ✔ _calculateWithdrawalFee handles uint256 max without overflow
+
+  AmoManager Ecosystem Tests for dUSD
+    AMO ecosystem interactions
+Deployed USDC (USD Coin) at 0xCA8c8688914e0F7096c920146cd0Ad85cD7Ae8b9
+Deployed USDT (Tether USD) at 0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B
+Deployed AUSD (AUSD) at 0x5FeaeBfB4439F3516c74939A9D04e95AFE82C4ae
+Deployed yUSD (YieldFi yUSD) at 0x976fcd02f7C4773dd89C309fBF55D5923B4c98a1
+Deployed frxUSD (Frax USD) at 0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923
+Deployed sfrxUSD (Staked Frax USD) at 0xD42912755319665397FF090fBB63B1a31aE87Cee
+Deployed WETH (Wrapped ETH) at 0xfcDB4564c18A9134002b9771816092C9693622e3
+Deployed stETH (Staked ETH) at 0x927b167526bAbB9be047421db732C663a0b77B11
+🪙  deploy-mocks/01_mock_token_setup.ts: ✅
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_WETH_USD at 0x32EEce76C2C2e8758584A83Ee2F522D4788feA0f with price 2500
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_USDC_USD at 0x02b0B4EFd909240FCB2Eb5FAe060dC60D112E3a4 with price 1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_USDT_USD at 0x6C2d83262fF84cBaDb3e416D527403135D757892 with price 1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_AUSD_USD at 0xa6e99A4ED7498b3cdDCBB61a6A607a4925Faa1B7 with price 1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_frxUSD_USD at 0x0ed64d01D0B4B655E410EF1441dD677B695639E7 with price 1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_sfrxUSD_frxUSD at 0x40a42Baf86Fc821f972Ad2aC878729063CeEF403 with price 1.1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_yUSD_USD at 0x986aaa537b8cc170761FDAC6aC4fc7F9d8a20A8C with price 1.1
+Deployed MockRedstoneChainlinkOracleAlwaysAlive_stETH_WETH at 0xefc1aB2475ACb7E60499Efb171D173be19928a05 with price 1.1
+🔮 deploy-mocks/02_mock_oracle_setup.ts: ✅
+Deployed MockUniversalRewardsDistributor at 0xD49a0e9A4CD5979aE36840f542D2d7f02C4817Be
+⚠️  Skipping mock Curve pool deployment: dPool functionality disabled in this fork
+☯️ 01_dusd_token.ts: ✅
+Set plain Redstone feed for asset 0xfcDB4564c18A9134002b9771816092C9693622e3 to 0x32EEce76C2C2e8758584A83Ee2F522D4788feA0f
+Set plain Redstone feed for asset 0x976fcd02f7C4773dd89C309fBF55D5923B4c98a1 to 0x986aaa537b8cc170761FDAC6aC4fc7F9d8a20A8C
+Sanity check passed for asset 0xfcDB4564c18A9134002b9771816092C9693622e3 in plain Redstone proxies: Normalized price is 2500
+Sanity check passed for asset 0x976fcd02f7C4773dd89C309fBF55D5923B4c98a1 in plain Redstone proxies: Normalized price is 1.1
+Set Redstone feed with thresholding for asset 0xCA8c8688914e0F7096c920146cd0Ad85cD7Ae8b9
+Set Redstone feed with thresholding for asset 0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B
+Set Redstone feed with thresholding for asset 0x5FeaeBfB4439F3516c74939A9D04e95AFE82C4ae
+Set Redstone feed with thresholding for asset 0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923
+Sanity check passed for asset 0xCA8c8688914e0F7096c920146cd0Ad85cD7Ae8b9 in Redstone proxies with thresholding: Normalized price is 1
+Sanity check passed for asset 0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B in Redstone proxies with thresholding: Normalized price is 1
+Sanity check passed for asset 0x5FeaeBfB4439F3516c74939A9D04e95AFE82C4ae in Redstone proxies with thresholding: Normalized price is 1
+Sanity check passed for asset 0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923 in Redstone proxies with thresholding: Normalized price is 1
+Set composite Redstone feed for asset 0xD42912755319665397FF090fBB63B1a31aE87Cee
+Set composite Redstone feed for asset 0x927b167526bAbB9be047421db732C663a0b77B11
+Sanity check passed for asset 0xD42912755319665397FF090fBB63B1a31aE87Cee in composite Redstone feeds: Normalized price is 1.1
+Sanity check passed for asset 0x927b167526bAbB9be047421db732C663a0b77B11 in composite Redstone feeds: Normalized price is 2750
+🔮 02_dusd_ecosystem/02_setup_usd_redstone_oracle_wrappers.ts: ✅
+🔮 02_dusd_ecosystem/04_deploy_usd_oracle_aggregator.ts: ✅
+Set plain Redstone wrapper for asset 0xfcDB4564c18A9134002b9771816092C9693622e3 to 0xB377a2EeD7566Ac9fCb0BA673604F9BF875e2Bab
+Set plain Redstone wrapper for asset 0x976fcd02f7C4773dd89C309fBF55D5923B4c98a1 to 0xB377a2EeD7566Ac9fCb0BA673604F9BF875e2Bab
+Set Redstone wrapper with thresholding for asset 0xCA8c8688914e0F7096c920146cd0Ad85cD7Ae8b9 to 0x74Cf9087AD26D541930BaC724B7ab21bA8F00a27
+Set Redstone wrapper with thresholding for asset 0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B to 0x74Cf9087AD26D541930BaC724B7ab21bA8F00a27
+Set Redstone wrapper with thresholding for asset 0x5FeaeBfB4439F3516c74939A9D04e95AFE82C4ae to 0x74Cf9087AD26D541930BaC724B7ab21bA8F00a27
+Set Redstone wrapper with thresholding for asset 0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923 to 0x74Cf9087AD26D541930BaC724B7ab21bA8F00a27
+Set composite Redstone wrapper for asset 0xD42912755319665397FF090fBB63B1a31aE87Cee to 0xaB7B4c595d3cE8C85e16DA86630f2fc223B05057
+Set composite Redstone wrapper for asset 0x927b167526bAbB9be047421db732C663a0b77B11 to 0xaB7B4c595d3cE8C85e16DA86630f2fc223B05057
+🔮 02_dusd_ecosystem/06_point_usd_aggregator_to_redstone_wrappers.ts: ✅
+Setting HardPegOracleWrapper for dUSD (0xB2b580ce436E6F77A5713D80887e14788Ef49c9A) to 0xeF31027350Be2c7439C1b0BE022d49421488b72C
+🔮 02_dusd_ecosystem/07_dusd_oracle.ts: ✅
+☯️ 02_dusd_ecosystem/08_collateral_vault.ts: ✅
+☯️ 02_dusd_ecosystem/09_amo_manager.ts: ✅
+  🪙 Ensuring MINTER_ROLE for dUSD_IssuerV2 on dUSD...
+    ➕ Granted MINTER_ROLE to 0x63fea6E447F120B8Faf85B53cdaD8348e645D80E
+  🔐 Migrating IssuerV2 roles to governance...
+    ➕ Granted DEFAULT_ADMIN_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted AMO_MANAGER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted INCENTIVES_MANAGER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  🔄 Revoking roles from deployer 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266...
+    ➖ Revoked AMO_MANAGER_ROLE from deployer
+    ➖ Revoked INCENTIVES_MANAGER_ROLE from deployer
+    ➖ Revoked PAUSER_ROLE from deployer
+    ➖ Renounced DEFAULT_ADMIN_ROLE for 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 on IssuerV2
+☯️ 02_dusd_ecosystem/10_issuer.ts: ✅
+Allowing Redeemer to withdraw collateral
+    ➕ Granted COLLATERAL_WITHDRAWER_ROLE to 0x071586BA1b380B00B793Cc336fe01106B0BFbE6D
+  🔐 Migrating RedeemerV2 roles to governance...
+    ➕ Granted DEFAULT_ADMIN_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted REDEMPTION_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  🔄 Revoking roles from deployer 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266...
+    ➖ Revoked REDEMPTION_MANAGER_ROLE from deployer
+    ➖ Revoked PAUSER_ROLE from deployer
+☯️ 02_dusd_ecosystem/11_redeemer.ts: ✅
+0xCA8c8688914e0F7096c920146cd0Ad85cD7Ae8b9 whitelisted as collateral
+0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B whitelisted as collateral
+0x5FeaeBfB4439F3516c74939A9D04e95AFE82C4ae whitelisted as collateral
+0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923 whitelisted as collateral
+0xD42912755319665397FF090fBB63B1a31aE87Cee whitelisted as collateral
+0x976fcd02f7C4773dd89C309fBF55D5923B4c98a1 whitelisted as collateral
+🔮 02_dusd_ecosystem/12_whitelist_collateral.ts: ✅
+Setting HardPegOracleWrapper for base currency (0x0000000000000000000000000000000000000000) to 0xeF31027350Be2c7439C1b0BE022d49421488b72C
+🔮 02_dusd_ecosystem/13_point_usd_oracle_aggregator_for_usd.ts: ✅
+≻ 01_deth_token.ts: ✅
+Set plain Redstone feed for asset 0x927b167526bAbB9be047421db732C663a0b77B11 to 0xefc1aB2475ACb7E60499Efb171D173be19928a05
+Sanity check passed for asset 0x927b167526bAbB9be047421db732C663a0b77B11 in plain Redstone proxies: Normalized price is 1.1
+🔮 01_deth_ecosystem/03_setup_eth_redstone_oracle_wrappers.ts: ✅
+🔮 01_deth_ecosystem/04_deploy_eth_oracle_aggregator.ts: ✅
+Set plain Redstone wrapper for asset 0x927b167526bAbB9be047421db732C663a0b77B11 to 0x51C65cd0Cdb1A8A8b79dfc2eE965B1bA0bb8fc89
+🔮 01_deth_ecosystem/06_point_eth_aggregator_to_redstone_wrappers.ts: ✅
+Setting HardPegOracleWrapper for WETH (0xfcDB4564c18A9134002b9771816092C9693622e3) to 0xD5724171C2b7f0AA717a324626050BD05767e2C6
+🔮 01_deth_ecosystem/07_weth_oracle.ts: ✅
+Setting HardPegOracleWrapper for dETH (0x87006e75a5B6bE9D1bbF61AC8Cd84f05D9140589) to 0x8B190573374637f144AC8D37375d97fd84cBD3a0
+🔮 01_deth_ecosystem/08_deth_oracle.ts: ✅
+≻ 01_deth_ecosystem/09_collateral_vault.ts: ✅
+≻ 01_deth_ecosystem/10_amo_manager.ts: ✅
+
+≻ 01_deth_ecosystem/11_issuer.ts: executing...
+🔐 Governance multisig: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  🪙 Ensuring MINTER_ROLE for dETH_IssuerV2 on dETH...
+    ➕ Granted MINTER_ROLE to 0x114e375B6FCC6d6fCb68c7A1d407E652C54F25FB
+  🔐 Migrating IssuerV2 roles to governance...
+    ➕ Granted DEFAULT_ADMIN_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted AMO_MANAGER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted INCENTIVES_MANAGER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to governance 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  🔄 Revoking roles from deployer 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266...
+    ➖ Revoked AMO_MANAGER_ROLE from deployer
+    ➖ Revoked INCENTIVES_MANAGER_ROLE from deployer
+    ➖ Revoked PAUSER_ROLE from deployer
+    ➖ Renounced DEFAULT_ADMIN_ROLE for 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 on IssuerV2
+
+✅ All operations completed successfully.
+
+≻ 01_deth_ecosystem/11_issuer.ts: ✅
+Allowing Redeemer to withdraw collateral
+    ➕ Granted COLLATERAL_WITHDRAWER_ROLE to 0xe1708FA6bb2844D5384613ef0846F9Bc1e8eC55E
+  🔐 Migrating RedeemerV2 roles to governance...
+    ➕ Granted DEFAULT_ADMIN_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted REDEMPTION_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  🔄 Revoking roles from deployer 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266...
+    ➖ Revoked REDEMPTION_MANAGER_ROLE from deployer
+    ➖ Revoked PAUSER_ROLE from deployer
+≻ 01_deth_ecosystem/12_redeemer.ts: ✅
+0xfcDB4564c18A9134002b9771816092C9693622e3 whitelisted as collateral
+0x927b167526bAbB9be047421db732C663a0b77B11 whitelisted as collateral
+🔮 01_deth_ecosystem/13_whitelist_collateral.ts: ✅
+Running mock MetaMorpho vault deployment...
+✅ Deployed MockMetaMorphoVault_dUSD
+✅ Deployed MockMetaMorphoVault_dETH
+🥩 deploy-mocks/04_deploy_mock_metamorpho_vaults.ts: ✅
+⚠️  Skipping dSTAKE instance sdUSD: Missing defaultDepositStrategyShare (likely due to dlend infrastructure not being deployed)
+⚠️  Skipping dSTAKE instance sdETH: Missing defaultDepositStrategyShare (likely due to dlend infrastructure not being deployed)
+🥩 08_dstake/01_deploy_dstake_core.ts: ✅
+⚠️  Skipping dSTAKE instance sdUSD: Missing strategyShare for adapter WrappedDLendConversionAdapter (likely due to dlend infrastructure not being deployed)
+⚠️  Skipping dSTAKE instance sdETH: Missing strategyShare for adapter WrappedDLendConversionAdapter (likely due to dlend infrastructure not being deployed)
+🥩 08_dstake/02_deploy_dstake_adapters.ts: ✅
+📚 Deploying DStakeRouterV2 libraries...
+🚀 Deploying DStakeRouterV2 for sdUSD...
+duplicate definition - ArrayLengthMismatch()
+duplicate definition - ArrayLengthMismatch()
+✅ Deployed DStakeRouterV2 for sdUSD at 0x7C8BaafA542c57fF9B2B90612bf8aB9E86e22C09
+🚀 Deploying DStakeRouterV2 for sdETH...
+duplicate definition - ArrayLengthMismatch()
+duplicate definition - ArrayLengthMismatch()
+✅ Deployed DStakeRouterV2 for sdETH at 0x0a17FabeA4633ce714F1Fa4a2dcA62C3bAc4758d
+🥩 08_dstake/06_deploy_router_v2.ts: ✅
+Registered MetaMorpho adapter for dUSD with router
+Set default deposit vault asset for sdUSD router
+Warning: sdUSD dStakeToken router not configured. This should have been done by configure script.
+Registered MetaMorpho adapter for dETH with router
+Set default deposit vault asset for sdETH router
+Warning: sdETH dStakeToken router not configured. This should have been done by configure script.
+⚙️ Configuring DStakeRouterV2 for sdUSD...
+    ➕ Granted STRATEGY_REBALANCER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 for DStakeRouterV2_sdUSD
+    ⚠️  No MetaMorpho vault configurations to set for sdUSD
+✅ Completed configuration for DStakeRouterV2 sdUSD
+⚙️ Configuring DStakeRouterV2 for sdETH...
+    ➕ Granted STRATEGY_REBALANCER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 for DStakeRouterV2_sdETH
+    ⚠️  No MetaMorpho vault configurations to set for sdETH
+✅ Completed configuration for DStakeRouterV2 sdETH
+🥩 08_dstake/07_configure_router_v2.ts: ✅
+Deployed MetaMorpho reward managers:
+    - sdUSD: 0x9fD16eA9E31233279975D99D5e8Fc91dd214c7Da
+    - sdETH: 0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2
+Setting up test permissions...
+Granted MINTER_ROLE to deployer for dUSD testing
+Granted MINTER_ROLE to deployer for dETH testing
+Test permissions setup completed for dUSD and dETH tokens
+
+🔐 Setting up new roles for dSTAKE instance sdUSD…
+  📄 ROUTER ROLES: DStakeRouterV2_sdUSD
+    ➕ Granted VAULT_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted CONFIG_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  📄 REWARD MANAGER ROLES: DStakeRewardManagerMetaMorpho_sdUSD
+    ➕ Granted REWARDS_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  ✅ Completed role setup for sdUSD
+
+🔐 Setting up new roles for dSTAKE instance sdETH…
+  📄 ROUTER ROLES: DStakeRouterV2_sdETH
+    ➕ Granted VAULT_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted CONFIG_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+    ➕ Granted PAUSER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  📄 REWARD MANAGER ROLES: DStakeRewardManagerMetaMorpho_sdETH
+    ➕ Granted REWARDS_MANAGER_ROLE to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+  ✅ Completed role setup for sdETH
+
+🔑 08_dstake/09_update_router_roles.ts: ✅ Done
+
+🔒 10_vesting_dstake/01_deploy_vesting_nft.ts: ✅
+    ⚙️ Setting router for DStakeToken_sdUSD to 0x7C8BaafA542c57fF9B2B90612bf8aB9E86e22C09
+    ⚙️ Setting collateral vault for DStakeToken_sdUSD to 0x9Fcca440F19c62CDF7f973eB6DDF218B15d4C71D
+    ⚙️ Setting withdrawal fee for DStakeToken_sdUSD to 10
+    ⚙️ Setting router for DStakeCollateralVault_sdUSD to 0x7C8BaafA542c57fF9B2B90612bf8aB9E86e22C09
+    ⚠️  Skipping adapter WrappedDLendConversionAdapter_sdUSD - not deployed yet
+    ⚠️  No defaultDepositStrategyShare configured for sdUSD, will be set by adapter deployment script
+    ⚙️ Setting router for DStakeToken_sdETH to 0x0a17FabeA4633ce714F1Fa4a2dcA62C3bAc4758d
+    ⚙️ Setting collateral vault for DStakeToken_sdETH to 0x1343248Cbd4e291C6979e70a138f4c774e902561
+    ⚙️ Setting withdrawal fee for DStakeToken_sdETH to 10
+    ⚙️ Setting router for DStakeCollateralVault_sdETH to 0x0a17FabeA4633ce714F1Fa4a2dcA62C3bAc4758d
+    ⚠️  Skipping adapter WrappedDLendConversionAdapter_sdETH - not deployed yet
+    ⚠️  No defaultDepositStrategyShare configured for sdETH, will be set by adapter deployment script
+🥩 08_dstake/03_configure_dstake.ts: ✅
+      ✔ verifies oracle prices for pegged and yield-bearing collateral
+      ✔ calculates profit correctly with yield-bearing collateral
+      ✔ calculates vault value with various assets
+      ✔ transfers collateral between AMO vault and collateral vault
+
+  AmoManager Ecosystem Tests for dETH
+    AMO ecosystem interactions
+      ✔ verifies oracle prices for pegged and yield-bearing collateral
+      ✔ calculates profit correctly with yield-bearing collateral
+      ✔ calculates vault value with various assets
+      ✔ transfers collateral between AMO vault and collateral vault
+
+  AmoManager
+    AmoManager for dUSD
+      Role-based access control
+        ✔ should have correct role assignments after deployment
+        ✔ should prevent unauthorized users from accessing restricted functions
+      AMO allocation
+        ✔ allocates AMO tokens to an active vault
+        ✔ cannot allocate to an inactive vault
+        ✔ cannot allocate more than unallocated supply
+      AMO deallocation
+        ✔ deallocates AMO tokens from an active vault
+        ✔ cannot deallocate more than allocated to vault
+      AMO vault management
+        ✔ enables an AMO vault
+        ✔ disables an AMO vault
+        ✔ cannot enable an already enabled vault
+        ✔ cannot disable an already disabled vault
+      AMO supply management
+        ✔ decreases AMO supply by burning dStable
+        ✔ cannot decrease AMO supply more than available
+      Collateral Management
+        ✔ transfers collateral from AMO vault to holding vault
+        ✔ transfers collateral from holding vault to AMO vault
+        ✔ cannot transfer dStable as collateral
+        ✔ does not reactivate a disabled vault when transferring collateral
+        ✔ emits AllocationSurplus when collateral value exceeds allocation
+      Profit Management
+        ✔ calculates available vault profits correctly
+        ✔ withdraws profits from AMO vault
+        ✔ cannot withdraw more than available profits
+      Base value conversion
+        ✔ converts base value to dStable amount correctly
+        ✔ converts dStable amount to base value correctly
+      Admin functions
+        ✔ allows admin to set collateral vault
+        ✔ prevents non-admin from setting collateral vault
+      AmoVault manager allowance
+        ✔ revokes the old manager allowance and grants it to the new one
+        ✔ allows admin to set a custom allowance for the current manager
+    AmoManager for dETH
+      Role-based access control
+        ✔ should have correct role assignments after deployment
+        ✔ should prevent unauthorized users from accessing restricted functions
+      AMO allocation
+        ✔ allocates AMO tokens to an active vault
+        ✔ cannot allocate to an inactive vault
+        ✔ cannot allocate more than unallocated supply
+      AMO deallocation
+        ✔ deallocates AMO tokens from an active vault
+        ✔ cannot deallocate more than allocated to vault
+      AMO vault management
+        ✔ enables an AMO vault
+        ✔ disables an AMO vault
+        ✔ cannot enable an already enabled vault
+        ✔ cannot disable an already disabled vault
+      AMO supply management
+        ✔ decreases AMO supply by burning dStable
+        ✔ cannot decrease AMO supply more than available
+      Collateral Management
+        ✔ transfers collateral from AMO vault to holding vault
+        ✔ transfers collateral from holding vault to AMO vault
+        ✔ cannot transfer dStable as collateral
+        ✔ does not reactivate a disabled vault when transferring collateral
+        ✔ emits AllocationSurplus when collateral value exceeds allocation
+      Profit Management
+        ✔ calculates available vault profits correctly
+        ✔ withdraws profits from AMO vault
+        ✔ cannot withdraw more than available profits
+      Base value conversion
+        ✔ converts base value to dStable amount correctly
+        ✔ converts dStable amount to base value correctly
+      Admin functions
+        ✔ allows admin to set collateral vault
+        ✔ prevents non-admin from setting collateral vault
+      AmoVault manager allowance
+        ✔ revokes the old manager allowance and grants it to the new one
+        ✔ allows admin to set a custom allowance for the current manager
+
+  CollateralHolderVault for dUSD
+    Collateral management
+      ✔ allows frxUSD as collateral
+      ✔ allows depositing frxUSD
+      ✔ disallows depositing non-allowed frxUSD
+      ✔ allows USDC as collateral
+      ✔ allows depositing USDC
+      ✔ disallows depositing non-allowed USDC
+      ✔ allows USDT as collateral
+      ✔ allows depositing USDT
+      ✔ disallows depositing non-allowed USDT
+      ✔ allows AUSD as collateral
+      ✔ allows depositing AUSD
+      ✔ disallows depositing non-allowed AUSD
+    Base value calculations
+      ✔ calculates total value correctly
+      ✔ correctly converts between base value and asset amount
+    Administrative functions
+      ✔ allows authorized withdrawals
+      ✔ prevents unauthorized withdrawals
+    exchangeCollateral
+      ✔ reverts when fromCollateral is not supported
+      ✔ allows swapping unsupported vault collateral for supported collateral in
+
+  CollateralHolderVault for dETH
+    Collateral management
+      ✔ allows WETH as collateral
+      ✔ allows depositing WETH
+      ✔ disallows depositing non-allowed WETH
+    Base value calculations
+      ✔ calculates total value correctly
+      ✔ correctly converts between base value and asset amount
+    Administrative functions
+      ✔ allows authorized withdrawals
+      ✔ prevents unauthorized withdrawals
+
+  IssuerV2 for dUSD
+    Permissionless issuance
+      ✔ issues dUSD in exchange for frxUSD collateral
+      ✔ cannot issue dUSD when asset minting is paused for frxUSD
+      ✔ issues dUSD in exchange for USDC collateral
+      ✔ cannot issue dUSD when asset minting is paused for USDC
+      ✔ issues dUSD in exchange for USDT collateral
+      ✔ cannot issue dUSD when asset minting is paused for USDT
+      ✔ issues dUSD in exchange for AUSD collateral
+      ✔ cannot issue dUSD when asset minting is paused for AUSD
+      ✔ circulatingDstable calculates correctly for dUSD
+      ✔ baseValueToDstableAmount converts correctly for dUSD
+      ✔ reverts when issuing with unsupported collateral
+    Permissioned and control behaviors
+      ✔ only PAUSER_ROLE can set asset minting pause
+      ✔ pause prevents minting functions and unpause restores
+      ✔ increaseAmoSupply mints dUSD to AMO Manager
+      ✔ issueUsingExcessCollateral respects collateral limits for dUSD
+
+  IssuerV2 for dETH
+    Permissionless issuance
+      ✔ issues dETH in exchange for WETH collateral
+      ✔ cannot issue dETH when asset minting is paused for WETH
+      ✔ circulatingDstable calculates correctly for dETH
+      ✔ baseValueToDstableAmount converts correctly for dETH
+      ✔ reverts when issuing with unsupported collateral
+    Permissioned and control behaviors
+      ✔ only PAUSER_ROLE can set asset minting pause
+      ✔ pause prevents minting functions and unpause restores
+      ✔ increaseAmoSupply mints dETH to AMO Manager
+      ✔ issueUsingExcessCollateral respects collateral limits for dETH
+
+  RedeemerV2 for dUSD
+    ✔ per-asset pause prevents redemption
+    ✔ global pause prevents redemption and unpause restores
+    ✔ only PAUSER_ROLE can set asset pause/unpause
+    ✔ isAssetRedemptionEnabled reflects pause state
+    ✔ redemption computes amounts correctly within slippage bounds
+    Deployment and Configuration
+      ✔ has zero default fee and feeReceiver set to deployer by default
+    Public Redemption with Fees
+      ✔ applies default fee on public redemption and emits Redemption
+    Protocol Redemption (No Fees)
+      ✔ allows manager to redeem without fees
+      ✔ reverts if non-manager calls redeemAsProtocol
+    Administrative functions
+      ✔ allows admin to set fee receiver
+      ✔ reverts when non-admin tries to set fee receiver
+      ✔ allows admin to set default redemption fee and enforces max
+      ✔ allows admin to set collateral-specific fee and enforces max
+      ✔ supports clearing per-asset override (0 bps override -> clear -> fallback to default)
+
+  RedeemerV2 for dETH
+    ✔ per-asset pause prevents redemption
+    ✔ global pause prevents redemption and unpause restores
+    ✔ only PAUSER_ROLE can set asset pause/unpause
+    ✔ isAssetRedemptionEnabled reflects pause state
+    ✔ redemption computes amounts correctly within slippage bounds
+    Deployment and Configuration
+      ✔ has zero default fee and feeReceiver set to deployer by default
+    Public Redemption with Fees
+      ✔ applies default fee on public redemption and emits Redemption
+    Protocol Redemption (No Fees)
+      ✔ allows manager to redeem without fees
+      ✔ reverts if non-manager calls redeemAsProtocol
+    Administrative functions
+      ✔ allows admin to set fee receiver
+      ✔ reverts when non-admin tries to set fee receiver
+      ✔ allows admin to set default redemption fee and enforces max
+      ✔ allows admin to set collateral-specific fee and enforces max
+      ✔ supports clearing per-asset override (0 bps override -> clear -> fallback to default)
+
+  ERC20StablecoinUpgradeable
+    Initialization
+      ✔ should initialize with correct name and symbol
+      ✔ should have 18 decimals
+      ✔ should set deployer as default admin
+      ✔ should set deployer as pauser
+    Role-based functionality
+      ✔ should allow minting only by minter role
+      ✔ should allow pausing only by pauser role
+      ✔ should prevent transfers when paused
+    Name and Symbol Update Functionality
+      ✔ should allow default admin to update name and symbol
+      ✔ should prevent non-admin from updating name and symbol
+
+  dUSD Ecosystem Lifecycle
+    Oracle Setup
+  ✓ Successfully read price for dUSD: 1000000000000000000
+  ✓ Successfully read price for USDC: 1000000000000000000
+  ✓ Successfully read price for USDT: 1000000000000000000
+  ✓ Successfully read price for AUSD: 1000000000000000000
+  ✓ Successfully read price for frxUSD: 1000000000000000000
+  ✓ Successfully read price for sfrxUSD: 1100000000000000000
+  ✓ Successfully read price for yUSD: 1100000000000000000
+      ✔ verifies oracle prices for all collateral tokens
+    System Invariants
+      ✔ maintains invariants throughout basic operations
+    Full Lifecycle
+      ✔ executes a complete lifecycle with multiple users and assets (52ms)
+
+  dETH Ecosystem Lifecycle
+    Oracle Setup
+  ✓ Successfully read price for dETH: 1000000000000000000
+  ✓ Successfully read price for WETH: 1000000000000000000
+  ✓ Successfully read price for stETH: 1100000000000000000
+      ✔ verifies oracle prices for all collateral tokens
+    System Invariants
+      ✔ maintains invariants throughout basic operations
+    Full Lifecycle
+      ✔ executes a complete lifecycle with multiple users and assets (151ms)
+
+  DStakeCollateralVault for sdUSD
+    Initialization & Deployment State (from fixture)
+      - Should have deployed the vault correctly
+      - Should have set immutable state correctly (DStakeToken, dStable)
+      - Should grant DEFAULT_ADMIN_ROLE to initialAdmin
+      - Router should be set as per beforeEach setup
+    Router Management (setRouter)
+      - Should only allow admin to set router
+      - Should revert if setting router to zero address
+      - Should set and replace the router correctly, managing ROUTER_ROLE
+    Asset Transfer (sendAsset)
+      - Should only allow router (via routerSigner) to send assets
+      - Should transfer asset correctly
+      - Should revert on insufficient balance
+      - Should revert if asset is not supported
+    Value Calculation (totalValueInDStable)
+      - Should return 0 if no assets are supported
+      - Should return 0 if supported asset has zero balance
+      - Should return correct value for a single asset with balance
+      - Should sum values correctly for multiple supported assets (if possible to set up)
+      - Should return 0 after asset balance is removed and adapter is removed
+    Supported Asset Removal without Zero Balance
+      - Should allow removeSupportedAsset even when balance > 0
+      - Should revert sendAsset after asset is removed but balance remains
+    Recovery Functions
+      rescueToken
+        - Should successfully rescue non-restricted tokens
+        - Should rescue partial balance
+        - Should revert when trying to rescue supported vault assets
+        - Should revert when trying to rescue dStable token
+        - Should only allow DEFAULT_ADMIN_ROLE to call rescueToken
+        - Should revert with zero address receiver
+        - Should handle rescue when token balance is insufficient
+      rescueETH
+        - Should successfully rescue ETH
+        - Should only allow DEFAULT_ADMIN_ROLE to call rescueETH
+        - Should revert with zero address receiver
+        - Should revert when contract has insufficient ETH
+        - Should handle rescue when contract has no ETH
+      getRestrictedRescueTokens
+        - Should return dStable token when no assets are supported
+        - Should return all supported assets plus dStable
+        - Should update when assets are added/removed
+      Integration tests
+        - Should rescue multiple different tokens
+        - Should prevent rescue of newly added supported assets
+
+  DStakeCollateralVault for sdETH
+    Initialization & Deployment State (from fixture)
+      - Should have deployed the vault correctly
+      - Should have set immutable state correctly (DStakeToken, dStable)
+      - Should grant DEFAULT_ADMIN_ROLE to initialAdmin
+      - Router should be set as per beforeEach setup
+    Router Management (setRouter)
+      - Should only allow admin to set router
+      - Should revert if setting router to zero address
+      - Should set and replace the router correctly, managing ROUTER_ROLE
+    Asset Transfer (sendAsset)
+      - Should only allow router (via routerSigner) to send assets
+      - Should transfer asset correctly
+      - Should revert on insufficient balance
+      - Should revert if asset is not supported
+    Value Calculation (totalValueInDStable)
+      - Should return 0 if no assets are supported
+      - Should return 0 if supported asset has zero balance
+      - Should return correct value for a single asset with balance
+      - Should sum values correctly for multiple supported assets (if possible to set up)
+      - Should return 0 after asset balance is removed and adapter is removed
+    Supported Asset Removal without Zero Balance
+      - Should allow removeSupportedAsset even when balance > 0
+      - Should revert sendAsset after asset is removed but balance remains
+    Recovery Functions
+      rescueToken
+        - Should successfully rescue non-restricted tokens
+        - Should rescue partial balance
+        - Should revert when trying to rescue supported vault assets
+        - Should revert when trying to rescue dStable token
+        - Should only allow DEFAULT_ADMIN_ROLE to call rescueToken
+        - Should revert with zero address receiver
+        - Should handle rescue when token balance is insufficient
+      rescueETH
+        - Should successfully rescue ETH
+        - Should only allow DEFAULT_ADMIN_ROLE to call rescueETH
+        - Should revert with zero address receiver
+        - Should revert when contract has insufficient ETH
+        - Should handle rescue when contract has no ETH
+      getRestrictedRescueTokens
+        - Should return dStable token when no assets are supported
+        - Should return all supported assets plus dStable
+        - Should update when assets are added/removed
+      Integration tests
+        - Should rescue multiple different tokens
+        - Should prevent rescue of newly added supported assets
+
+  DStakeRewardManagerMetaMorpho
+    Deployment
+      ✔ should deploy with correct parameters
+      ✔ should handle deployment with zero URD address
+      ✔ should revert with zero addresses
+    Admin Functions
+      ✔ should allow admin to update URD
+      ✔ should allow admin to disable URD
+      ✔ should only allow admin to update URD
+      ✔ should validate URD interface when setting
+      ✔ should allow admin to set as skim recipient
+    Reward Skimming
+      ✔ should skim single reward token
+      ✔ should skim multiple reward tokens
+      ✔ should handle skimming with no rewards
+      ✔ should only allow manager to skim rewards
+    URD Reward Claiming
+      ✔ should claim rewards from URD
+      ✔ should claim multiple rewards from URD
+      ✔ should revert if URD not configured
+      ✔ should only allow manager to claim from URD
+      ✔ should handle claim failure gracefully
+      ✔ should verify rewards are received by the reward manager contract
+    Reward Compounding
+      ✔ should compound rewards with claimed tokens
+      ✔ should handle multiple reward tokens
+      ✔ should revert if compound amount below threshold
+      ✔ should cap claimed amounts to available balance
+    Exchange Asset Processing
+      ✔ should process exchange asset through adapter
+      ✔ should handle adapter errors gracefully
+      ✔ should clear approvals after processing
+    Emergency Functions
+      ✔ should allow admin to withdraw stuck tokens
+      ✔ should only allow admin to emergency withdraw
+    View Functions
+      ✔ should return URD configuration status
+      ✔ should return current skim recipient
+      ✔ should return claimed amounts from URD
+      ✔ should return zero claimed amount if URD not set
+    Integration with RewardClaimable
+      ✔ should properly inherit treasury management
+      ✔ should properly inherit fee management
+      ✔ should properly inherit threshold management
+    Edge Cases
+      ✔ should handle zero reward amounts
+      - should handle adapter returning different asset
+
+  DStakeRouterV2 Integration Tests
+    Deployment and Configuration
+duplicate definition - ArrayLengthMismatch()
+duplicate definition - ArrayLengthMismatch()
+✅ Granted all necessary roles to router contract
+✅ Granted additional roles for testing
+✅ Set router and granted ROUTER_ROLE on collateralVault
+✅ Set vault configurations and added supported assets to collateralVault
+✅ Supported assets in collateralVault: Result(3) [
+  '0x1D8D70AD07C8E7E442AD78E4AC0A16f958Eba7F0',
+  '0xA9e6Bfa2BF53dE88FEb19761D9b2eE2e821bF1Bf',
+  '0x1E3b98102e19D3a164d239BdD190913C2F02E756'
+]
+✅ Final supported assets in collateralVault: Result(3) [
+  '0x1D8D70AD07C8E7E442AD78E4AC0A16f958Eba7F0',
+  '0xA9e6Bfa2BF53dE88FEb19761D9b2eE2e821bF1Bf',
+  '0x1E3b98102e19D3a164d239BdD190913C2F02E756'
+]
+✅ Set router on dStakeToken
+      ✔ Should deploy with correct vault configurations
+      ✔ Should have correct active vaults
+      ✔ Should validate total allocations equal 100%
+      ✔ Should accept configurations that total exactly 1,000,000 basis points (100%)
+      ✔ Should reject configurations using old 10,000 basis point scale
+    Complete Deposit/Withdrawal Flow
+      ✔ Should handle deposits with deterministic vault selection
+      ✔ Should handle withdrawals from single vault with deterministic selection
+      ✔ Should select exactly 1 vault per deposit with maxVaultsPerOperation=1
+    Deterministic Convergence to Target Allocations
+After 10 operations: [7459.0%, 1639.3%, 901.6%]
+After 20 operations: [5714.3%, 2571.4%, 1714.3%]
+After 30 operations: [4876.6%, 2901.2%, 2222.2%]
+After 40 operations: [4944.4%, 3000.0%, 2055.6%]
+After 50 operations: [5049.5%, 3019.8%, 1930.7%]
+Final allocations: 5049.5%, 3019.8%, 1930.7%
+Target allocations: [50.0%, 30.0%, 20.0%]
+      ✔ Should converge to target allocations over 50+ operations with deterministic selection (158ms)
+Initial (skewed): 10000.0%, 0.0%, 0.0%
+After 5 deposits: 5000.0%, 3000.0%, 2000.0%
+After 10 deposits: 4666.7%, 3333.3%, 2000.0%
+After 15 deposits: 5000.0%, 3000.0%, 2000.0%
+After 20 deposits: 4800.0%, 3200.0%, 2000.0%
+      ✔ Should demonstrate natural velocity adjustment toward targets (62ms)
+    Collateral Exchange Functionality
+      1) Should exchange collateral between vaults
+      ✔ Should revert when exchanging to inactive vault
+      ✔ Should revert when called by unauthorized user
+    Admin Functions
+      ✔ Should allow admin to add new vault configuration
+      ✔ Should allow admin to update vault configuration
+      ✔ Should allow admin to remove vault configuration
+      ✔ Should revert when calling removeVaultConfig on non-existent vault
+      ✔ Should allow admin to emergency pause vault
+    MaxVaultsPerOperation Constraints
+      ✔ Should allow setting maxVaultsPerOperation up to the active vault count
+      ✔ Should enforce the cap when the active vault set grows (122ms)
+      ✔ Should reject maxVaultsPerOperation of 0
+      ✔ Should enforce maxVaultsPerOperation in weighted selection
+    Edge Cases
+      ✔ Should handle all vaults paused scenario
+      ✔ Should handle single vault active scenario
+      ✔ Should handle new vault with 0 balance
+      ✔ Should handle extreme skew (one vault at 95%)
+      ✔ Should handle large withdrawals across multiple vaults
+    Gas Cost Consistency
+Small deposit gas: 458390
+Large deposit gas: 439388
+      ✔ Should maintain consistent gas costs regardless of deposit size
+Small withdrawal gas: 312006
+Large withdrawal gas: 312016
+      ✔ Should maintain reasonable gas costs for withdrawals
+    Deterministic Selection Verification
+Vault selection frequency over 30 deposits (deterministic):
+Vault1 (overweight, target 50%): 5 selections
+Vault2 (underweight, target 30%): 15 selections
+Vault3 (underweight, target 20%): 10 selections
+      ✔ Should verify that deterministic selection consistently moves allocations toward targets (219ms)
+Balanced state allocations: 4666.7%, 3333.3%, 2000.0%
+Deterministic selection distribution when near targets:
+Vault1: 12 selections
+Vault2: 4 selections
+Vault3: 4 selections
+      ✔ Should demonstrate deterministic behavior when all vaults are at target (185ms)
+    System Integration
+      ✔ Should maintain total value integrity across operations
+      ✔ Should emit proper allocation snapshots
+    Deterministic Gas Efficiency Tests
+Deterministic implementation gas usage: 458400
+      ✔ Should achieve efficient gas usage with deterministic selection
+Gas usage across scenarios: [
+  '458390', '439379',
+  '446438', '329861',
+  '387870', '387870',
+  '387466'
+]
+      ✔ Should maintain consistent gas usage across different vault selection scenarios
+    Deterministic Edge Case Validation
+      ✔ Should handle single active vault scenario deterministically
+Convergence progression:
+  Iteration 5: [8000.0%, 1600.0%, 400.0%]
+  Iteration 10: [6666.7%, 2000.0%, 1333.3%]
+  Iteration 15: [5714.3%, 2571.4%, 1714.3%]
+  Iteration 20: [5000.0%, 3000.0%, 2000.0%]
+      ✔ Should demonstrate predictable convergence over time (51ms)
+Deterministic vault selections over 5 identical deposits: [
+  [ '0xa9e6bfa2bf53de88feb19761d9b2ee2e821bf1bf' ],
+  [ '0xa9e6bfa2bf53de88feb19761d9b2ee2e821bf1bf' ],
+  [ '0x1e3b98102e19d3a164d239bdd190913c2f02e756' ],
+  [ '0xa9e6bfa2bf53de88feb19761d9b2ee2e821bf1bf' ],
+  [ '0x1e3b98102e19d3a164d239bdd190913c2f02e756' ]
+]
+      ✔ Should demonstrate reproducible vault selection with same inputs (38ms)
+
+  DStakeRouterV2 Fixes Tests
+    Test 1: Withdrawal Shortfall and Remainder Handling
+duplicate definition - ArrayLengthMismatch()
+duplicate definition - ArrayLengthMismatch()
+Vault 0 (0x1D8D70AD07C8E7E442AD78E4AC0A16f958Eba7F0) has 10000.0 shares
+Vault 1 (0xA9e6Bfa2BF53dE88FEb19761D9b2eE2e821bF1Bf) has 5999.995402083545896013 shares
+Vault 2 (0x1E3b98102e19D3a164d239BdD190913C2F02E756) has 3999.997146121138707406 shares
+      ✔ Should handle liquidity shortfall with single-vault deterministic selection
+      2) Should properly distribute remainder in withdrawals
+      ✔ Should revert when total system liquidity is insufficient
+      ✔ Should handle edge case of partial vault liquidity
+    Test 2: Proportional Deposits by Underallocation
+      3) Should split deposits proportionally to underallocations
+      ✔ Should distribute remainder correctly in proportional splits
+      4) Should fallback to even split when all vaults are balanced
+      ✔ Should handle zero underallocations correctly
+    Test 3: ExchangeCollateral Math
+      5) Should use previewWithdraw for calculating exchange shares
+      ✔ Should handle exchange with vault fees correctly
+      ✔ Should handle slippage within reasonable bounds
+      ✔ Should revert exchange from inactive vault
+      ✔ Should revert exchange to inactive vault
+    Test 4: Allocation Total Validation
+      ✔ Should return true when total allocations equal 1,000,000 bps
+      ✔ Should return false when total allocations don't equal 1,000,000 bps
+      ✔ Should handle edge case of zero allocations
+      ✔ Should validate after vault removal
+      ✔ Should work with maximum basis points
+      ✔ Should detect over-allocation beyond 100%
+      ✔ Should detect under-allocation below 100%
+      ✔ Should handle precision edge cases
+    Test 5: Optimized getVaultBalance
+      ✔ Should return same values for both getVaultBalance methods
+      ✔ Should handle vaults with zero balances
+      ✔ Should avoid self-calls in optimized version
+      ✔ Should handle adapter lookup failures gracefully
+      ✔ Should handle adapter conversion failures gracefully
+      ✔ Should handle ERC20 balanceOf failures gracefully
+    Security Fixes Tests
+      Test 1: Allowance Clearing
+        ✔ Should clear allowances after deposit operations
+        ✔ Should clear allowances after withdrawal operations
+        ✔ Should not leave residual allowances in adapter contracts
+      Test 2: ExchangeCollateral Slippage Protection
+        6) Should succeed with proper minToVaultAssetAmount
+        ✔ Should revert when actual output is less than minToVaultAssetAmount
+        ✔ Should work with minToVaultAssetAmount = 0 (no protection)
+        ✔ Should handle edge case with very small slippage tolerance
+      Test 3: ExchangeCollateral Reentrancy Protection
+        ✔ Should verify nonReentrant modifier is present
+        ✔ Should handle multiple concurrent exchanges correctly
+        ✔ Should prevent reentrancy during exchange operations
+      Test 4: MetaMorphoConversionAdapter Admin Role
+        ✔ Should deploy adapter with custom initialAdmin
+        ✔ Should verify both initialAdmin and collateralVault have DEFAULT_ADMIN_ROLE
+        ✔ Should allow initialAdmin to call setMaxSlippage
+        ✔ Should revert deployment with zero address initialAdmin
+        ✔ Should allow collateralVault admin role to call setMaxSlippage
+        ✔ Should properly handle admin role transfers
+    Integration Test: Combined Fixes
+      ✔ Should demonstrate all fixes working together (49ms)
+
+  DStake Solver Mode Tests
+    Solver Mode: solverDepositAssets
+duplicate definition - ArrayLengthMismatch()
+duplicate definition - ArrayLengthMismatch()
+✅ Granted all necessary roles to router contract
+✅ Granted additional roles for testing
+✅ Set router and granted ROUTER_ROLE on collateralVault
+✅ Set vault configurations and added supported assets to collateralVault
+✅ Supported assets in collateralVault: Result(3) [
+  '0x1D8D70AD07C8E7E442AD78E4AC0A16f958Eba7F0',
+  '0xA9e6Bfa2BF53dE88FEb19761D9b2eE2e821bF1Bf',
+  '0x1E3b98102e19D3a164d239BdD190913C2F02E756'
+]
+✅ Final supported assets in collateralVault: Result(3) [
+  '0x1D8D70AD07C8E7E442AD78E4AC0A16f958Eba7F0',
+  '0xA9e6Bfa2BF53dE88FEb19761D9b2eE2e821bF1Bf',
+  '0x1E3b98102e19D3a164d239BdD190913C2F02E756'
+]
+✅ Set router on dStakeToken
+      ✔ Should deposit assets into multiple vaults via DStakeToken
+      ✔ Should revert with slippage protection when minShares not met
+      ✔ Should revert when vaults and assets arrays have mismatched lengths
+      ✔ Should revert when empty arrays provided
+      ✔ Should revert when total assets is zero
+    Solver Mode: solverDepositShares
+      ✔ Should deposit shares into multiple vaults via DStakeToken
+      ✔ Should handle zero shares correctly
+    Solver Mode: solverWithdrawAssets
+      ✔ Should withdraw assets from multiple vaults via DStakeToken
+      ✔ Should revert when maxShares exceeded
+      ✔ Should handle partial withdrawals correctly
+    Solver Mode: solverWithdrawShares
+      ✔ Should withdraw shares from multiple vaults via DStakeToken
+      ✔ Should handle zero vault shares correctly
+    Solver Mode: Atomic Failure Behavior
+      ✔ Should revert entire solverDepositAssets transaction if one vault fails
+      ✔ Should revert entire solverWithdrawAssets transaction if one vault fails
+    Solver Mode: Direct Router Calls
+      ✔ Should allow direct solverDepositAssets call with proper role
+      ✔ Should revert direct router call without proper role
+      ✔ Should allow direct solverWithdrawAssets call with proper role
+    Solver Mode: Event Emissions
+      ✔ Should emit proper events for solverDepositAssets
+      ✔ Should emit proper events for solverWithdrawShares with fees
+    Solver Mode: Share Accounting Correctness
+      ✔ Should maintain correct share accounting across multiple solver deposits
+      ✔ Should maintain correct accounting during solver withdrawals
+    Solver Mode: Complex Multi-User Scenarios
+      ✔ Should handle concurrent solver operations correctly
+
+  DStakeToken for sdUSD
+    Initialization & State
+      - Should set immutable dStable address via asset()
+      - Should revert initialize if dStable address is zero
+      - Should grant DEFAULT_ADMIN_ROLE to initialAdmin
+      - Should have collateralVault and router set from fixture
+      - Should set maxWithdrawalFeeBps constant
+      - New instance withdrawalFeeBps should be zero by default
+      - Fixture withdrawalFeeBps should equal initial config value
+      - Should have correct name and symbol
+      - Should use same decimals as underlying dStable
+    Role-Based Access Control & Configuration
+      setCollateralVault
+        - Should allow admin to set collateralVault
+        - Should revert if non-admin calls setCollateralVault
+        - Should revert if setting collateralVault to zero
+      setRouter
+        - Should allow admin to set router
+        - Should revert if non-admin calls setRouter
+        - Should revert if setting router to zero
+      Role Management
+        - Should allow admin to grant and revoke FEE_MANAGER_ROLE
+      setWithdrawalFee
+        - Should allow fee manager to set withdrawal fee
+        - Should revert if non-fee-manager sets withdrawal fee
+        - Should revert if fee exceeds maxWithdrawalFeeBps
+        - Should allow setting fee to 0
+    ERC4626 Core Functionality (Deposits & Minting)
+      - totalAssets returns 0 if collateralVault not set
+      - totalAssets returns 0 if collateralVault has no assets
+      - totalAssets delegates correctly to collateralVault
+      - previewDeposit returns expected shares
+      - maxDeposit returns uint256 max
+      convertToShares & convertToAssets
+        - should handle zero correctly
+        - should convert assets to shares 1:1 when empty
+        - should reflect share price change when vault has extra assets
+      deposit function
+        - should revert if router not set
+        - should revert with ERC20InvalidReceiver when receiver is zero
+        - should revert on insufficient balance
+        - should mint shares and emit Deposit event
+      mint function
+        - should mint shares and emit Deposit event via mint
+    ERC4626 Core Functionality (Withdrawals & Redeeming)
+      - previewWithdraw returns expected shares
+      - previewRedeem returns expected assets
+      - maxWithdraw returns deposit amount
+      - maxRedeem returns share balance
+      - should withdraw assets and burn shares
+      - should redeem shares and transfer assets
+    ERC4626 Withdrawals & Redeeming with Fees
+      - should withdraw assets with fee deducted
+      - should redeem shares with fee deducted
+      - previewWithdraw returns expected shares including fee
+      - previewRedeem returns expected assets after fee
+      - maxWithdraw returns net amount after fee and allows full withdrawal
+    Security: Unauthorized withdrawal protection
+      - should prevent unauthorized withdrawal without allowance
+      - should prevent unauthorized redeem without allowance
+      - should allow withdrawal with proper allowance
+
+  DStakeToken for sdETH
+    Initialization & State
+      - Should set immutable dStable address via asset()
+      - Should revert initialize if dStable address is zero
+      - Should grant DEFAULT_ADMIN_ROLE to initialAdmin
+      - Should have collateralVault and router set from fixture
+      - Should set maxWithdrawalFeeBps constant
+      - New instance withdrawalFeeBps should be zero by default
+      - Fixture withdrawalFeeBps should equal initial config value
+      - Should have correct name and symbol
+      - Should use same decimals as underlying dStable
+    Role-Based Access Control & Configuration
+      setCollateralVault
+        - Should allow admin to set collateralVault
+        - Should revert if non-admin calls setCollateralVault
+        - Should revert if setting collateralVault to zero
+      setRouter
+        - Should allow admin to set router
+        - Should revert if non-admin calls setRouter
+        - Should revert if setting router to zero
+      Role Management
+        - Should allow admin to grant and revoke FEE_MANAGER_ROLE
+      setWithdrawalFee
+        - Should allow fee manager to set withdrawal fee
+        - Should revert if non-fee-manager sets withdrawal fee
+        - Should revert if fee exceeds maxWithdrawalFeeBps
+        - Should allow setting fee to 0
+    ERC4626 Core Functionality (Deposits & Minting)
+      - totalAssets returns 0 if collateralVault not set
+      - totalAssets returns 0 if collateralVault has no assets
+      - totalAssets delegates correctly to collateralVault
+      - previewDeposit returns expected shares
+      - maxDeposit returns uint256 max
+      convertToShares & convertToAssets
+        - should handle zero correctly
+        - should convert assets to shares 1:1 when empty
+        - should reflect share price change when vault has extra assets
+      deposit function
+        - should revert if router not set
+        - should revert with ERC20InvalidReceiver when receiver is zero
+        - should revert on insufficient balance
+        - should mint shares and emit Deposit event
+      mint function
+        - should mint shares and emit Deposit event via mint
+    ERC4626 Core Functionality (Withdrawals & Redeeming)
+      - previewWithdraw returns expected shares
+      - previewRedeem returns expected assets
+      - maxWithdraw returns deposit amount
+      - maxRedeem returns share balance
+      - should withdraw assets and burn shares
+      - should redeem shares and transfer assets
+    ERC4626 Withdrawals & Redeeming with Fees
+      - should withdraw assets with fee deducted
+      - should redeem shares with fee deducted
+      - previewWithdraw returns expected shares including fee
+      - previewRedeem returns expected assets after fee
+      - maxWithdraw returns net amount after fee and allows full withdrawal
+    Security: Unauthorized withdrawal protection
+      - should prevent unauthorized withdrawal without allowance
+      - should prevent unauthorized redeem without allowance
+      - should allow withdrawal with proper allowance
+
+  Fee Accounting Regression Test
+    Fee Accounting in totalAssets()
+      7) Should include dStable balance held by DStakeToken contract in totalAssets()
+      8) Should properly account for accumulated fees from multiple solver withdrawals
+      9) Should maintain accurate share pricing with accumulated fees
+    reinvestFees() Function
+      10) "before each" hook for "Should reinvest accumulated fees back into the vault"
+    Value Conservation Under Multiple Operations
+      11) Should maintain total value across multiple solver withdrawals and reinvestments
+      12) Should handle edge case with zero fees correctly
+      13) Should handle large withdrawal with significant fees
+    Integration with Share Pricing
+      14) Should ensure no value leakage from accounting set
