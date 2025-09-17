@@ -305,15 +305,15 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         initialWithdrawalFeeBps: 10,
         adapters: [
           {
-            vaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
+            strategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
+        defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
         collateralVault: "DStakeCollateralVault_sdUSD",
         collateralExchangers: [user1],
         dLendRewardManager: {
-          managedVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // This should be the deployed StaticATokenLM address for dUSD
+          managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // This should be the deployed StaticATokenLM address for dUSD
           dLendAssetToClaimFor: emptyStringIfUndefined(aTokenDUSDDeployment?.address), // Use the deployed dLEND-dUSD aToken address
           dLendRewardsController: emptyStringIfUndefined(rewardsControllerDeployment?.address), // This will be fetched after dLend incentives deployment
           treasury: user1, // Or a dedicated treasury address
@@ -333,15 +333,15 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         initialWithdrawalFeeBps: 10,
         adapters: [
           {
-            vaultAsset: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
+            strategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
+        defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
         collateralVault: "DStakeCollateralVault_sdETH",
         collateralExchangers: [user1],
         dLendRewardManager: {
-          managedVaultAsset: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address), // This should be the deployed StaticATokenLM address for dETH
+          managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address), // This should be the deployed StaticATokenLM address for dETH
           dLendAssetToClaimFor: emptyStringIfUndefined(dETHDeployment?.address), // Use the dETH underlying asset address as a placeholder
           dLendRewardsController: emptyStringIfUndefined(rewardsControllerDeployment?.address), // This will be fetched after dLend incentives deployment
           treasury: user1, // Or a dedicated treasury address

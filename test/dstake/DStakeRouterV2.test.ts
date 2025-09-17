@@ -256,7 +256,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     // Setup additional roles and permissions
     const DSTAKE_TOKEN_ROLE = await routerContract.DSTAKE_TOKEN_ROLE();
-    const COLLATERAL_EXCHANGER_ROLE = await routerContract.COLLATERAL_EXCHANGER_ROLE();
+    const STRATEGY_REBALANCER_ROLE = await routerContract.STRATEGY_REBALANCER_ROLE();
     const PAUSER_ROLE = await routerContract.PAUSER_ROLE();
     const ROUTER_ROLE = await collateralVaultContract.ROUTER_ROLE();
     
@@ -265,9 +265,9 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     // Grant roles to appropriate addresses
     await routerContract.grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, collateralExchangerSigner.address);
-    // Grant COLLATERAL_EXCHANGER_ROLE to the router contract itself for internal calls
-    await routerContract.grantRole(COLLATERAL_EXCHANGER_ROLE, routerAddress);
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
+    // Grant STRATEGY_REBALANCER_ROLE to the router contract itself for internal calls
+    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
     await routerContract.grantRole(PAUSER_ROLE, ownerSigner.address);
     
     console.log("✅ Granted additional roles for testing");
@@ -330,20 +330,20 @@ describe("DStakeRouterV2 Integration Tests", function () {
     await routerContract.setVaultConfigs(vaultConfigs);
     console.log("✅ Set vault configurations and added supported assets to collateralVault");
     
-    // Verify that vault assets are properly added to supportedAssets and fix if needed
+    // Verify that strategy shares are properly added to supportedAssets and fix if needed
     let supportedAssets = await collateralVaultContract.getSupportedAssets();
     console.log("✅ Supported assets in collateralVault:", supportedAssets);
     
-    // Manually ensure each vault asset is supported by calling addAdapter on the router if needed
+    // Manually ensure each strategy share is supported by calling addAdapter on the router if needed
     for (let i = 0; i < vaultConfigs.length; i++) {
-      const vaultAsset = vaultConfigs[i].vault;
+      const strategyShare = vaultConfigs[i].vault;
       const adapter = vaultConfigs[i].adapter;
-      
-      if (!supportedAssets.includes(vaultAsset)) {
-        console.log(`⚠️ Vault asset ${vaultAsset} not in supported assets, calling addAdapter...`);
-        // Call addAdapter to ensure the vault asset is added to supported assets
-        await routerContract.addAdapter(vaultAsset, adapter);
-        console.log(`✅ Called addAdapter for ${vaultAsset} -> ${adapter}`);
+
+      if (!supportedAssets.includes(strategyShare)) {
+        console.log(`⚠️ Strategy share ${strategyShare} not in supported assets, calling addAdapter...`);
+        // Call addAdapter to ensure the strategy share is added to supported assets
+        await routerContract.addAdapter(strategyShare, adapter);
+        console.log(`✅ Called addAdapter for ${strategyShare} -> ${adapter}`);
       }
     }
     
@@ -631,11 +631,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
       
-      // Find DeterministicDeposit event (or WeightedDeposit for backward compatibility)
+      // Find DeterministicDeposit event (or StrategyDepositRouted for backward compatibility)
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit" || decoded?.name === "DeterministicDeposit";
+          return decoded?.name === "StrategyDepositRouted" || decoded?.name === "DeterministicDeposit";
         } catch {
           return false;
         }
@@ -809,7 +809,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const exchangeAmount = ethers.parseEther("1000");
       
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1.target,
           vault2.target,
           exchangeAmount,
@@ -838,7 +838,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const exchangeAmount = ethers.parseEther("1000");
       
       await expect(
-        router.connect(collateralExchanger).exchangeCollateral(
+        router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1.target,
           vault2.target,
           exchangeAmount,
@@ -851,7 +851,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const exchangeAmount = ethers.parseEther("1000");
       
       await expect(
-        router.connect(alice).exchangeCollateral(
+        router.connect(alice).rebalanceStrategiesByValue(
           vault1.target,
           vault2.target,
           exchangeAmount,
@@ -1099,7 +1099,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1117,7 +1117,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const weightedDepositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1387,15 +1387,15 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const depositAmount = ethers.parseEther("500");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         
-        // Listen for WeightedDeposit event to see which vaults were selected
+        // Listen for StrategyDepositRouted event to see which vaults were selected
         const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
         const receipt = await tx.wait();
         
-        // Find WeightedDeposit event
+        // Find StrategyDepositRouted event
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1463,7 +1463,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const weightedDepositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }
@@ -1542,11 +1542,11 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
       
-      // Verify WeightedDeposit was emitted
+      // Verify StrategyDepositRouted was emitted
       const weightedDepositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1649,7 +1649,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       const depositEvent = receipt.logs.find(log => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "WeightedDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -1740,7 +1740,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         const depositEvent = receipt.logs.find(log => {
           try {
             const decoded = router.interface.parseLog(log);
-            return decoded?.name === "WeightedDeposit";
+            return decoded?.name === "StrategyDepositRouted";
           } catch {
             return false;
           }

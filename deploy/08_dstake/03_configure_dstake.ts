@@ -56,7 +56,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing adapters array for dSTAKE instance ${instanceKey}`);
     }
 
-    // Note: defaultDepositVaultAsset might not be available if dLend is not deployed
+    // Note: defaultDepositStrategyShare might not be available if dLend is not deployed
     // In test environments, MetaMorpho adapters will set this up separately
 
     if (!instanceConfig.collateralExchangers || !Array.isArray(instanceConfig.collateralExchangers)) {
@@ -135,54 +135,54 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       }
 
       const adapterDeployment = await get(adapterDeploymentName);
-      const vaultAssetAddress = adapterConfig.vaultAsset;
+      const strategyShareAddress = adapterConfig.strategyShare;
 
-      // Skip if vault asset is not valid
-      if (!vaultAssetAddress || vaultAssetAddress === ethers.ZeroAddress) {
-        console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - vault asset not available`);
+      // Skip if strategy share is not valid
+      if (!strategyShareAddress || strategyShareAddress === ethers.ZeroAddress) {
+        console.log(`    ⚠️  Skipping adapter ${adapterDeploymentName} - strategy share not available`);
         continue;
       }
 
-      const existingAdapter = await routerContract.vaultAssetToAdapter(vaultAssetAddress);
+      const existingAdapter = await routerContract.strategyShareToAdapter(strategyShareAddress);
 
       if (existingAdapter === ethers.ZeroAddress) {
-        await routerContract.connect(deployerSigner).addAdapter(vaultAssetAddress, adapterDeployment.address);
-        console.log(`    ➕ Added adapter ${adapterDeploymentName} for asset ${vaultAssetAddress} to ${routerDeploymentName}`);
+        await routerContract.connect(deployerSigner).addAdapter(strategyShareAddress, adapterDeployment.address);
+        console.log(`    ➕ Added adapter ${adapterDeploymentName} for strategy share ${strategyShareAddress} to ${routerDeploymentName}`);
       } else if (existingAdapter !== adapterDeployment.address) {
         throw new Error(
-          `⚠️ Adapter for asset ${vaultAssetAddress} in router is already set to ${existingAdapter} but config expects ${adapterDeployment.address}. Manual intervention may be required.`
+          `⚠️ Adapter for strategy share ${strategyShareAddress} in router is already set to ${existingAdapter} but config expects ${adapterDeployment.address}. Manual intervention may be required.`
         );
       } else {
         console.log(
-          `    👍 Adapter ${adapterDeploymentName} for asset ${vaultAssetAddress} already configured correctly in ${routerDeploymentName}`
+          `    👍 Adapter ${adapterDeploymentName} for strategy share ${strategyShareAddress} already configured correctly in ${routerDeploymentName}`
         );
       }
     }
 
     // --- Configure DStakeRouter --- // This part already uses Typechain
-    const collateralExchangerRole = await routerContract.COLLATERAL_EXCHANGER_ROLE();
+    const collateralExchangerRole = await routerContract.STRATEGY_REBALANCER_ROLE();
 
     for (const exchanger of instanceConfig.collateralExchangers) {
       const hasRole = await routerContract.hasRole(collateralExchangerRole, exchanger);
 
       if (!hasRole) {
         await routerContract.grantRole(collateralExchangerRole, exchanger);
-        console.log(`    ➕ Granted COLLATERAL_EXCHANGER_ROLE to ${exchanger} for ${routerDeploymentName}`);
+        console.log(`    ➕ Granted STRATEGY_REBALANCER_ROLE to ${exchanger} for ${routerDeploymentName}`);
       }
     }
 
     // Adapters have already been configured above
 
-    // Set default deposit vault asset if configured
-    if (instanceConfig.defaultDepositVaultAsset && instanceConfig.defaultDepositVaultAsset !== ethers.ZeroAddress) {
-      const currentDefaultAsset = await routerContract.defaultDepositVaultAsset();
+    // Set default deposit strategy share if configured
+    if (instanceConfig.defaultDepositStrategyShare && instanceConfig.defaultDepositStrategyShare !== ethers.ZeroAddress) {
+      const currentDefaultAsset = await routerContract.defaultDepositStrategyShare();
 
-      if (currentDefaultAsset !== instanceConfig.defaultDepositVaultAsset) {
-        await routerContract.setDefaultDepositVaultAsset(instanceConfig.defaultDepositVaultAsset);
-        console.log(`    ⚙️ Set default deposit vault asset for ${routerDeploymentName}`);
+      if (currentDefaultAsset !== instanceConfig.defaultDepositStrategyShare) {
+        await routerContract.setDefaultDepositStrategyShare(instanceConfig.defaultDepositStrategyShare);
+        console.log(`    ⚙️ Set default deposit strategy share for ${routerDeploymentName}`);
       }
     } else {
-      console.log(`    ⚠️  No defaultDepositVaultAsset configured for ${instanceKey}, will be set by adapter deployment script`);
+      console.log(`    ⚠️  No defaultDepositStrategyShare configured for ${instanceKey}, will be set by adapter deployment script`);
     }
   }
 

@@ -80,7 +80,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     IDStableConversionAdapter fromAdapter;
     IDStableConversionAdapter toAdapter;
     uint256 dStableValueIn;
-    uint256 calculatedToVaultAssetAmount;
+    uint256 calculatedToStrategyShareAmount;
   }
 
   enum OperationType {
@@ -434,7 +434,14 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    emit StrategySharesExchanged(fromStrategyShare, toStrategyShare, fromShareAmount, resultingToShareAmount, dStableAmountEquivalent, msg.sender);
+    emit StrategySharesExchanged(
+      fromStrategyShare,
+      toStrategyShare,
+      fromShareAmount,
+      resultingToShareAmount,
+      dStableAmountEquivalent,
+      msg.sender
+    );
   }
 
   function swapStrategySharesWithOperator(
@@ -461,13 +468,13 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     (address expectedToShare, uint256 tmpToAmount) = locals.toAdapter.previewDepositIntoStrategy(locals.dStableValueIn);
     if (expectedToShare != toStrategyShare) revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, expectedToShare);
-    locals.calculatedToVaultAssetAmount = tmpToAmount;
+    locals.calculatedToStrategyShareAmount = tmpToAmount;
 
-    if (locals.calculatedToVaultAssetAmount < minToShareAmount) {
-      revert SlippageCheckFailed(toStrategyShare, locals.calculatedToVaultAssetAmount, minToShareAmount);
+    if (locals.calculatedToStrategyShareAmount < minToShareAmount) {
+      revert SlippageCheckFailed(toStrategyShare, locals.calculatedToStrategyShareAmount, minToShareAmount);
     }
 
-    collateralVault.transferStrategyShares(toStrategyShare, locals.calculatedToVaultAssetAmount, msg.sender);
+    collateralVault.transferStrategyShares(toStrategyShare, locals.calculatedToStrategyShareAmount, msg.sender);
 
     IERC20(fromStrategyShare).safeTransferFrom(msg.sender, address(this), fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, fromShareAmount);
@@ -475,13 +482,21 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
     IERC20(dStable).forceApprove(locals.toAdapterAddress, receivedDStable);
     (address actualToStrategyShare, uint256 resultingToShareAmount) = locals.toAdapter.depositIntoStrategy(receivedDStable);
-    if (actualToStrategyShare != toStrategyShare) revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
+    if (actualToStrategyShare != toStrategyShare)
+      revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
     if (resultingToShareAmount < minToShareAmount) {
       revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
 
-    emit StrategySharesExchanged(fromStrategyShare, toStrategyShare, fromShareAmount, resultingToShareAmount, locals.dStableValueIn, msg.sender);
+    emit StrategySharesExchanged(
+      fromStrategyShare,
+      toStrategyShare,
+      fromShareAmount,
+      resultingToShareAmount,
+      locals.dStableValueIn,
+      msg.sender
+    );
   }
 
   function rebalanceStrategiesByValue(
@@ -565,7 +580,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
     if (mintedShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, mintedShare);
 
-    emit SurplusSwept(amountToSweep, mintedAsset);
+    emit SurplusSwept(amountToSweep, mintedShare);
   }
 
   // --- Vault Configuration ---
@@ -704,7 +719,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     return maxVaultsPerOperation < activeCount ? maxVaultsPerOperation : activeCount;
   }
 
-
   function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
     require(msg.sender == address(this), "Only self-callable");
     // This is called by this contract only, for auto-routing retries
@@ -762,11 +776,11 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
-    (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);
+    (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);
     if (receivedDStable == 0) revert NoLiquidityAvailable();
 
     IERC20(vault).forceApprove(adapter, 0);
-    emit Withdrawn(vault, vaultAssetAmount, receivedDStable, msg.sender, msg.sender);
+    emit Withdrawn(vault, strategyShareAmount, receivedDStable, msg.sender, msg.sender);
   }
 
   function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal {
@@ -798,44 +812,44 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   function _withdrawFromVault(
     address vault,
     uint256 dStableAmount
-  ) internal returns (uint256 receivedDStable, uint256 vaultAssetAmount, address adapter) {
+  ) internal returns (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
     adapter = config.adapter;
     IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
 
     // Use the vault's direct preview without slippage discount for planning
     // The adapter's preview includes slippage which is for conservative estimation only
-    vaultAssetAmount = IERC4626(vault).previewWithdraw(dStableAmount);
-    if (vaultAssetAmount == 0) revert ZeroPreviewWithdrawAmount(vault);
+    strategyShareAmount = IERC4626(vault).previewWithdraw(dStableAmount);
+    if (strategyShareAmount == 0) revert ZeroPreviewWithdrawAmount(vault);
 
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
-    if (vaultAssetAmount > availableShares) {
+    if (strategyShareAmount > availableShares) {
       // Don't silently truncate - revert if insufficient shares
       revert NoLiquidityAvailable();
     }
 
-    if (vaultAssetAmount == 0) {
+    if (strategyShareAmount == 0) {
       return (0, 0, adapter);
     }
 
-    collateralVault.transferStrategyShares(vault, vaultAssetAmount, address(this));
-    IERC20(vault).forceApprove(adapter, vaultAssetAmount);
+    collateralVault.transferStrategyShares(vault, strategyShareAmount, address(this));
+    IERC20(vault).forceApprove(adapter, strategyShareAmount);
 
-    try conversionAdapter.withdrawFromStrategy(vaultAssetAmount) returns (uint256 converted) {
+    try conversionAdapter.withdrawFromStrategy(strategyShareAmount) returns (uint256 converted) {
       receivedDStable = converted;
       // Verify we received at least what was requested
       // If not, this vault cannot fulfill the request (slippage/fees too high)
       if (receivedDStable < dStableAmount) {
         // Clean up and revert - let auto-routing try another vault
         IERC20(vault).forceApprove(adapter, 0);
-        IERC20(vault).safeTransfer(address(collateralVault), vaultAssetAmount);
+        IERC20(vault).safeTransfer(address(collateralVault), strategyShareAmount);
         revert SlippageCheckFailed(vault, receivedDStable, dStableAmount);
       }
     } catch {
       // If conversion fails (e.g., due to slippage/fees), clean up and return 0
       // This allows the withdrawal plan to continue with other vaults
       IERC20(vault).forceApprove(adapter, 0);
-      IERC20(vault).safeTransfer(address(collateralVault), vaultAssetAmount);
+      IERC20(vault).safeTransfer(address(collateralVault), strategyShareAmount);
       return (0, 0, adapter);
     }
   }

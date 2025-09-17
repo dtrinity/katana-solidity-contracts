@@ -12,9 +12,9 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - Custodies collected fees until `reinvestFees()` is called, paying an optional caller incentive before routing the balance back through the router.
 
 - `DStakeCollateralVault` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVault.sol`)
-  - Holds ERC20 “vault assets” (e.g., ERC4626 wrapper shares) and exposes `totalValueInDStable()`.
-  - Maintains a registry of supported assets; adapters can be rotated without migrating balances.
-  - Allows governance to delist an asset even if dust remains (removes previous griefing vector).
+  - Holds ERC20 "strategy shares" (e.g., ERC4626 wrapper shares from upstream strategies) and exposes `totalValueInDStable()`.
+  - Maintains a registry of supported strategy shares; adapters can be rotated without migrating balances.
+  - Allows governance to delist strategy shares even if dust remains (removes previous griefing vector).
   - Grants `ROUTER_ROLE` to the active router so only the router can move collateral.
 
 - `DStakeRouterV2` – deterministic orchestrator (`contracts/vaults/dstake/DStakeRouterV2.sol`)
@@ -24,50 +24,50 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - Supports collateral exchanges, pausing, dust tolerance settings, surplus sweeping, and vault health checks.
 
 - Adapters (`contracts/vaults/dstake/adapters/`)
-  - Implement `IDStableConversionAdapter`. Each adapter knows how to convert dSTABLE ↔ a specific vault asset and report valuations in dSTABLE terms.
-  - Must mint/burn directly against the collateral vault. Examples: MetaMorpho, wrapped lending tokens.
+  - Implement `IDStableConversionAdapter`. Each adapter knows how to convert dSTABLE ↔ specific strategy shares and report valuations in dSTABLE terms.
+  - Must mint/burn strategy shares directly against the collateral vault. Examples: MetaMorpho, wrapped lending tokens.
 
 - Rewards (optional) (`contracts/vaults/dstake/rewards/`)
-  - Strategy-specific helpers that periodically claim and compound incentive tokens back into dSTABLE or vault assets.
+  - Strategy-specific helpers that periodically claim and compound incentive tokens back into dSTABLE or strategy shares.
 
 ### Flow of Funds
 
 - **User deposit / mint**
   1. dSTABLE moves into `DStakeToken` via `deposit()`/`mint()`.
   2. The token approves the router and calls `router.deposit(amount)`.
-  3. Router pulls dSTABLE, selects the healthiest under-allocated vault, and converts into the corresponding vault asset through its adapter. Collateral lands in the collateral vault.
+  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and converts into the corresponding strategy shares through its adapter. Strategy shares land in the collateral vault.
   4. Shares are minted to the user according to totalAssets() (which includes any pending fee balance held by the token).
 
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
-  3. Router iterates over over-allocated vaults (most overweight first) and converts collateral back to dSTABLE until the amount is satisfied, then transfers the funds to the receiver.
+  3. Router iterates over over-allocated strategies (most overweight first) and converts strategy shares back to dSTABLE until the amount is satisfied, then transfers the funds to the receiver.
   4. Withdrawal fees remain temporarily inside `DStakeToken` until reinvested.
 
 - **Solver flows**
-  - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts allow off-chain automation to specify exact vault allocations. These entry points still enforce ERC4626 previews, pull/burn shares on behalf of the owner, and rely on adapters for conversions.
+  - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts allow off-chain automation to specify exact strategy allocations. These entry points still enforce ERC4626 previews, pull/burn shares on behalf of the owner, and rely on adapters for conversions.
   - Solver withdrawals return the gross dSTABLE to the token; the token handles fee deduction and event emission before forwarding net amounts.
 
 - **Fee reinvestment**
   - `reinvestFees()` re-deploys accumulated withdrawal fees via the router after optionally paying the caller an incentive (capped at 20% per `MAX_REINVEST_INCENTIVE_BPS`). This keeps totalAssets() aligned with collateral growth and ensures fees compound with the rest of the portfolio.
 
 - **Collateral exchanges & rebalances**
-  - Governance or operations can trigger `exchangeCollateral` / `exchangeAssetsUsingAdapters` to move exposure between strategies. These functions work entirely in dSTABLE terms, consult adapter previews, enforce slippage via `dustTolerance`, and stage transfers through the collateral vault.
-  - `sweepSurplus()` converts any dSTABLE left on the router (for example from rounding during withdrawals) back into the default deposit vault asset.
+  - Governance or operations can trigger `rebalanceStrategiesByValue` / `exchangeAssetsUsingAdapters` to move exposure between strategies. These functions work entirely in dSTABLE terms, consult adapter previews, enforce slippage via `dustTolerance`, and stage transfers through the collateral vault.
+  - `sweepSurplus()` converts any dSTABLE left on the router (for example from rounding during withdrawals) back into the default deposit strategy shares.
 
 ### Router V2 Details
 
-- **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight vault; auto withdrawals start with the most overweight vault.
-- **Single-vault user ops** – `maxVaultsPerOperation` defaults to `1`, so standard deposits and withdrawals attempt one vault per call. Increase the value if governance wants native multi-vault routing without solvers.
-- **Health checks & liveness** – Vaults must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy vaults are skipped automatically.
-- **Adapter registry** – `_vaultAssetToAdapter` pairs vault assets with adapters. Adding an active vault automatically registers the adapter and whitelists the asset on the collateral vault. Removing a vault also evacuates the adapter mapping.
-- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositVaultAsset`, `setDustTolerance`, `setMaxVaultCount`, `setMaxVaultsPerOperation`, and `pause`/`unpause` live on the router under dedicated roles.
+- **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight strategy; auto withdrawals start with the most overweight strategy.
+- **Single-strategy user ops** – `maxVaultsPerOperation` defaults to `1`, so standard deposits and withdrawals attempt one strategy per call. Increase the value if governance wants native multi-strategy routing without solvers.
+- **Health checks & liveness** – Strategies must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy strategies are skipped automatically.
+- **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
+- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, `setMaxVaultsPerOperation`, and `pause`/`unpause` live on the router under dedicated roles.
 - **Collateral exchanges** – Exchanges validate adapter previews in both directions and enforce `dustTolerance` when comparing expected vs realised dSTABLE value, preventing silent degradation across strategies.
-- **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default vault via `sweepSurplus()`. `ShortfallCovered` / `SurplusHeld` events surface when rounding buffers move funds between contracts.
+- **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default strategy via `sweepSurplus()`. `ShortfallCovered` / `SurplusHeld` events surface when rounding buffers move funds between contracts.
 
 ### DStakeToken Mechanics
 
-- **totalAssets()** – Returns collateral-vault TVL plus any dSTABLE balance sitting on the token (primarily accumulated withdrawal fees). After a full withdrawal the vault may still report value due to `dustTolerance` residual shares accruing yield; first depositor back in receives that windfall.
+- **totalAssets()** – Returns collateral-vault TVL plus any dSTABLE balance sitting on the token (primarily accumulated withdrawal fees). After a full withdrawal the strategy may still report value due to `dustTolerance` residual shares accruing yield; first depositor back in receives that windfall.
 - **Withdrawal fee plumbing** – Supports previews and limits through [`SupportsWithdrawalFee`](../../common/SupportsWithdrawalFee.sol). User-facing methods always accept/return net amounts while internal router calls use the gross amount once to avoid charging the fee twice.
 - **Solver functions** – Maintain allowances, ensure non-zero share burns for non-zero withdrawals, and delegate execution to router solver entry points. All flows emit standard ERC4626 events with net amounts for user accounting.
 - **Fee reinvestment & incentives** – `reinvestFees()` streams a caller incentive (set via `setReinvestIncentive`) before redeploying capital. Incentive and reinvestment events make it easy to audit the cadence of fee compounding.
@@ -75,10 +75,10 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Collateral Vault Notes
 
-- Enumerates supported assets via an `EnumerableSet` and exposes helpers for enumerating them (`supportedAssets`, `getSupportedAssets`).
+- Enumerates supported strategy shares via an `EnumerableSet` and exposes helpers for enumerating them (`supportedAssets`, `getSupportedAssets`).
 - Only the router (via `ROUTER_ROLE`) may move collateral or mutate the supported set; governance rotates routers with `setRouter`.
-- Allows asset removal even if a balance remains, so governance can delist griefed assets and recover funds manually if needed.
-- Rescue functions exist for miscellaneous tokens/ETH sent by mistake, but disallow extracting dSTABLE or any supported vault asset.
+- Allows strategy share removal even if a balance remains, so governance can delist griefed strategy shares and recover funds manually if needed.
+- Rescue functions exist for miscellaneous tokens/ETH sent by mistake, but disallow extracting dSTABLE or any supported strategy shares.
 
 ### Access Control Surface
 
@@ -112,9 +112,9 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 1. **Onboard a new strategy**
    - Implement `IDStableConversionAdapter` for the protocol and deploy it.
-   - Call `addAdapter(vaultAsset, adapter)` and grant `COLLATERAL_EXCHANGER_ROLE` if cross-strategy swaps are required.
+   - Call `addAdapter(strategyShare, adapter)` and grant `COLLATERAL_EXCHANGER_ROLE` if cross-strategy swaps are required.
    - Add a vault config (target BPS, activation flag). Ensure aggregate targets sum to 10,000 BPS.
-   - Optionally call `setDefaultDepositVaultAsset` to make the new vault the default for surplus sweeps.
+   - Optionally call `setDefaultDepositStrategyShare` to make the new strategy the default for surplus sweeps.
 
 2. **Rotate routers**
    - Deploy the new router with references to the token and collateral vault.
@@ -128,7 +128,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 4. **Rebalance exposure**
    - Use solver deposit/withdraw functions for one-off targeted moves without changing target allocations.
-   - For structural changes, update vault configs or run `exchangeCollateral` / `exchangeAssetsUsingAdapters` with conservative `min` values.
+   - For structural changes, update vault configs or run `rebalanceStrategiesByValue` / `exchangeAssetsUsingAdapters` with conservative `min` values.
 
 ### Developer Map
 
@@ -144,6 +144,6 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 - dSTAKE is an ERC4626 wrapper over dSTABLE that outsources allocation decisions to a deterministic router.
 - The router maintains the active vault set, matches capital to target weights, and uses adapters for protocol-specific conversions.
-- The collateral vault only stores assets and reports their dSTABLE value; all movement is orchestrated by the router.
+- The collateral vault only stores strategy shares and reports their dSTABLE value; all movement is orchestrated by the router.
 - Fees accrue on the token, get reinvested via the router, and the share price reflects upstream yield plus compounded fees.
 - Governance tunes routes, fees, incentives, and safety limits while solver flows keep operations flexible.

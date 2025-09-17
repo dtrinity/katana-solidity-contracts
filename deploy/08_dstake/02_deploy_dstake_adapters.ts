@@ -40,7 +40,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing symbol for dSTAKE instance ${instanceKey}`);
     }
 
-    // Check if any adapter has missing vaultAsset
+    // Check if any adapter has missing strategyShare
     let hasInvalidAdapter = false;
 
     for (const adapterConfig of instanceConfig.adapters) {
@@ -48,9 +48,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         throw new Error(`Missing adapterContract for adapter in dSTAKE instance ${instanceKey}`);
       }
 
-      if (!adapterConfig.vaultAsset || adapterConfig.vaultAsset === ethers.ZeroAddress) {
+      if (!adapterConfig.strategyShare || adapterConfig.strategyShare === ethers.ZeroAddress) {
         console.log(
-          `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing vaultAsset for adapter ${adapterConfig.adapterContract} (likely due to dlend infrastructure not being deployed)`
+          `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing strategyShare for adapter ${adapterConfig.adapterContract} (likely due to dlend infrastructure not being deployed)`
         );
         hasInvalidAdapter = true;
         break;
@@ -88,12 +88,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     for (const adapterConfig of instanceConfig.adapters) {
-      const { adapterContract, vaultAsset } = adapterConfig;
+      const { adapterContract, strategyShare } = adapterConfig;
 
-      // Skip dLEND adapters as we've removed dLEND support
-      if (adapterContract === "WrappedDLendConversionAdapter") {
+      // Skip dLEND adapters if strategyShare is missing
+      if (adapterContract === "WrappedDLendConversionAdapter" && (!strategyShare || strategyShare === ethers.ZeroAddress)) {
         console.log(
-          `    ⚠️  Skipping ${instanceKey}: Missing vaultAsset for adapter ${adapterContract} (likely due to dlend infrastructure not being deployed)`
+          `    ⚠️  Skipping ${instanceKey}: Missing strategyShare for adapter ${adapterContract} (likely due to dlend infrastructure not being deployed)`
         );
         continue;
       } else if (adapterContract === "MetaMorphoConversionAdapter") {
@@ -108,7 +108,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         await deploy(deploymentName, {
           from: deployer,
           contract: adapterContract,
-          args: [instanceConfig.dStable, vaultAsset, collateralVault.address],
+          args: [instanceConfig.dStable, strategyShare, collateralVault.address],
           log: true,
         });
       }

@@ -4,7 +4,7 @@
 Research and design an intelligent routing system for dSTAKE that can optimally allocate deposits across multiple Morpho Blue vaults based on various strategies (APY optimization, risk-adjusted returns, target allocations, etc.)
 
 ## Current State
-- dSTAKE currently uses a simple defaultDepositVaultAsset approach
+- dSTAKE currently uses a simple defaultDepositStrategyShare approach
 - DStakeRouter can support multiple adapters but lacks intelligent routing logic
 - Each Morpho vault can have different risk/return profiles
 

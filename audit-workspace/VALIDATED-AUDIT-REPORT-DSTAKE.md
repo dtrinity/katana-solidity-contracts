@@ -54,7 +54,7 @@ After rigorous validation using GPT-5 through Codex CLI, the following findings 
 - **Evidence**: DStakeRouterMorpho vulnerable to external Morpho vault share price manipulation
 - **Impact**: Collateral exchange rates can be manipulated
 - **Severity**: CRITICAL
-- **Attack**: Inflate Morpho vault shares to manipulate dSTAKE collateral rates
+- **Attack**: Inflate Morpho strategy shares to manipulate dSTAKE collateral rates
 
 ### 6. ✅ Missing Admin Timelock
 - **Validation**: CONFIRMED MISSING

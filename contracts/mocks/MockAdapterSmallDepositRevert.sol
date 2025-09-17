@@ -7,7 +7,7 @@ import { IDStableConversionAdapter } from "../vaults/dstake/interfaces/IDStableC
 
 /**
  * @title MockAdapterSmallDepositRevert
- * @notice Test-only adapter that intentionally reverts when `convertToVaultAsset`
+ * @notice Test-only adapter that intentionally reverts when `depositIntoStrategy`
  *         is called with < 2 wei of dSTABLE.  Used to reproduce the dStakeRouter
  *         surplus-rounding DoS in unit tests.
  */
@@ -36,45 +36,48 @@ contract MockAdapterSmallDepositRevert is IDStableConversionAdapter {
 
   // ---------------- IDStableConversionAdapter ----------------
 
-  function convertToVaultAsset(uint256 dStableAmount) external override returns (address _vaultAsset, uint256 vaultAssetAmount) {
-    if (dStableAmount < MIN_DEPOSIT) revert DepositTooSmall(dStableAmount);
+  function depositIntoStrategy(uint256 stableAmount) external override returns (address _strategyShare, uint256 strategyShareAmount) {
+    if (stableAmount < MIN_DEPOSIT) revert DepositTooSmall(stableAmount);
 
     // Pull dStable from caller (Router)
-    dStable.transferFrom(msg.sender, address(this), dStableAmount);
+    dStable.transferFrom(msg.sender, address(this), stableAmount);
 
     // Deposit dStable into the ERC4626 mock, minting shares to the vault
-    IERC20(address(dStable)).approve(address(vaultAssetToken), dStableAmount);
-    vaultAssetToken.deposit(dStableAmount, collateralVault);
+    IERC20(address(dStable)).approve(address(vaultAssetToken), stableAmount);
+    vaultAssetToken.deposit(stableAmount, collateralVault);
 
-    _vaultAsset = address(vaultAssetToken);
-    vaultAssetAmount = dStableAmount;
+    _strategyShare = address(vaultAssetToken);
+    strategyShareAmount = stableAmount;
   }
 
-  function convertFromVaultAsset(uint256 vaultAssetAmount) external override returns (uint256 dStableAmount) {
+  function withdrawFromStrategy(uint256 strategyShareAmount) external override returns (uint256 stableAmount) {
     // Pull shares from caller (Router)
-    IERC20(address(vaultAssetToken)).transferFrom(msg.sender, address(this), vaultAssetAmount);
+    IERC20(address(vaultAssetToken)).transferFrom(msg.sender, address(this), strategyShareAmount);
 
     // Redeem shares for dStable, sending the dStable directly to the router (msg.sender)
-    dStableAmount = vaultAssetToken.redeem(vaultAssetAmount, msg.sender, address(this));
+    stableAmount = vaultAssetToken.redeem(strategyShareAmount, msg.sender, address(this));
   }
 
-  function previewConvertToVaultAsset(
-    uint256 dStableAmount
-  ) external view override returns (address _vaultAsset, uint256 vaultAssetAmount) {
-    _vaultAsset = address(vaultAssetToken);
-    vaultAssetAmount = dStableAmount;
+  function previewDepositIntoStrategy(
+    uint256 stableAmount
+  ) external view override returns (address _strategyShare, uint256 strategyShareAmount) {
+    _strategyShare = address(vaultAssetToken);
+    strategyShareAmount = stableAmount;
   }
 
-  function previewConvertFromVaultAsset(uint256 vaultAssetAmount) external pure override returns (uint256 dStableAmount) {
-    return (vaultAssetAmount * 11000) / 10000; // 1.1x like MockERC4626Simple
+  function previewWithdrawFromStrategy(uint256 strategyShareAmount) external pure override returns (uint256 stableAmount) {
+    return (strategyShareAmount * 11000) / 10000; // 1.1x like MockERC4626Simple
   }
 
-  function assetValueInDStable(address _vaultAsset, uint256 vaultAssetAmount) external pure override returns (uint256 dStableValue) {
-    require(_vaultAsset == address(0) || _vaultAsset != address(0), "NOP"); // dummy check to silence linter
-    return (vaultAssetAmount * 11000) / 10000;
+  function strategyShareValueInDStable(
+    address _strategyShare,
+    uint256 strategyShareAmount
+  ) external pure override returns (uint256 dStableValue) {
+    require(_strategyShare == address(0) || _strategyShare != address(0), "NOP"); // dummy check to silence linter
+    return (strategyShareAmount * 11000) / 10000;
   }
 
-  function vaultAsset() external view override returns (address) {
+  function strategyShare() external view override returns (address) {
     return address(vaultAssetToken);
   }
 }

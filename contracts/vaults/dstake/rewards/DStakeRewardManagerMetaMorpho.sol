@@ -242,13 +242,13 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
    */
   function _processExchangeAssetDeposit(uint256 exchangeAmountIn) internal override {
     // Get the router's default deposit vault asset
-    address defaultVaultAsset = dStakeRouter.defaultDepositVaultAsset();
+    address defaultVaultAsset = dStakeRouter.defaultDepositStrategyShare();
     if (defaultVaultAsset == address(0)) {
       revert DefaultDepositAssetNotSet();
     }
 
-    // Get the adapter for the default vault asset
-    address adapter = dStakeRouter.vaultAssetToAdapter(defaultVaultAsset);
+    // Get the adapter for the default strategy share
+    address adapter = dStakeRouter.strategyShareToAdapter(defaultVaultAsset);
     if (adapter == address(0)) {
       revert AdapterNotSetForDefaultAsset();
     }
@@ -259,19 +259,19 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     // Check collateral vault balance before conversion
     uint256 balanceBefore = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
 
-    // Convert dStable to vault asset via adapter
-    (address returnedVaultAsset, uint256 vaultAssetAmount) = IDStableConversionAdapter(adapter).convertToVaultAsset(exchangeAmountIn);
+    // Convert dStable to strategy share via adapter
+    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapter(adapter).depositIntoStrategy(exchangeAmountIn);
 
-    // Verify the adapter returned the expected vault asset
-    if (returnedVaultAsset != defaultVaultAsset) {
-      revert AdapterReturnedUnexpectedAsset(defaultVaultAsset, returnedVaultAsset);
+    // Verify the adapter returned the expected strategy share
+    if (returnedStrategyShare != defaultVaultAsset) {
+      revert AdapterReturnedUnexpectedAsset(defaultVaultAsset, returnedStrategyShare);
     }
 
     // Verify that the collateral vault actually received the expected assets
     uint256 balanceAfter = IERC20(defaultVaultAsset).balanceOf(dStakeCollateralVault);
     uint256 actualReceived = balanceAfter - balanceBefore;
-    if (actualReceived < vaultAssetAmount) {
-      revert InsufficientAssetsReceived(vaultAssetAmount, actualReceived);
+    if (actualReceived < strategyShareAmount) {
+      revert InsufficientAssetsReceived(strategyShareAmount, actualReceived);
     }
 
     // Emit event for tracking (use actualReceived for accuracy)

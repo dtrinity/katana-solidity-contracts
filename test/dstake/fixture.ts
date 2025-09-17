@@ -23,7 +23,7 @@ export interface DStakeFixtureConfig {
   DStakeTokenContractId: string;
   collateralVaultContractId: string;
   routerContractId: string;
-  defaultVaultAssetSymbol: string;
+  defaultStrategyShareSymbol: string;
   name?: string;
   underlyingDStableConfig: DStableFixtureConfig;
   deploymentTags: string[];
@@ -35,7 +35,7 @@ export const SDUSD_CONFIG: DStakeFixtureConfig = {
   DStakeTokenContractId: SDUSD_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDUSD_COLLATERAL_VAULT_ID,
   routerContractId: SDUSD_ROUTER_ID,
-  defaultVaultAssetSymbol: "wddUSD",
+  defaultStrategyShareSymbol: "wddUSD",
   underlyingDStableConfig: DUSD_CONFIG,
   deploymentTags: [
     "local-setup", // mock tokens and oracles
@@ -54,7 +54,7 @@ export const SDETH_CONFIG: DStakeFixtureConfig = {
   DStakeTokenContractId: SDETH_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDETH_COLLATERAL_VAULT_ID,
   routerContractId: SDETH_ROUTER_ID,
-  defaultVaultAssetSymbol: "wdETH",
+  defaultStrategyShareSymbol: "wdETH",
   underlyingDStableConfig: DETH_CONFIG,
   deploymentTags: ["local-setup", "oracle", "deth", "dETH-aTokenWrapper", "dlend", "dStake"],
 };
@@ -129,10 +129,10 @@ async function fetchDStakeComponents(
     wrappedATokenAddress
   );
 
-  const vaultAssetAddress = wrappedATokenAddress;
+  const strategyShareAddress = wrappedATokenAddress;
   let adapterAddress;
   let adapter;
-  adapterAddress = await router.vaultAssetToAdapter(vaultAssetAddress);
+  adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
 
   if (adapterAddress !== ethers.ZeroAddress) {
     adapter = await ethers.getContractAt("IDStableConversionAdapter", adapterAddress);
@@ -147,8 +147,8 @@ async function fetchDStakeComponents(
     router,
     dStableToken: dStableToken as unknown as ERC20,
     dStableInfo,
-    vaultAssetToken: wrappedAToken as unknown as IERC20,
-    vaultAssetAddress,
+    strategyShareToken: wrappedAToken as unknown as IERC20,
+    strategyShareAddress: vaultAssetAddress,
     adapter,
     adapterAddress,
     deployer: deployerSigner,

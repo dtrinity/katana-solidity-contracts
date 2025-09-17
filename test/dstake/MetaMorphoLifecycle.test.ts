@@ -204,7 +204,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
         isActive: true
       };
       await routerContract.setVaultConfigs([vaultConfig]);
-      await routerContract.setDefaultDepositVaultAsset(metaMorphoVaultContract.target);
+      await routerContract.setDefaultDepositStrategyShare(metaMorphoVaultContract.target);
     }
 
     // Note: Router configuration, adapter registration, and permissions should be handled by deployment scripts
@@ -267,10 +267,10 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     
     it("Phase 0: Verify deployment configuration", async function () {
       // Check that the deployment scripts properly configured everything
-      const defaultVault = await router.defaultDepositVaultAsset();
+      const defaultVault = await router.defaultDepositStrategyShare();
       expect(defaultVault).to.equal(metaMorphoVault.target, "Default deposit vault not set");
       
-      const adapterAddr = await router.vaultAssetToAdapter(metaMorphoVault.target);
+      const adapterAddr = await router.strategyShareToAdapter(metaMorphoVault.target);
       expect(adapterAddr).to.equal(adapter.target, "Adapter not registered");
       
       const vaultRouter = await collateralVault.router();
@@ -301,8 +301,8 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       bobShares = await dStakeToken.balanceOf(bob.address);
       
       // Verify vault received assets through MetaMorpho
-      const vaultAssets = await metaMorphoVault.balanceOf(collateralVault.target);
-      expect(vaultAssets).to.be.gt(0);
+      const strategyShares = await metaMorphoVault.balanceOf(collateralVault.target);
+      expect(strategyShares).to.be.gt(0);
       
       // Total value should match deposits
       const totalValue = await collateralVault.totalValueInDStable();
@@ -466,10 +466,10 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       // For now, we only have MetaMorpho, but the infrastructure supports multiple adapters
       
       // Verify current adapter configuration
-      const currentDefaultAsset = await router.defaultDepositVaultAsset();
+      const currentDefaultAsset = await router.defaultDepositStrategyShare();
       expect(currentDefaultAsset).to.equal(metaMorphoVault.target);
       
-      const registeredAdapter = await router.vaultAssetToAdapter(metaMorphoVault.target);
+      const registeredAdapter = await router.strategyShareToAdapter(metaMorphoVault.target);
       expect(registeredAdapter).to.equal(adapter.target);
     });
     

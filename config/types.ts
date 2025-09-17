@@ -186,12 +186,12 @@ export interface IReserveParams extends IReserveBorrowParams, IReserveCollateral
 // --- dStake Types ---
 
 export interface DStakeAdapterConfig {
-  readonly vaultAsset: Address; // Address of the vault asset (e.g., wddUSD)
+  readonly strategyShare: Address; // Address of the strategy share token (e.g., wddUSD)
   readonly adapterContract: string; // Contract name for deployment (e.g., dLendConversionAdapter)
 }
 
 export interface DLendRewardManagerConfig {
-  readonly managedVaultAsset: Address; // Address of the StaticATokenLM wrapper this manager handles (e.g. wddUSD)
+  readonly managedStrategyShare: Address; // Address of the StaticATokenLM wrapper this manager handles (e.g. wddUSD)
   readonly dLendAssetToClaimFor: Address; // Address of the underlying aToken in dLEND (e.g. aDUSD)
   readonly dLendRewardsController: Address; // Address of the dLEND RewardsController
   readonly treasury: Address; // Address for treasury fees
@@ -209,8 +209,8 @@ export interface DStakeInstanceConfig {
   readonly initialAdmin: Address;
   readonly initialFeeManager: Address;
   readonly initialWithdrawalFeeBps: number;
-  readonly adapters: DStakeAdapterConfig[]; // List of supported adapters/vault assets
-  readonly defaultDepositVaultAsset: Address; // Initial default vault asset for deposits
+  readonly adapters: DStakeAdapterConfig[]; // List of supported adapters/strategy shares
+  readonly defaultDepositStrategyShare: Address; // Initial default strategy share for deposits
   readonly collateralExchangers: Address[]; // List of allowed exchanger addresses
   readonly collateralVault?: Address; // The DStakeCollateralVault for this instance (needed for adapter deployment)
   readonly dLendRewardManager?: DLendRewardManagerConfig; // Added for dLend rewards

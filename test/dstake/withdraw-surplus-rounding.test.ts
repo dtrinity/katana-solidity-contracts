@@ -26,7 +26,7 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
   let dStable: ERC20;
   let dStableDecimals: bigint;
   let adapterAddress: string;
-  let vaultAssetAddress: string;
+  let strategyShareAddress: string;
 
   beforeEach(async function () {
     // Deploy base system using fixture
@@ -51,12 +51,12 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
     adapterAddress = await adapter.getAddress();
 
     // 2. Register adapter with router and set as default deposit asset
-    vaultAssetAddress = await (adapter as any).vaultAsset();
-    
+    strategyShareAddress = await (adapter as any).strategyShare();
+
     // Note: Required roles are granted via deployment scripts
-    
-    await router.connect(user1).addAdapter(vaultAssetAddress, adapterAddress);
-    await router.connect(user1).setDefaultDepositVaultAsset(vaultAssetAddress);
+
+    await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
+    await router.connect(user1).setDefaultDepositStrategyShare(strategyShareAddress);
 
     // Arrange: mint & deposit dSTABLE
     const depositAmount = parseUnits("1000", dStableDecimals);

@@ -4,7 +4,7 @@
 Implement a new DStakeRouter variant that uses weighted random selection to route deposits and withdrawals across multiple Morpho vaults, achieving target allocations through natural convergence without explicit rebalancing.
 
 ## Background
-Current DStakeRouter uses a simple defaultDepositVaultAsset approach. We need a system that can:
+Current DStakeRouter uses a simple defaultDepositStrategyShare approach. We need a system that can:
 - Distribute deposits across multiple Morpho vaults
 - Converge toward target allocations without gas-intensive rebalancing
 - Handle emergency situations through collateral exchange
@@ -76,7 +76,7 @@ contract DStakeRouterMorpho is DStakeRouter {
     // Core functions
     function deposit(address dStable, uint256 amount, address receiver) external returns (uint256 shares);
     function withdraw(address dStable, uint256 amount, address receiver) external returns (uint256);
-    function exchangeCollateral(address fromVault, address toVault, uint256 amount) external;
+    function rebalanceStrategiesByValue(address fromVault, address toVault, uint256 amount) external;
     
     // Admin functions
     function setVaultConfigs(VaultConfig[] calldata configs) external onlyOwner;

@@ -19,8 +19,8 @@ The `DStakeRewardManagerDLend` contract interacts with several key components:
     *   The source that defines the `dStable` token used as the `exchangeAsset`.
 *   **`DStakeRouterDLend`**:
     *   A router contract that provides information about:
-        *   The `defaultDepositVaultAsset` for the `DStakeCollateralVault`.
-        *   The appropriate `IDStableConversionAdapter` to use for converting the `exchangeAsset` (dStable) into this `defaultDepositVaultAsset`.
+        *   The `defaultDepositStrategyShare` for the `DStakeCollateralVault`.
+        *   The appropriate `IDStableConversionAdapter` to use for converting the `exchangeAsset` (dStable) into this `defaultDepositStrategyShare`.
 *   **`IDLendRewardsController` (Aave/dLEND `RewardsController`)**:
     *   The external Aave/dLEND contract from which rewards are claimed.
     *   The `DStakeRewardManagerDLend` calls `claimRewardsOnBehalf` on this controller.
@@ -34,8 +34,8 @@ The `DStakeRewardManagerDLend` contract interacts with several key components:
     *   Various ERC20 tokens (e.g., stablecoins, governance tokens) that are distributed as rewards by the dLEND protocol and can be claimed by this manager.
 *   **Adapters (`IDStableConversionAdapter`)**:
     *   Smart contracts registered in `DStakeRouterDLend`.
-    *   Responsible for converting the `exchangeAsset` (dStable) into the `DStakeCollateralVault`'s `defaultDepositVaultAsset`.
-    *   Expected to pull the `exchangeAsset` from this manager (after approval) and transfer the converted asset directly to the `DStakeCollateralVault`.
+    *   Responsible for converting the `exchangeAsset` (dStable) into the `DStakeCollateralVault`'s `defaultDepositStrategyShare`.
+    *   Expected to pull the `exchangeAsset` from this manager (after approval) and transfer the converted strategy shares directly to the `DStakeCollateralVault`.
 *   **`treasury` (Address)**:
     *   The address that receives a portion of the claimed rewards as a fee.
 *   **Access Control Roles**:
@@ -58,13 +58,13 @@ The primary interaction occurs through the `compoundRewards(uint256 amount, addr
 
 3.  **Process `exchangeAsset` Deposit (`_processExchangeAssetDeposit`)**:
     *   This step occurs *before* rewards are claimed.
-    *   The `defaultDepositVaultAsset` for the `dStakeCollateralVault` is fetched from `dStakeRouter`.
+    *   The `defaultDepositStrategyShare` for the `dStakeCollateralVault` is fetched from `dStakeRouter`.
     *   The corresponding `IDStableConversionAdapter` for this asset is fetched from `dStakeRouter`.
     *   The manager contract approves the adapter to spend the received `amount` of `exchangeAsset`.
-    *   The manager calls `adapter.convertToVaultAsset(amount)`. This adapter is expected to:
+    *   The manager calls `adapter.convertToStrategyShare(amount)`. This adapter is expected to:
         1.  Pull `amount` of `exchangeAsset` from the manager contract.
-        2.  Perform the necessary swaps/conversions to transform it into `defaultDepositVaultAsset`.
-        3.  Transfer the resulting `defaultDepositVaultAsset` directly to the `dStakeCollateralVault`.
+        2.  Perform the necessary swaps/conversions to transform it into `defaultDepositStrategyShare`.
+        3.  Transfer the resulting `defaultDepositStrategyShare` directly to the `dStakeCollateralVault`.
     *   An `ExchangeAssetProcessed` event is emitted.
 
 4.  **Claim Rewards from dLEND (`_claimRewards`)**:
@@ -107,8 +107,8 @@ For the `DStakeRewardManagerDLend` contract to function correctly, the following
 2.  **`setClaimer` Authorization (Critical)**:
     *   The `targetStaticATokenWrapper` (or its owner/manager) **MUST** call `setClaimer(targetStaticATokenWrapper, address(DStakeRewardManagerDLend_instance))` on the live `IDLendRewardsController` contract. Without this, reward claiming will fail.
 3.  **`DStakeRouterDLend` Configuration**:
-    *   The `DStakeRouterDLend` instance must have a `defaultDepositVaultAsset` configured for the associated `DStakeCollateralVault`.
-    *   The router must have a valid, trusted, and functional `IDStableConversionAdapter` registered for converting `exchangeAsset` (dStable) to this `defaultDepositVaultAsset`.
+    *   The `DStakeRouterDLend` instance must have a `defaultDepositStrategyShare` configured for the associated `DStakeCollateralVault`.
+    *   The router must have a valid, trusted, and functional `IDStableConversionAdapter` registered for converting `exchangeAsset` (dStable) to this `defaultDepositStrategyShare`.
 4.  **Role Assignment**:
     *   `DEFAULT_ADMIN_ROLE` and `REWARDS_MANAGER_ROLE` should be granted to appropriate secure admin/management multisigs or addresses.
 5.  **Token Approvals & Balances**:
@@ -130,6 +130,6 @@ For the `DStakeRewardManagerDLend` contract to function correctly, the following
 *   The Aave/dLEND rewards mechanism, particularly the `RewardsController` and its `claimRewardsOnBehalf` function, remains consistent with the expected interface and behavior.
 *   The `IDStableConversionAdapter` contracts registered in the `DStakeRouterDLend` are trusted, secure, and function as expected (i.e., they correctly convert the dStable and deposit the target asset to the collateral vault).
 *   The `dStakeCollateralVault` and `dStakeRouter` are correctly deployed and configured.
-*   Relevant ERC20 tokens (exchangeAsset, rewardTokens, vault assets) conform to the ERC20 standard.
+*   Relevant ERC20 tokens (exchangeAsset, rewardTokens, strategy shares) conform to the ERC20 standard.
 
 This design allows for automated claiming and compounding of dLEND rewards, integrating the value back into the dStake ecosystem while distributing rewards to participants.

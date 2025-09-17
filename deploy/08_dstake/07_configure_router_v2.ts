@@ -61,16 +61,16 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const routerV2 = await ethers.getContractAt("DStakeRouterV2", routerV2Deployment.address, deployerSigner);
 
     // --- Configure Collateral Exchangers ---
-    const collateralExchangerRole = await routerV2.COLLATERAL_EXCHANGER_ROLE();
+    const collateralExchangerRole = await routerV2.STRATEGY_REBALANCER_ROLE();
 
     for (const exchanger of instanceConfig.collateralExchangers) {
       const hasRole = await routerV2.hasRole(collateralExchangerRole, exchanger);
 
       if (!hasRole) {
         await routerV2.grantRole(collateralExchangerRole, exchanger);
-        console.log(`    ➕ Granted COLLATERAL_EXCHANGER_ROLE to ${exchanger} for ${routerV2DeploymentName}`);
+        console.log(`    ➕ Granted STRATEGY_REBALANCER_ROLE to ${exchanger} for ${routerV2DeploymentName}`);
       } else {
-        console.log(`    👍 ${exchanger} already has COLLATERAL_EXCHANGER_ROLE for ${routerV2DeploymentName}`);
+        console.log(`    👍 ${exchanger} already has STRATEGY_REBALANCER_ROLE for ${routerV2DeploymentName}`);
       }
     }
 
@@ -92,11 +92,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         }
 
         const adapterDeployment = await get(adapterDeploymentName);
-        const vaultAssetAddress = adapterConfig.vaultAsset;
+        const strategyShareAddress = adapterConfig.strategyShare;
 
-        // Skip if vault asset is not valid
-        if (!vaultAssetAddress || vaultAssetAddress === ethers.ZeroAddress) {
-          console.log(`    ⚠️  Skipping vault config for ${adapterDeploymentName} - vault asset not available`);
+        // Skip if strategy share is not valid
+        if (!strategyShareAddress || strategyShareAddress === ethers.ZeroAddress) {
+          console.log(`    ⚠️  Skipping vault config for ${adapterDeploymentName} - strategy share not available`);
           continue;
         }
 
@@ -113,7 +113,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         }
 
         vaultConfigs.push({
-          vault: vaultAssetAddress,
+          strategyVault: strategyShareAddress,
           adapter: adapterDeployment.address,
           targetBps: targetBps,
           isActive: true,
@@ -171,17 +171,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       console.log(`    ⚠️  No MetaMorpho vault configurations to set for ${instanceKey}`);
     }
 
-    // --- Configure Default Deposit Vault Asset ---
-    // Use the first configured vault as the default
+    // --- Configure Default Deposit Strategy Share ---
+    // Use the first configured strategy vault as the default
     if (vaultConfigs.length > 0) {
-      const currentDefaultAsset = await routerV2.defaultDepositVaultAsset();
-      const firstVaultAsset = vaultConfigs[0].vault;
+      const currentDefaultAsset = await routerV2.defaultDepositStrategyShare();
+      const firstStrategyVault = vaultConfigs[0].strategyVault;
 
-      if (currentDefaultAsset !== firstVaultAsset) {
-        await routerV2.setDefaultDepositVaultAsset(firstVaultAsset);
-        console.log(`    ⚙️ Set default deposit vault asset to ${firstVaultAsset} for ${routerV2DeploymentName}`);
+      if (currentDefaultAsset !== firstStrategyVault) {
+        await routerV2.setDefaultDepositStrategyShare(firstStrategyVault);
+        console.log(`    ⚙️ Set default deposit strategy share to ${firstStrategyVault} for ${routerV2DeploymentName}`);
       } else {
-        console.log(`    👍 Default deposit vault asset already set for ${routerV2DeploymentName}`);
+        console.log(`    👍 Default deposit strategy share already set for ${routerV2DeploymentName}`);
       }
     }
 
