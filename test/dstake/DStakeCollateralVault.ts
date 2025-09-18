@@ -491,71 +491,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         });
       });
 
-      describe("getRestrictedRescueTokens", function () {
-        it("Should return dStable token when no assets are supported", async function () {
-          // Remove all supported assets
-          const supportedAssets = await collateralVault.getSupportedStrategyShares();
-
-          for (const asset of supportedAssets) {
-            await collateralVault.connect(routerSigner).removeSupportedAsset(asset);
-          }
-
-          const restrictedTokens = await collateralVault.getRestrictedRescueTokens();
-          expect(restrictedTokens).to.have.lengthOf(1);
-          expect(restrictedTokens[0]).to.equal(dStableTokenAddress);
-        });
-
-        it("Should return all supported assets plus dStable", async function () {
-          if (!adapter) this.skip();
-
-          // Ensure at least one asset is supported
-          if ((await router.strategyShareToAdapter(strategyShareAddress)) === ZeroAddress) {
-            await router.connect(deployer).addAdapter(strategyShareAddress, adapterAddress);
-          }
-
-          const supportedAssets = await collateralVault.getSupportedStrategyShares();
-          const restrictedTokens = await collateralVault.getRestrictedRescueTokens();
-
-          expect(restrictedTokens).to.have.lengthOf(supportedAssets.length + 1);
-
-          // Check all supported assets are in restricted list
-          for (const asset of supportedAssets) {
-            expect(restrictedTokens).to.include(asset);
-          }
-
-          // Check dStable is in restricted list
-          expect(restrictedTokens).to.include(dStableTokenAddress);
-        });
-
-        it("Should update when assets are added/removed", async function () {
-          if (!adapter) this.skip();
-
-          // Start with no supported assets
-          const supportedAssets = await collateralVault.getSupportedStrategyShares();
-
-          for (const asset of supportedAssets) {
-            await collateralVault.connect(routerSigner).removeSupportedAsset(asset);
-          }
-
-          let restrictedTokens = await collateralVault.getRestrictedRescueTokens();
-          expect(restrictedTokens).to.have.lengthOf(1);
-
-          // Add an asset
-          await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
-
-          restrictedTokens = await collateralVault.getRestrictedRescueTokens();
-          expect(restrictedTokens).to.have.lengthOf(2);
-          expect(restrictedTokens).to.include(strategyShareAddress);
-          expect(restrictedTokens).to.include(dStableTokenAddress);
-
-          // Remove the asset
-          await collateralVault.connect(routerSigner).removeSupportedAsset(strategyShareAddress);
-
-          restrictedTokens = await collateralVault.getRestrictedRescueTokens();
-          expect(restrictedTokens).to.have.lengthOf(1);
-          expect(restrictedTokens[0]).to.equal(dStableTokenAddress);
-        });
-      });
+      // getRestrictedRescueTokens tests removed because function no longer exists
 
       describe("Integration tests", function () {
         it("Should rescue multiple different tokens", async function () {

@@ -40,9 +40,6 @@ library DeterministicVaultSelector {
   /// @dev Error thrown when requesting more items than available
   error InsufficientItems();
 
-  /// @dev Error thrown when all allocation deltas are zero
-  error AllDeltasZero();
-
   /// @dev Error thrown when selection count is zero
   error InvalidSelectionCount();
 
@@ -288,69 +285,5 @@ library DeterministicVaultSelector {
     return (selectedVaults, selectedIndices);
   }
 
-  /**
-   * @notice Checks if any deltas are non-zero
-   * @param deltas Array of deltas to check
-   * @return result True if at least one delta is greater than zero
-   */
-  function hasNonZeroDeltas(uint256[] memory deltas) internal pure returns (bool result) {
-    for (uint256 i = 0; i < deltas.length; i++) {
-      if (deltas[i] > 0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * @notice Calculates the total delta from an array of deltas
-   * @param deltas Array of deltas
-   * @return totalDelta Sum of all deltas
-   */
-  function calculateTotalDelta(uint256[] memory deltas) internal pure returns (uint256 totalDelta) {
-    for (uint256 i = 0; i < deltas.length; i++) {
-      totalDelta += deltas[i];
-    }
-  }
-
-  /**
-   * @notice Finds vaults with non-zero deltas
-   * @dev Utility function to identify vaults that have allocation mismatches
-   * @param vaults Array of vault addresses
-   * @param deltas Array of allocation deltas
-   * @return vaultsWithDeltas Array of vault addresses with non-zero deltas
-   * @return indices Array of original indices for vaults with deltas
-   */
-  function getVaultsWithNonZeroDeltas(
-    address[] memory vaults,
-    uint256[] memory deltas
-  ) internal pure returns (address[] memory vaultsWithDeltas, uint256[] memory indices) {
-    if (vaults.length != deltas.length) {
-      revert ArrayLengthMismatch();
-    }
-
-    // First pass: count non-zero deltas
-    uint256 nonZeroCount = 0;
-    for (uint256 i = 0; i < deltas.length; i++) {
-      if (deltas[i] > 0) {
-        nonZeroCount++;
-      }
-    }
-
-    // Allocate result arrays
-    vaultsWithDeltas = new address[](nonZeroCount);
-    indices = new uint256[](nonZeroCount);
-
-    // Second pass: populate results
-    uint256 resultIndex = 0;
-    for (uint256 i = 0; i < deltas.length; i++) {
-      if (deltas[i] > 0) {
-        vaultsWithDeltas[resultIndex] = vaults[i];
-        indices[resultIndex] = i;
-        resultIndex++;
-      }
-    }
-
-    return (vaultsWithDeltas, indices);
-  }
+  // Utility functions removed as part of refactor: hasNonZeroDeltas, calculateTotalDelta, getVaultsWithNonZeroDeltas
 }

@@ -165,7 +165,6 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
 
   /**
    * @notice Returns the strategy share at `index` from the internal supported set.
-   *         Kept for backwards-compatibility with the previous public array getter.
    */
   function supportedStrategyShares(uint256 index) external view override returns (address) {
     return _supportedStrategyShares.at(index);
@@ -217,25 +216,6 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
     if (!success) revert ETHTransferFailed(receiver, amount);
 
     emit ETHRescued(receiver, amount);
-  }
-
-  /**
-   * @notice Returns the list of tokens that cannot be rescued
-   * @return restrictedTokens Array of restricted token addresses
-   */
-  function getRestrictedRescueTokens() external view returns (address[] memory) {
-    address[] memory shares = _supportedStrategyShares.values();
-    address[] memory restrictedTokens = new address[](shares.length + 1);
-
-    // Add all supported strategy shares
-    for (uint256 i = 0; i < shares.length; i++) {
-      restrictedTokens[i] = shares[i];
-    }
-
-    // Add dStable token
-    restrictedTokens[shares.length] = dStable;
-
-    return restrictedTokens;
   }
 
   /**

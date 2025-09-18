@@ -54,28 +54,4 @@ contract DeterministicVaultSelectorHarness {
   ) external pure returns (address[] memory selectedVaults, uint256[] memory selectedIndices) {
     return DeterministicVaultSelector.selectTopOverallocated(vaults, currentBps, targetBps, count);
   }
-
-  /**
-   * @notice Test wrapper for hasNonZeroDeltas
-   */
-  function hasNonZeroDeltas(uint256[] memory deltas) external pure returns (bool) {
-    return DeterministicVaultSelector.hasNonZeroDeltas(deltas);
-  }
-
-  /**
-   * @notice Test wrapper for calculateTotalDelta
-   */
-  function calculateTotalDelta(uint256[] memory deltas) external pure returns (uint256) {
-    return DeterministicVaultSelector.calculateTotalDelta(deltas);
-  }
-
-  /**
-   * @notice Test wrapper for getVaultsWithNonZeroDeltas
-   */
-  function getVaultsWithNonZeroDeltas(
-    address[] memory vaults,
-    uint256[] memory deltas
-  ) external pure returns (address[] memory vaultsWithDeltas, uint256[] memory indices) {
-    return DeterministicVaultSelector.getVaultsWithNonZeroDeltas(vaults, deltas);
-  }
 }
