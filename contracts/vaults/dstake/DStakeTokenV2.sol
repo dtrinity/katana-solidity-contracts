@@ -162,6 +162,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256 shares) {
     // Calculate how many shares correspond to the desired NET `assets` amount.
     shares = previewWithdraw(assets);
+    // Rounding note: `previewWithdraw` ultimately calls OpenZeppelin's `_convertToShares` with
+    // `Math.Rounding.Ceil`, so any positive-net withdrawal request maps to at least one share.
+    // A zero-share result therefore implies `assets == 0`, meaning no funds leave the vault.
 
     // Ensure the owner has enough shares to cover the withdrawal (checks in share terms rather than assets).
     if (shares > maxRedeem(owner)) {
