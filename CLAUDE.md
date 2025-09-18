@@ -36,17 +36,10 @@ make mythril        # Symbolic execution
 make audit          # Full audit (both tools)
 ```
 
-### Deployment
+### Deployment for local testing
 ```bash
-# Deploy to network
-yarn hardhat deploy --network katana_testnet  # Testnet (Chain ID: 737373)
-yarn hardhat deploy --network katana_mainnet  # Mainnet (Chain ID: 747474)
-
-# Robust deployment with retries
-./scripts/deploy-with-retry.sh katana_testnet
-
-# Verify contracts
-make explorer.verify.ethereum_mainnet
+# Uses a temporary in-memory network
+make deploy
 ```
 
 ## Architecture Key Points
@@ -65,6 +58,7 @@ The protocol separates concerns into distinct subsystems:
    - `DStakeRouterV2` orchestrates deterministic strategy allocation
    - `DStakeCollateralVault` stores strategy shares with enumeration
    - Adapters in `/adapters/` integrate yield protocols (Morpho, Aave, Pendle)
+   - Read contracts/vaults/dstake/dstake-design.md for more in-depth explainer
 
 ### Critical Design Patterns
 - **Upgradeability**: Core tokens use proxy patterns; infrastructure contracts are immutable
@@ -78,16 +72,3 @@ The protocol separates concerns into distinct subsystems:
 - **Testing Strategy**: Mock external protocols in `/contracts/mocks/` for isolated testing
 - **Gas Optimization**: Use `immutable` for deployment-time constants, minimize storage reads
 - **Security**: All critical functions have reentrancy guards and pause mechanisms
-
-### Integration Points
-When adding new yield strategies:
-1. Create adapter in `/contracts/vaults/dstake/adapters/`
-2. Implement `IDStakeAdapter` interface
-3. Add to router's strategy list via governance
-4. Deploy corresponding reward manager if needed
-
-When modifying AMOs:
-1. Extend `AmoVault` base contract
-2. Implement strategy-specific logic
-3. Register with `AmoManager`
-4. Configure oracle requirements
