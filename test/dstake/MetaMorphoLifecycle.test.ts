@@ -7,10 +7,10 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   DStakeRouterV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -39,11 +39,11 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
   let rewardToken: TestMintableERC20;
   let metaMorphoVault: MockMetaMorphoVault;
   let urd: MockUniversalRewardsDistributor;
-  let collateralVault: DStakeCollateralVault;
+  let collateralVault: DStakeCollateralVaultV2;
   let router: DStakeRouterV2;
   let adapter: MetaMorphoConversionAdapter;
   let rewardManager: DStakeRewardManagerMetaMorpho;
-  let dStakeToken: DStakeToken;
+  let dStakeToken: DStakeTokenV2;
   
   const config = SDUSD_CONFIG; // Using sdUSD for this lifecycle test
   
@@ -91,16 +91,16 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     );
     
     // Use the real deployment names from the actual dStake deployment scripts
-    const dStakeTokenDeployment = await deployments.get(`DStakeToken_${config.DStakeTokenSymbol}`);
-    const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+    const dStakeTokenDeployment = await deployments.get(`DStakeTokenV2_${config.DStakeTokenV2Symbol}`);
+    const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
     
-    const collateralVaultDeployment = await deployments.get(`DStakeCollateralVault_${config.DStakeTokenSymbol}`);
+    const collateralVaultDeployment = await deployments.get(`DStakeCollateralVaultV2_${config.DStakeTokenV2Symbol}`);
     const collateralVaultContract = await ethers.getContractAt(
-      "DStakeCollateralVault",
+      "DStakeCollateralVaultV2",
       collateralVaultDeployment.address
     );
     
-    const routerDeployment = await deployments.get(`DStakeRouterV2_${config.DStakeTokenSymbol}`);
+    const routerDeployment = await deployments.get(`DStakeRouterV2_${config.DStakeTokenV2Symbol}`);
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
     
     const metaMorphoVaultDeployment = await deployments.get(`MockMetaMorphoVault_${config.dStableSymbol}`);
@@ -122,7 +122,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     );
     
     const rewardManagerDeployment = await deployments.get(
-      `DStakeRewardManagerMetaMorpho_${config.DStakeTokenSymbol}`
+      `DStakeRewardManagerMetaMorpho_${config.DStakeTokenV2Symbol}`
     );
     const rewardManagerContract = await ethers.getContractAt(
       "DStakeRewardManagerMetaMorpho",

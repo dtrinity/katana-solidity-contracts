@@ -17,7 +17,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Get dependencies
   const dusd = await get("dUSD");
-  const sdUSDCollateralVault = await get("DStakeCollateralVault_sdUSD");
+  const sdUSDCollateralVault = await get("DStakeCollateralVaultV2_sdUSD");
   const sdUSDRouter = await get("DStakeRouterV2_sdUSD");
   const mockMetaMorphoVaultdUSD = await get("MockMetaMorphoVault_dUSD");
 
@@ -47,8 +47,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // These configurations should be handled by 03_configure_dstake.ts
   // We'll only do minimal checks here to ensure proper setup
-  const dStakeTokenDeployment = await get("DStakeToken_sdUSD");
-  const dStakeToken = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+  const dStakeTokenDeployment = await get("DStakeTokenV2_sdUSD");
+  const dStakeToken = await hre.ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
 
   const currentRouter = await dStakeToken.router();
 
@@ -58,7 +58,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Deploy for dETH
   const deth = await get("dETH");
-  const sdETHCollateralVault = await get("DStakeCollateralVault_sdETH");
+  const sdETHCollateralVault = await get("DStakeCollateralVaultV2_sdETH");
   const sdETHRouter = await get("DStakeRouterV2_sdETH");
   const mockMetaMorphoVaultdETH = await get("MockMetaMorphoVault_dETH");
 
@@ -85,8 +85,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // These configurations should be handled by 03_configure_dstake.ts
   // We'll only do minimal checks here to ensure proper setup
-  const dStakeTokenDeploymentETH = await get("DStakeToken_sdETH");
-  const dStakeTokenETH = await hre.ethers.getContractAt("DStakeToken", dStakeTokenDeploymentETH.address);
+  const dStakeTokenDeploymentETH = await get("DStakeTokenV2_sdETH");
+  const dStakeTokenETH = await hre.ethers.getContractAt("DStakeTokenV2", dStakeTokenDeploymentETH.address);
 
   const currentRouterETH = await dStakeTokenETH.router();
 

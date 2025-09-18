@@ -69,48 +69,48 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // All configs are valid, proceed with configuration
   for (const instanceKey of validInstances) {
     const instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
-    const DStakeTokenDeploymentName = `DStakeToken_${instanceKey}`;
-    const collateralVaultDeploymentName = `DStakeCollateralVault_${instanceKey}`;
+    const DStakeTokenV2DeploymentName = `DStakeTokenV2_${instanceKey}`;
+    const collateralVaultDeploymentName = `DStakeCollateralVaultV2_${instanceKey}`;
     const routerDeploymentName = `DStakeRouterV2_${instanceKey}`;
 
     const collateralVaultDeployment = await get(collateralVaultDeploymentName);
     const routerDeployment = await get(routerDeploymentName);
-    const dstakeTokenDeployment = await get(DStakeTokenDeploymentName);
+    const dstakeTokenDeployment = await get(DStakeTokenV2DeploymentName);
 
     // (Permissions remain with the deployer; role migration happens later.)
     // Get Typechain instances
     const dstakeToken = await ethers.getContractAt(
-      "DStakeToken",
+      "DStakeTokenV2",
       dstakeTokenDeployment.address,
       await ethers.getSigner(deployer) // Use deployer as signer for read calls
     );
     const collateralVault = await ethers.getContractAt(
-      "DStakeCollateralVault",
+      "DStakeCollateralVaultV2",
       collateralVaultDeployment.address,
       await ethers.getSigner(deployer) // Use deployer as signer for read calls
     );
 
-    // --- Configure DStakeToken ---
+    // --- Configure DStakeTokenV2 ---
     const currentRouter = await dstakeToken.router();
 
     if (currentRouter !== routerDeployment.address) {
-      console.log(`    ⚙️ Setting router for ${DStakeTokenDeploymentName} to ${routerDeployment.address}`);
+      console.log(`    ⚙️ Setting router for ${DStakeTokenV2DeploymentName} to ${routerDeployment.address}`);
       await dstakeToken.connect(deployerSigner).setRouter(routerDeployment.address);
     }
     const currentVault = await dstakeToken.collateralVault();
 
     if (currentVault !== collateralVaultDeployment.address) {
-      console.log(`    ⚙️ Setting collateral vault for ${DStakeTokenDeploymentName} to ${collateralVaultDeployment.address}`);
+      console.log(`    ⚙️ Setting collateral vault for ${DStakeTokenV2DeploymentName} to ${collateralVaultDeployment.address}`);
       await dstakeToken.connect(deployerSigner).setCollateralVault(collateralVaultDeployment.address);
     }
     const currentFee = await dstakeToken.withdrawalFeeBps();
 
     if (currentFee.toString() !== instanceConfig.initialWithdrawalFeeBps.toString()) {
-      console.log(`    ⚙️ Setting withdrawal fee for ${DStakeTokenDeploymentName} to ${instanceConfig.initialWithdrawalFeeBps}`);
+      console.log(`    ⚙️ Setting withdrawal fee for ${DStakeTokenV2DeploymentName} to ${instanceConfig.initialWithdrawalFeeBps}`);
       await dstakeToken.connect(deployerSigner).setWithdrawalFee(instanceConfig.initialWithdrawalFeeBps);
     }
 
-    // --- Configure DStakeCollateralVault ---
+    // --- Configure DStakeCollateralVaultV2 ---
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address, deployerSigner);
 
     const vaultRouter = await collateralVault.router();
@@ -122,7 +122,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       await collateralVault.connect(deployerSigner).setRouter(routerDeployment.address);
     }
 
-    // --- Configure DStakeCollateralVault Adapters ---
+    // --- Configure DStakeCollateralVaultV2 Adapters ---
     for (const adapterConfig of instanceConfig.adapters) {
       const adapterDeploymentName = `${adapterConfig.adapterContract}_${instanceConfig.symbol}`;
 

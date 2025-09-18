@@ -310,7 +310,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
         ],
         defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
-        collateralVault: "DStakeCollateralVault_sdUSD",
+        collateralVault: "DStakeCollateralVaultV2_sdUSD",
         collateralExchangers: [user1],
         dLendRewardManager: {
           managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // This should be the deployed StaticATokenLM address for dUSD
@@ -338,7 +338,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
         ],
         defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
-        collateralVault: "DStakeCollateralVault_sdETH",
+        collateralVault: "DStakeCollateralVaultV2_sdETH",
         collateralExchangers: [user1],
         dLendRewardManager: {
           managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address), // This should be the deployed StaticATokenLM address for dETH

@@ -216,7 +216,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           },
         ],
         defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
-        collateralVault: "DStakeCollateralVault_sdUSD", // Keep in sync with deploy ID constants
+        collateralVault: "DStakeCollateralVaultV2_sdUSD", // Keep in sync with deploy ID constants
         collateralExchangers: [governanceSafeMultisig],
         dLendRewardManager: {
           managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // StaticATokenLM wrapper

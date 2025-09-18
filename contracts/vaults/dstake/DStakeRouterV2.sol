@@ -10,7 +10,7 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
-import { IDStakeCollateralVault } from "./interfaces/IDStakeCollateralVault.sol";
+import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
@@ -62,7 +62,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   // --- State ---
   address public immutable dStakeToken;
-  IDStakeCollateralVault public immutable collateralVault;
+  IDStakeCollateralVaultV2 public immutable collateralVault;
   address public immutable dStable;
 
   uint256 public dustTolerance = 1;
@@ -134,7 +134,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     }
 
     dStakeToken = _dStakeToken;
-    collateralVault = IDStakeCollateralVault(_collateralVault);
+    collateralVault = IDStakeCollateralVaultV2(_collateralVault);
     dStable = collateralVault.dStable();
     if (dStable == address(0)) {
       revert ZeroAddress();
@@ -337,7 +337,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    // Transfer all accumulated dStable back to DStakeToken for fee handling
+    // Transfer all accumulated dStable back to DStakeTokenV2 for fee handling
     totalWithdrawn = IERC20(dStable).balanceOf(address(this));
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
@@ -374,7 +374,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
     }
 
-    // Transfer all accumulated dStable back to DStakeToken for fee handling
+    // Transfer all accumulated dStable back to DStakeTokenV2 for fee handling
     totalWithdrawn = IERC20(dStable).balanceOf(address(this));
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 

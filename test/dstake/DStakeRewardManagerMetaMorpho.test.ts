@@ -6,7 +6,7 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   DStakeRouterV2,
   MetaMorphoConversionAdapter
 } from "../../../../typechain-types";
@@ -22,7 +22,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
   let rewardToken2: TestMintableERC20;
   let metaMorphoVault: MockMetaMorphoVault;
   let urd: MockUniversalRewardsDistributor;
-  let collateralVault: DStakeCollateralVault;
+  let collateralVault: DStakeCollateralVaultV2;
   let router: DStakeRouterV2;
   let adapter: MetaMorphoConversionAdapter;
   let rewardManager: DStakeRewardManagerMetaMorpho;
@@ -55,11 +55,11 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     urd = await URDFactory.deploy();
     
     // Deploy dStake token first (needed for collateral vault)
-    const DStakeTokenFactory = await ethers.getContractFactory("TestMintableERC20");
-    const dStakeToken = await DStakeTokenFactory.deploy("dStake Token", "dSTAKE", 18);
+    const DStakeTokenV2Factory = await ethers.getContractFactory("TestMintableERC20");
+    const dStakeToken = await DStakeTokenV2Factory.deploy("dStake Token", "dSTAKE", 18);
     
     // Deploy collateral vault
-    const CollateralVaultFactory = await ethers.getContractFactory("DStakeCollateralVault");
+    const CollateralVaultFactory = await ethers.getContractFactory("DStakeCollateralVaultV2");
     collateralVault = await CollateralVaultFactory.deploy(
       dStakeToken.target,  // dStakeVaultShare
       dStable.target       // dStableAsset

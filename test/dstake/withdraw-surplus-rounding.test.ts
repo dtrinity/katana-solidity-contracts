@@ -3,9 +3,9 @@ import { expect } from "chai";
 import { ethers, getNamedAccounts } from "hardhat";
 
 import {
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   DStakeRouterV2,
-  DStakeToken,
+  DStakeTokenV2,
   ERC20,
 } from "../../typechain-types";
 import { ERC20StablecoinUpgradeable } from "../../typechain-types/contracts/dstable/ERC20StablecoinUpgradeable";
@@ -20,9 +20,9 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
 
   let deployer: SignerWithAddress;
   let user1: SignerWithAddress;
-  let DStakeTokenInst: DStakeToken;
+  let DStakeTokenV2Inst: DStakeTokenV2;
   let router: DStakeRouterV2;
-  let collateralVault: DStakeCollateralVault;
+  let collateralVault: DStakeCollateralVaultV2;
   let dStable: ERC20;
   let dStableDecimals: bigint;
   let adapterAddress: string;
@@ -31,7 +31,7 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
   beforeEach(async function () {
     // Deploy base system using fixture
     const f = await fixture();
-    ({ DStakeToken: DStakeTokenInst, router, collateralVault } = f as any);
+    ({ DStakeTokenV2: DStakeTokenV2Inst, router, collateralVault } = f as any);
     dStable = f.dStableToken;
     dStableDecimals = await dStable.decimals();
 
@@ -70,9 +70,9 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
     await stable.mint(deployer.address, depositAmount);
     await dStable
       .connect(deployer)
-      .approve(await DStakeTokenInst.getAddress(), depositAmount);
+      .approve(await DStakeTokenV2Inst.getAddress(), depositAmount);
 
-    await DStakeTokenInst.connect(deployer).deposit(
+    await DStakeTokenV2Inst.connect(deployer).deposit(
       depositAmount,
       deployer.address,
     );
@@ -82,7 +82,7 @@ describe.skip("DStakeRouterV2 – surplus < 1 share withdraw DoS", function () {
     // Act + Assert: attempt to withdraw – this **should** succeed after fix
     const withdrawAmount = parseUnits("100", dStableDecimals);
     await expect(
-      DStakeTokenInst.connect(deployer).withdraw(
+      DStakeTokenV2Inst.connect(deployer).withdraw(
         withdrawAmount,
         deployer.address,
         deployer.address,

@@ -6,9 +6,9 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -27,8 +27,8 @@ describe("DStakeRouterV2 Integration Tests", function () {
   
   let dStable: TestMintableERC20;
   let router: DStakeRouterV2;
-  let collateralVault: DStakeCollateralVault;
-  let dStakeToken: DStakeToken;
+  let collateralVault: DStakeCollateralVaultV2;
+  let dStakeToken: DStakeTokenV2;
   
   // Multi-vault setup (3 vaults for comprehensive testing)
   let vault1: MockMetaMorphoVault;  // Target: 50% (5000 bps)
@@ -101,7 +101,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
     
     let dStakeTokenDeployment, collateralVaultDeployment;
     try {
-      dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
+      dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
       collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
     } catch (error) {
       throw new Error(`Failed to get deployments: ${error.message}. DStake contracts may not be deployed properly.`);
@@ -127,9 +127,9 @@ describe("DStakeRouterV2 Integration Tests", function () {
     });
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
     
-    const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+    const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
     const collateralVaultContract = await ethers.getContractAt(
-      "DStakeCollateralVault",
+      "DStakeCollateralVaultV2",
       collateralVaultDeployment.address
     );
     
@@ -361,7 +361,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
         await dStakeTokenContract.setRouter(routerAddress);
         console.log("✅ Set router on dStakeToken");
       } else {
-        console.log("✅ DStakeToken router already configured");
+        console.log("✅ DStakeTokenV2 router already configured");
       }
     } else {
       // Check if router is already configured
@@ -369,7 +369,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       // If there's already a router configured and it's not our router, we may need to handle this
       if (currentDStakeRouter !== ethers.ZeroAddress && currentDStakeRouter !== routerAddress) {
-        console.log(`⚠️ DStakeToken already has a different router configured: ${currentDStakeRouter}`);
+        console.log(`⚠️ DStakeTokenV2 already has a different router configured: ${currentDStakeRouter}`);
         
         // Try using governance signer (index 1) which should have admin role
         const [, governanceSigner] = await ethers.getSigners();
@@ -386,7 +386,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
           console.log("⚠️ Governance signer does not have admin role - continuing with deployment router");
         }
       } else if (currentDStakeRouter === routerAddress) {
-        console.log("✅ DStakeToken router already configured correctly");
+        console.log("✅ DStakeTokenV2 router already configured correctly");
       } else {
         // No router configured, try to set it if we can
         try {

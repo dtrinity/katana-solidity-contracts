@@ -67,7 +67,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   /**
    * @param _dStable The address of the dSTABLE asset (e.g., dUSD)
    * @param _metaMorphoVault The address of the MetaMorpho vault (must be ERC4626)
-   * @param _collateralVault The address of the DStakeCollateralVault
+   * @param _collateralVault The address of the DStakeCollateralVaultV2
    * @param _initialAdmin The initial admin address (will be transferred to governance later)
    */
   constructor(address _dStable, address _metaMorphoVault, address _collateralVault, address _initialAdmin) {

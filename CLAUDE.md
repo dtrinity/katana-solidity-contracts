@@ -54,9 +54,9 @@ The protocol separates concerns into distinct subsystems:
    - AMO vaults implement capital efficiency strategies
 
 2. **dSTAKE System** (`/contracts/vaults/dstake/`)
-   - `DStakeToken` implements ERC4626 with withdrawal fees
+   - `DStakeTokenV2` implements ERC4626 with withdrawal fees
    - `DStakeRouterV2` orchestrates deterministic strategy allocation
-   - `DStakeCollateralVault` stores strategy shares with enumeration
+   - `DStakeCollateralVaultV2` stores strategy shares with enumeration
    - Adapters in `/adapters/` integrate yield protocols (Morpho, Aave, Pendle)
    - Read contracts/vaults/dstake/dstake-design.md for more in-depth explainer
 

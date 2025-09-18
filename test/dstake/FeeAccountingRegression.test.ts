@@ -5,9 +5,9 @@ import {
   DStakeRouterV2,
   MockMetaMorphoVault,
   ERC20StablecoinUpgradeable,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 
 const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
@@ -21,8 +21,8 @@ describe("Fee Accounting Regression Test", function () {
 
   let dStable: ERC20StablecoinUpgradeable;
   let router: DStakeRouterV2;
-  let collateralVault: DStakeCollateralVault;
-  let dStakeToken: DStakeToken;
+  let collateralVault: DStakeCollateralVaultV2;
+  let dStakeToken: DStakeTokenV2;
   let vault: MockMetaMorphoVault;
   let adapter: MetaMorphoConversionAdapter;
   let reinvestIncentiveBps: bigint;
@@ -35,23 +35,23 @@ describe("Fee Accounting Regression Test", function () {
 
     // Get deployed contracts with error checking
     const dStableDeployment = await deployments.get("dUSD");
-    const dStakeTokenDeployment = await deployments.get("DStakeToken_sdUSD");
-    const collateralVaultDeployment = await deployments.get("DStakeCollateralVault_sdUSD");
+    const dStakeTokenDeployment = await deployments.get("DStakeTokenV2_sdUSD");
+    const collateralVaultDeployment = await deployments.get("DStakeCollateralVaultV2_sdUSD");
     const routerDeployment = await deployments.get("DStakeRouterV2_sdUSD");
     const vaultDeployment = await deployments.get("MockMetaMorphoVault_dUSD");
     const adapterDeployment = await deployments.get("MetaMorphoConversionAdapter_dUSD");
 
     // Verify all deployments exist
     if (!dStableDeployment?.address) throw new Error("dUSD deployment not found");
-    if (!dStakeTokenDeployment?.address) throw new Error("DStakeToken_sdUSD deployment not found");
-    if (!collateralVaultDeployment?.address) throw new Error("DStakeCollateralVault_sdUSD deployment not found");
+    if (!dStakeTokenDeployment?.address) throw new Error("DStakeTokenV2_sdUSD deployment not found");
+    if (!collateralVaultDeployment?.address) throw new Error("DStakeCollateralVaultV2_sdUSD deployment not found");
     if (!routerDeployment?.address) throw new Error("DStakeRouterV2_sdUSD deployment not found");
     if (!vaultDeployment?.address) throw new Error("MockMetaMorphoVault_dUSD deployment not found");
     if (!adapterDeployment?.address) throw new Error("MetaMorphoConversionAdapter_dUSD deployment not found");
 
     dStable = await ethers.getContractAt("ERC20StablecoinUpgradeable", dStableDeployment.address);
-    dStakeToken = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
-    collateralVault = await ethers.getContractAt("DStakeCollateralVault", collateralVaultDeployment.address);
+    dStakeToken = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
+    collateralVault = await ethers.getContractAt("DStakeCollateralVaultV2", collateralVaultDeployment.address);
     router = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
     vault = await ethers.getContractAt("MockMetaMorphoVault", vaultDeployment.address);
     adapter = await ethers.getContractAt("MetaMorphoConversionAdapter", adapterDeployment.address);
@@ -99,7 +99,7 @@ describe("Fee Accounting Regression Test", function () {
     await dStable.mint(charlie.address, ethers.parseEther("10000"));
     await dStable.mint(solver.address, ethers.parseEther("10000"));
 
-    // Set router and collateral vault on DStakeToken (critical for deposit/withdraw to work)
+    // Set router and collateral vault on DStakeTokenV2 (critical for deposit/withdraw to work)
     const DEFAULT_ADMIN_ROLE = await dStakeToken.DEFAULT_ADMIN_ROLE();
     await dStakeToken.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, owner.address);
     await dStakeToken.connect(owner).setRouter(await router.getAddress());
@@ -121,7 +121,7 @@ describe("Fee Accounting Regression Test", function () {
   });
 
   describe("Fee Accounting in totalAssets()", function () {
-    it("Should include dStable balance held by DStakeToken contract in totalAssets()", async function () {
+    it("Should include dStable balance held by DStakeTokenV2 contract in totalAssets()", async function () {
       // Initial deposit to establish vault
       await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
 

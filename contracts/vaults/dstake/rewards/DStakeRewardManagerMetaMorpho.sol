@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { RewardClaimable } from "../../rewards_claimable/RewardClaimable.sol";
 import { DStakeRouterV2 } from "../DStakeRouterV2.sol";
-import { IDStakeCollateralVault } from "../interfaces/IDStakeCollateralVault.sol";
+import { IDStakeCollateralVaultV2 } from "../interfaces/IDStakeCollateralVaultV2.sol";
 import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -34,7 +34,7 @@ interface IMetaMorpho is IERC4626 {
 /**
  * @title DStakeRewardManagerMetaMorpho
  * @notice Manages claiming of rewards from MetaMorpho vaults through the Universal Rewards Distributor
- *         and compounds dStable into the DStakeCollateralVault.
+ *         and compounds dStable into the DStakeCollateralVaultV2.
  * @dev Implements the RewardClaimable interface.
  *
  *      MetaMorpho reward flow:
@@ -94,7 +94,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     uint256 _initialExchangeThreshold
   )
     RewardClaimable(
-      IDStakeCollateralVault(_dStakeCollateralVault).dStable(), // exchangeAsset is dStable
+      IDStakeCollateralVaultV2(_dStakeCollateralVault).dStable(), // exchangeAsset is dStable
       _treasury,
       _maxTreasuryFeeBps,
       _initialTreasuryFeeBps,

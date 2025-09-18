@@ -22,7 +22,7 @@ contract MockAdapterSmallDepositRevert is IDStableConversionAdapter {
   // --- State ---
   IERC20 public immutable dStable; // underlying stablecoin
   MockERC4626Simple public immutable vaultAssetToken; // mock wrapped asset
-  address public immutable collateralVault; // DStakeCollateralVault address (receiver of minted shares)
+  address public immutable collateralVault; // DStakeCollateralVaultV2 address (receiver of minted shares)
 
   constructor(address _dStable, address _collateralVault) {
     if (_dStable == address(0) || _collateralVault == address(0)) {

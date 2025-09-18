@@ -2,15 +2,15 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IDStakeCollateralVault Interface
- * @notice Defines the external functions of the DStakeCollateralVault required by other
- *         contracts in the dSTAKE system, primarily the DStakeToken.
+ * @title IDStakeCollateralVaultV2 Interface
+ * @notice Defines the external functions of the DStakeCollateralVaultV2 required by other
+ *         contracts in the dSTAKE system, primarily the DStakeTokenV2.
  */
-interface IDStakeCollateralVault {
+interface IDStakeCollateralVaultV2 {
   /**
    * @notice Calculates the total value of all managed `strategy shares` held by the vault,
    *         denominated in the underlying dStable asset.
-   * @dev This is typically called by the DStakeToken's `totalAssets()` function.
+   * @dev This is typically called by the DStakeTokenV2's `totalAssets()` function.
    * @return dStableValue The total value of managed assets in terms of the dStable asset.
    */
   function totalValueInDStable() external view returns (uint256 dStableValue);
@@ -22,7 +22,7 @@ interface IDStakeCollateralVault {
   function dStable() external view returns (address);
 
   /**
-   * @notice The DStakeToken contract address this vault serves.
+   * @notice The DStakeTokenV2 contract address this vault serves.
    */
   function dStakeToken() external view returns (address);
 

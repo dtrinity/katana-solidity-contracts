@@ -19,8 +19,8 @@ import { DETH_CONFIG, DStableFixtureConfig, DUSD_CONFIG } from "../dstable/fixtu
 
 export interface DStakeFixtureConfig {
   dStableSymbol: "dUSD" | "dETH";
-  DStakeTokenSymbol: string;
-  DStakeTokenContractId: string;
+  DStakeTokenV2Symbol: string;
+  DStakeTokenV2ContractId: string;
   collateralVaultContractId: string;
   routerContractId: string;
   defaultStrategyShareSymbol: string;
@@ -31,8 +31,8 @@ export interface DStakeFixtureConfig {
 
 export const SDUSD_CONFIG: DStakeFixtureConfig = {
   dStableSymbol: "dUSD",
-  DStakeTokenSymbol: "sdUSD",
-  DStakeTokenContractId: SDUSD_DSTAKE_TOKEN_ID,
+  DStakeTokenV2Symbol: "sdUSD",
+  DStakeTokenV2ContractId: SDUSD_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDUSD_COLLATERAL_VAULT_ID,
   routerContractId: SDUSD_ROUTER_ID,
   defaultStrategyShareSymbol: "wddUSD",
@@ -50,8 +50,8 @@ export const SDUSD_CONFIG: DStakeFixtureConfig = {
 
 export const SDETH_CONFIG: DStakeFixtureConfig = {
   dStableSymbol: "dETH",
-  DStakeTokenSymbol: "sdETH",
-  DStakeTokenContractId: SDETH_DSTAKE_TOKEN_ID,
+  DStakeTokenV2Symbol: "sdETH",
+  DStakeTokenV2ContractId: SDETH_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDETH_COLLATERAL_VAULT_ID,
   routerContractId: SDETH_ROUTER_ID,
   defaultStrategyShareSymbol: "wdETH",
@@ -87,10 +87,10 @@ async function fetchDStakeComponents(
 
   const { contract: dStableToken, tokenInfo: dStableInfo } = await getTokenContractForSymbol(globalHre, deployer, config.dStableSymbol);
 
-  const DStakeToken = await ethers.getContractAt("DStakeToken", (await deployments.get(config.DStakeTokenContractId)).address);
+  const DStakeTokenV2 = await ethers.getContractAt("DStakeTokenV2", (await deployments.get(config.DStakeTokenV2ContractId)).address);
 
   const collateralVault = await ethers.getContractAt(
-    "DStakeCollateralVault",
+    "DStakeCollateralVaultV2",
     (await deployments.get(config.collateralVaultContractId)).address
   );
 
@@ -142,7 +142,7 @@ async function fetchDStakeComponents(
 
   return {
     config,
-    DStakeToken,
+    DStakeTokenV2,
     collateralVault,
     router,
     dStableToken: dStableToken as unknown as ERC20,

@@ -4,14 +4,14 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Components At A Glance
 
-- `DStakeToken` – upgradeable ERC4626 share token (`contracts/vaults/dstake/DStakeToken.sol`)
+- `DStakeTokenV2` – upgradeable ERC4626 share token (`contracts/vaults/dstake/DStakeTokenV2.sol`)
   - Mints/burns shares against dSTABLE deposits and redemptions.
   - Delegates conversions to the router and reads TVL from the collateral vault.
   - Implements configurable withdrawal fees with on-chain previews that surface net values.
   - Exposes solver-only entry points (batch deposit/withdraw) for off-chain keepers to service multi-vault flows.
   - Custodies collected fees until `reinvestFees()` is called, paying an optional caller incentive before routing the balance back through the router.
 
-- `DStakeCollateralVault` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVault.sol`)
+- `DStakeCollateralVaultV2` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVaultV2.sol`)
   - Holds ERC20 "strategy shares" (e.g., ERC4626 wrapper shares from upstream strategies) and exposes `totalValueInDStable()`.
   - Maintains a registry of supported strategy shares; adapters can be rotated without migrating balances.
   - Allows governance to delist strategy shares even if dust remains (removes previous griefing vector).
@@ -33,7 +33,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 ### Flow of Funds
 
 - **User deposit / mint**
-  1. dSTABLE moves into `DStakeToken` via `deposit()`/`mint()`.
+  1. dSTABLE moves into `DStakeTokenV2` via `deposit()`/`mint()`.
   2. The token approves the router and calls `router.deposit(amount)`.
   3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter succeeds, strategy shares land in the collateral vault; if it fails (e.g., downstream caps, inaccurate previews) the router reverts with `NoLiquidityAvailable()` so automation can retry via the solver path.
   4. Shares are minted to the user according to totalAssets() (which includes any pending fee balance held by the token).
@@ -42,7 +42,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
   3. Router walks the ordered vault list and tries to satisfy the *entire* request from the first over-allocated strategy. If that vault cannot deliver (for example due to soft withdrawal limits or stale previews) the router reverts with `NoLiquidityAvailable()`. Operators are expected to fulfil complex withdrawals through solver endpoints that can split the request across vaults.
-  4. Withdrawal fees remain temporarily inside `DStakeToken` until reinvested.
+  4. Withdrawal fees remain temporarily inside `DStakeTokenV2` until reinvested.
 
 - **Solver flows**
   - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts allow off-chain automation (UIs, keepers) to specify exact strategy allocations and split flows across multiple vaults. These entry points still enforce ERC4626 previews, pull/burn shares on behalf of the owner, and rely on adapters for conversions.
@@ -65,7 +65,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **Collateral exchanges** – Exchanges validate adapter previews in both directions and enforce `dustTolerance` when comparing expected vs realised dSTABLE value, preventing silent degradation across strategies.
 - **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default strategy via `sweepSurplus()`. `ShortfallCovered` / `SurplusHeld` events surface when rounding buffers move funds between contracts.
 
-### DStakeToken Mechanics
+### DStakeTokenV2 Mechanics
 
 - **totalAssets()** – Returns collateral-vault TVL plus any dSTABLE balance sitting on the token (primarily accumulated withdrawal fees). After a full withdrawal the strategy may still report value due to `dustTolerance` residual shares accruing yield; first depositor back in receives that windfall.
 - **Withdrawal fee plumbing** – Supports previews and limits through [`SupportsWithdrawalFee`](../../common/SupportsWithdrawalFee.sol). User-facing methods always accept/return net amounts while internal router calls use the gross amount once to avoid charging the fee twice.
@@ -82,20 +82,20 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Access Control Surface
 
-- **Token roles** (`DStakeToken.sol`)
+- **Token roles** (`DStakeTokenV2.sol`)
   - `DEFAULT_ADMIN_ROLE` – set router/collateral vault, upgrade implementations.
   - `FEE_MANAGER_ROLE` – adjust withdrawal fee and reinvest incentive.
 
 - **Router roles** (`DStakeRouterV2.sol`)
   - `DEFAULT_ADMIN_ROLE` – owns surpluses and global admin actions.
-  - `DSTAKE_TOKEN_ROLE` – limited to the live `DStakeToken` contract.
+  - `DSTAKE_TOKEN_ROLE` – limited to the live `DStakeTokenV2` contract.
   - `STRATEGY_REBALANCER_ROLE` – execute share exchanges and strategy rebalances.
   - `ADAPTER_MANAGER_ROLE` – add/remove adapters.
   - `CONFIG_MANAGER_ROLE` – set defaults, risk limits, dust tolerance.
   - `VAULT_MANAGER_ROLE` – manage vault configs and lifecycle.
   - `PAUSER_ROLE` – pause/unpause router operations.
 
-- **Collateral vault roles** (`DStakeCollateralVault.sol`)
+- **Collateral vault roles** (`DStakeCollateralVaultV2.sol`)
   - `DEFAULT_ADMIN_ROLE` – rotate router, rescue tokens, configure governance.
   - `ROUTER_ROLE` – granted exclusively to the active router for asset movements.
 
@@ -132,9 +132,9 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Developer Map
 
-- Token: `contracts/vaults/dstake/DStakeToken.sol`
+- Token: `contracts/vaults/dstake/DStakeTokenV2.sol`
 - Router: `contracts/vaults/dstake/DStakeRouterV2.sol`
-- Collateral Vault: `contracts/vaults/dstake/DStakeCollateralVault.sol`
+- Collateral Vault: `contracts/vaults/dstake/DStakeCollateralVaultV2.sol`
 - Adapters: `contracts/vaults/dstake/adapters/`
 - Interfaces: `contracts/vaults/dstake/interfaces/`
 - Rewards (optional): `contracts/vaults/dstake/rewards/`

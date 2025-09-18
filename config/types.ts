@@ -204,15 +204,15 @@ export interface DLendRewardManagerConfig {
 
 export interface DStakeInstanceConfig {
   readonly dStable: Address; // Address of the underlying stable token (e.g., dUSD, dETH)
-  readonly name: string; // Name for DStakeToken (e.g., "Staked dUSD")
-  readonly symbol: string; // Symbol for DStakeToken (e.g., "sdUSD")
+  readonly name: string; // Name for DStakeTokenV2 (e.g., "Staked dUSD")
+  readonly symbol: string; // Symbol for DStakeTokenV2 (e.g., "sdUSD")
   readonly initialAdmin: Address;
   readonly initialFeeManager: Address;
   readonly initialWithdrawalFeeBps: number;
   readonly adapters: DStakeAdapterConfig[]; // List of supported adapters/strategy shares
   readonly defaultDepositStrategyShare: Address; // Initial default strategy share for deposits
   readonly collateralExchangers: Address[]; // List of allowed exchanger addresses
-  readonly collateralVault?: Address; // The DStakeCollateralVault for this instance (needed for adapter deployment)
+  readonly collateralVault?: Address; // The DStakeCollateralVaultV2 for this instance (needed for adapter deployment)
   readonly dLendRewardManager?: DLendRewardManagerConfig; // Added for dLend rewards
 }
 

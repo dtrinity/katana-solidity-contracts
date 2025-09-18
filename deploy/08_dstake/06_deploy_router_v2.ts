@@ -85,8 +85,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     // Get required deployed contracts
-    const dstakeTokenDeployment = await deployments.get(`DStakeToken_${instanceKey}`);
-    const collateralVaultDeployment = await deployments.get(`DStakeCollateralVault_${instanceKey}`);
+    const dstakeTokenDeployment = await deployments.get(`DStakeTokenV2_${instanceKey}`);
+    const collateralVaultDeployment = await deployments.get(`DStakeCollateralVaultV2_${instanceKey}`);
 
     console.log(`🚀 Deploying DStakeRouterV2 for ${instanceKey}...`);
 

@@ -6,10 +6,10 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   DStakeRouterV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 import { SDUSD_CONFIG, SDETH_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -17,7 +17,7 @@ import { getTokenContractForSymbol } from "../../typescript/token/utils";
 describe("MetaMorpho Integration", function () {
   // Run tests for both sdUSD and sdETH
   [SDUSD_CONFIG, SDETH_CONFIG].forEach((config) => {
-    describe(`${config.DStakeTokenSymbol} MetaMorpho Integration`, function () {
+    describe(`${config.DStakeTokenV2Symbol} MetaMorpho Integration`, function () {
       let owner: SignerWithAddress;
       let user: SignerWithAddress;
       let treasury: SignerWithAddress;
@@ -27,11 +27,11 @@ describe("MetaMorpho Integration", function () {
       let rewardToken: TestMintableERC20;
       let metaMorphoVault: MockMetaMorphoVault;
       let urd: MockUniversalRewardsDistributor;
-      let collateralVault: DStakeCollateralVault;
+      let collateralVault: DStakeCollateralVaultV2;
       let router: DStakeRouterV2;
       let adapter: MetaMorphoConversionAdapter;
       let rewardManager: DStakeRewardManagerMetaMorpho;
-      let dStakeToken: DStakeToken;
+      let dStakeToken: DStakeTokenV2;
 
       const setupFixture = deployments.createFixture(async (hre) => {
         // Deploy all required contracts in a single fixture call to avoid state reset issues
@@ -70,12 +70,12 @@ describe("MetaMorpho Integration", function () {
           dStableBaseContract.target
         );
         
-        const dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
-        const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+        const dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
+        const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
         
         const collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
         const collateralVaultContract = await ethers.getContractAt(
-          "DStakeCollateralVault",
+          "DStakeCollateralVaultV2",
           collateralVaultDeployment.address
         );
         
@@ -105,7 +105,7 @@ describe("MetaMorpho Integration", function () {
         );
         
         const rewardManagerDeployment = await deployments.get(
-          `DStakeRewardManagerMetaMorpho_${config.DStakeTokenSymbol}`
+          `DStakeRewardManagerMetaMorpho_${config.DStakeTokenV2Symbol}`
         );
         const rewardManagerContract = await ethers.getContractAt(
           "DStakeRewardManagerMetaMorpho",

@@ -6,9 +6,9 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -27,8 +27,8 @@ describe("DStake Solver Mode Tests", function () {
 
   let dStable: TestMintableERC20;
   let router: DStakeRouterV2;
-  let collateralVault: DStakeCollateralVault;
-  let dStakeToken: DStakeToken;
+  let collateralVault: DStakeCollateralVaultV2;
+  let dStakeToken: DStakeTokenV2;
 
   // Multi-vault setup (3 vaults for comprehensive testing)
   let vault1: MockMetaMorphoVault;  // Target: 50% (500,000 bps)
@@ -101,7 +101,7 @@ describe("DStake Solver Mode Tests", function () {
 
     let dStakeTokenDeployment, collateralVaultDeployment;
     try {
-      dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
+      dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
       collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
     } catch (error) {
       throw new Error(`Failed to get deployments: ${error.message}. DStake contracts may not be deployed properly.`);
@@ -127,9 +127,9 @@ describe("DStake Solver Mode Tests", function () {
     });
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
 
-    const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+    const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
     const collateralVaultContract = await ethers.getContractAt(
-      "DStakeCollateralVault",
+      "DStakeCollateralVaultV2",
       collateralVaultDeployment.address
     );
 
@@ -360,7 +360,7 @@ describe("DStake Solver Mode Tests", function () {
         await dStakeTokenContract.setRouter(routerAddress);
         console.log("✅ Set router on dStakeToken");
       } else {
-        console.log("✅ DStakeToken router already configured");
+        console.log("✅ DStakeTokenV2 router already configured");
       }
     } else {
       // Check if router is already configured
@@ -368,7 +368,7 @@ describe("DStake Solver Mode Tests", function () {
 
       // If there's already a router configured and it's not our router, we may need to handle this
       if (currentDStakeRouter !== ethers.ZeroAddress && currentDStakeRouter !== routerAddress) {
-        console.log(`⚠️ DStakeToken already has a different router configured: ${currentDStakeRouter}`);
+        console.log(`⚠️ DStakeTokenV2 already has a different router configured: ${currentDStakeRouter}`);
 
         // Try using governance signer (index 1) which should have admin role
         const [, governanceSigner] = await ethers.getSigners();
@@ -385,7 +385,7 @@ describe("DStake Solver Mode Tests", function () {
           console.log("⚠️ Governance signer does not have admin role - continuing with deployment router");
         }
       } else if (currentDStakeRouter === routerAddress) {
-        console.log("✅ DStakeToken router already configured correctly");
+        console.log("✅ DStakeTokenV2 router already configured correctly");
       } else {
         // No router configured, try to set it if we can
         try {
@@ -460,7 +460,7 @@ describe("DStake Solver Mode Tests", function () {
   });
 
   describe("Solver Mode: solverDepositAssets", function () {
-    it("Should deposit assets into multiple vaults via DStakeToken", async function () {
+    it("Should deposit assets into multiple vaults via DStakeTokenV2", async function () {
       const vaults = [vault1Address, vault2Address, vault3Address];
       const assets = [
         ethers.parseEther("1000"), // 1000 to vault1
@@ -571,7 +571,7 @@ describe("DStake Solver Mode Tests", function () {
   });
 
   describe("Solver Mode: solverDepositShares", function () {
-    it("Should deposit shares into multiple vaults via DStakeToken", async function () {
+    it("Should deposit shares into multiple vaults via DStakeTokenV2", async function () {
       const vaults = [vault1Address, vault2Address];
       const shares = [ethers.parseEther("500"), ethers.parseEther("300")]; // 500 and 300 shares
       const minShares = ethers.parseEther("700"); // Allow some slippage
@@ -657,7 +657,7 @@ describe("DStake Solver Mode Tests", function () {
       );
     });
 
-    it("Should withdraw assets from multiple vaults via DStakeToken", async function () {
+    it("Should withdraw assets from multiple vaults via DStakeTokenV2", async function () {
       const vaults = [vault1Address, vault2Address, vault3Address];
       const assets = [
         ethers.parseEther("500"),  // 500 from vault1
@@ -756,7 +756,7 @@ describe("DStake Solver Mode Tests", function () {
       );
     });
 
-    it("Should withdraw shares from multiple vaults via DStakeToken", async function () {
+    it("Should withdraw shares from multiple vaults via DStakeTokenV2", async function () {
       const vaults = [vault1Address, vault2Address];
 
       // Get current vault balances to calculate reasonable withdrawal amounts
@@ -947,7 +947,7 @@ describe("DStake Solver Mode Tests", function () {
       const assets = [ethers.parseEther("500")];
 
       // Direct router calls return assets to msg.sender (alice) for fee handling
-      // The receiver parameter is ignored when called directly (only DStakeToken should call this)
+      // The receiver parameter is ignored when called directly (only DStakeTokenV2 should call this)
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       const tx = await router.connect(alice).solverWithdrawAssets(

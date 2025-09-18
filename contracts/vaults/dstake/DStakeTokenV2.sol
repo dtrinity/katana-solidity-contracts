@@ -7,7 +7,7 @@ import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC2
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import { IDStakeCollateralVault } from "./interfaces/IDStakeCollateralVault.sol";
+import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 import { SupportsWithdrawalFee } from "../../common/SupportsWithdrawalFee.sol";
@@ -15,10 +15,10 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
- * @title DStakeToken
- * @dev ERC4626-compliant token representing shares in the DStakeCollateralVault.
+ * @title DStakeTokenV2
+ * @dev ERC4626-compliant token representing shares in the DStakeCollateralVaultV2.
  */
-contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradeable, SupportsWithdrawalFee {
+contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgradeable, SupportsWithdrawalFee {
   using SafeERC20 for IERC20;
 
   // --- Roles ---
@@ -32,7 +32,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   error InvalidIncentiveBps(uint256 incentiveBps, uint256 maxIncentiveBps);
 
   // --- State ---
-  IDStakeCollateralVault public collateralVault;
+  IDStakeCollateralVaultV2 public collateralVault;
   IDStakeRouter public router;
 
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
@@ -46,7 +46,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   }
 
   /**
-   * @notice Initializes the DStakeToken contract
+   * @notice Initializes the DStakeTokenV2 contract
    * @dev This function replaces the constructor for upgradeable contracts
    * @param _dStable The underlying dStable asset
    * @param _name Name of the vault token
@@ -102,7 +102,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    * @inheritdoc ERC4626Upgradeable
    * @dev
    * IMPORTANT: This function returns the total dStable value, including:
-   * 1. Assets held in the `DStakeCollateralVault` (wrapper tokens that accrue yield)
+   * 1. Assets held in the `DStakeCollateralVaultV2` (wrapper tokens that accrue yield)
    * 2. Any dStable balance held directly by this contract (collected fees from solver withdrawals)
    *
    * Including the contract's dStable balance ensures that withdrawal fees collected
@@ -111,7 +111,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
    *
    * When all vault shares have been redeemed, the router intentionally
    * leaves up to `dustTolerance` (1 wei by default) of wrapper tokens in the
-   * `DStakeCollateralVault`. These wrapper tokens continue to accrue
+   * `DStakeCollateralVaultV2`. These wrapper tokens continue to accrue
    * yield via an ever-increasing price-per-share. As a result, it is
    * theoretically possible for `totalSupply() == 0` while `totalAssets()`
    * returns a non-zero value.
@@ -594,7 +594,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
   }
 
   /**
-   * @notice Sets the address of the DStakeCollateralVault contract.
+   * @notice Sets the address of the DStakeCollateralVaultV2 contract.
    * @dev Only callable by DEFAULT_ADMIN_ROLE.
    * @param _collateralVault The address of the new collateral vault contract.
    */
@@ -602,7 +602,7 @@ contract DStakeToken is Initializable, ERC4626Upgradeable, AccessControlUpgradea
     if (_collateralVault == address(0)) {
       revert ZeroAddress();
     }
-    collateralVault = IDStakeCollateralVault(_collateralVault);
+    collateralVault = IDStakeCollateralVaultV2(_collateralVault);
     emit CollateralVaultSet(_collateralVault);
   }
 

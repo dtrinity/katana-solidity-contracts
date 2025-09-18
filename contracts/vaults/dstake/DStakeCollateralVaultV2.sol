@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IDStakeCollateralVault } from "./interfaces/IDStakeCollateralVault.sol";
+import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -18,14 +18,14 @@ interface IAdapterProvider {
 }
 
 /**
- * @title DStakeCollateralVault
+ * @title DStakeCollateralVaultV2
  * @notice Holds various yield-bearing/convertible ERC20 tokens (`strategy shares`) managed by dSTAKE.
  * @dev Calculates the total value of these assets in terms of the underlying dStable asset
  *      using registered adapters. This contract is non-upgradeable but replaceable via
- *      DStakeToken governance.
+ *      DStakeTokenV2 governance.
  *      Uses AccessControl for role-based access control.
  */
-contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, ReentrancyGuard {
+contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, ReentrancyGuard {
   using SafeERC20 for IERC20;
   using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -45,7 +45,7 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
   event ETHRescued(address indexed receiver, uint256 amount);
 
   // --- State ---
-  address public immutable dStakeToken; // The DStakeToken this vault serves
+  address public immutable dStakeToken; // The DStakeTokenV2 this vault serves
   address public immutable dStable; // The underlying dStable asset address
 
   address public router; // The DStakeRouter allowed to interact
@@ -64,10 +64,10 @@ contract DStakeCollateralVault is IDStakeCollateralVault, AccessControl, Reentra
     _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
   }
 
-  // --- External Views (IDStakeCollateralVault Interface) ---
+  // --- External Views (IDStakeCollateralVaultV2 Interface) ---
 
   /**
-   * @inheritdoc IDStakeCollateralVault
+   * @inheritdoc IDStakeCollateralVaultV2
    */
   function totalValueInDStable() external view override returns (uint256 dStableValue) {
     uint256 totalValue = 0;

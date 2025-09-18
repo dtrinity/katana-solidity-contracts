@@ -6,9 +6,9 @@ import {
   MockMetaMorphoVault,
   MockUniversalRewardsDistributor,
   TestMintableERC20,
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeToken
+  DStakeTokenV2
 } from "../../typechain-types";
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -27,8 +27,8 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
   let dStable: TestMintableERC20;
   let router: DStakeRouterV2;
-  let collateralVault: DStakeCollateralVault;
-  let dStakeToken: DStakeToken;
+  let collateralVault: DStakeCollateralVaultV2;
+  let dStakeToken: DStakeTokenV2;
 
   // Multi-vault setup (3 vaults for comprehensive testing)
   let vault1: MockMetaMorphoVault;  // Target: 50% (500000 bps)
@@ -101,7 +101,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
     let dStakeTokenDeployment, collateralVaultDeployment;
     try {
-      dStakeTokenDeployment = await deployments.get(config.DStakeTokenContractId);
+      dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
       collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
     } catch (error) {
       throw new Error(`Failed to get deployments: ${error.message}. DStake contracts may not be deployed properly.`);
@@ -127,9 +127,9 @@ describe("DStakeRouterV2 Fixes Tests", function () {
     });
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
 
-    const dStakeTokenContract = await ethers.getContractAt("DStakeToken", dStakeTokenDeployment.address);
+    const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
     const collateralVaultContract = await ethers.getContractAt(
-      "DStakeCollateralVault",
+      "DStakeCollateralVaultV2",
       collateralVaultDeployment.address
     );
 

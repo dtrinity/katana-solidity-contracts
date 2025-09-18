@@ -25,13 +25,13 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
   // --- State ---
   address public immutable dStable; // The underlying dSTABLE asset (e.g., dUSD)
   IStaticATokenLM public immutable wrappedDLendToken; // The wrapped dLEND aToken (StaticATokenLM instance, e.g., wddUSD)
-  address public immutable collateralVault; // The DStakeCollateralVault to deposit wrappedDLendToken into
+  address public immutable collateralVault; // The DStakeCollateralVaultV2 to deposit wrappedDLendToken into
 
   // --- Constructor ---
   /**
    * @param _dStable The address of the dSTABLE asset (e.g., dUSD)
    * @param _wrappedDLendToken The address of the wrapped dLEND token (StaticATokenLM, e.g., wddUSD)
-   * @param _collateralVault The address of the DStakeCollateralVault
+   * @param _collateralVault The address of the DStakeCollateralVaultV2
    */
   constructor(address _dStable, address _wrappedDLendToken, address _collateralVault) {
     if (_dStable == address(0) || _wrappedDLendToken == address(0) || _collateralVault == address(0)) {

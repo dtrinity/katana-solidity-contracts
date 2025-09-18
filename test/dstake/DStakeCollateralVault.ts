@@ -4,9 +4,9 @@ import { ZeroAddress } from "ethers"; // Import ZeroAddress
 import { ethers, getNamedAccounts } from "hardhat";
 
 import {
-  DStakeCollateralVault,
+  DStakeCollateralVaultV2,
   DStakeRouterV2,
-  DStakeToken,
+  DStakeTokenV2,
   ERC20,
   IDStableConversionAdapter,
   IERC20,
@@ -23,7 +23,7 @@ const parseUnits = (value: string | number, decimals: number | bigint) =>
   ethers.parseUnits(value.toString(), decimals);
 
 DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
-  describe.skip(`DStakeCollateralVault for ${config.DStakeTokenSymbol}`, () => {
+  describe.skip(`DStakeCollateralVaultV2 for ${config.DStakeTokenV2Symbol}`, () => {
     // Create fixture function once per suite for snapshot caching
     const fixture = createDStakeFixture(config);
 
@@ -35,8 +35,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let routerRole: string;
 
     // Fixture types
-    let DStakeToken: DStakeToken;
-    let collateralVault: DStakeCollateralVault;
+    let DStakeTokenV2: DStakeTokenV2;
+    let collateralVault: DStakeCollateralVaultV2;
     let router: DStakeRouterV2;
     let dStableToken: ERC20;
     let dStableDecimals: bigint;
@@ -46,7 +46,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let adapter: IDStableConversionAdapter | null; // Adapter can be null
     let adapterAddress: string;
 
-    let DStakeTokenAddress: string;
+    let DStakeTokenV2Address: string;
     let dStableTokenAddress: string;
     let collateralVaultAddress: string;
     let routerAddress: string;
@@ -63,8 +63,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       // Revert to snapshot instead of redeploying
       const out = await fixture();
 
-      DStakeToken = out.DStakeToken as unknown as DStakeToken;
-      collateralVault = out.collateralVault as unknown as DStakeCollateralVault;
+      DStakeTokenV2 = out.DStakeTokenV2 as unknown as DStakeTokenV2;
+      collateralVault = out.collateralVault as unknown as DStakeCollateralVaultV2;
       router = out.router as unknown as DStakeRouterV2;
       dStableToken = out.dStableToken;
       dStableDecimals = await dStableToken.decimals();
@@ -73,7 +73,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       adapter = out.adapter as unknown as IDStableConversionAdapter | null;
       adapterAddress = out.adapterAddress;
 
-      DStakeTokenAddress = await DStakeToken.getAddress();
+      DStakeTokenV2Address = await DStakeTokenV2.getAddress();
       dStableTokenAddress = await dStableToken.getAddress();
       // Get the native stablecoin contract to grant mint role
       stable = (await ethers.getContractAt(
@@ -113,7 +113,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
       // Note: ADAPTER_MANAGER_ROLE is granted via deployment scripts, not in test fixtures
 
-      expect(await collateralVault.dStakeToken()).to.equal(DStakeTokenAddress);
+      expect(await collateralVault.dStakeToken()).to.equal(DStakeTokenV2Address);
       expect(await collateralVault.dStable()).to.equal(dStableTokenAddress);
       expect(await collateralVault.hasRole(adminRole, user1.address)).to.be
         .true;
@@ -135,9 +135,9 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         expect(collateralVaultAddress).to.not.equal(ZeroAddress);
       });
 
-      it("Should have set immutable state correctly (DStakeToken, dStable)", async function () {
+      it("Should have set immutable state correctly (DStakeTokenV2, dStable)", async function () {
         expect(await collateralVault.dStakeToken()).to.equal(
-          DStakeTokenAddress,
+          DStakeTokenV2Address,
         );
         expect(await collateralVault.dStable()).to.equal(dStableTokenAddress);
       });
@@ -222,12 +222,12 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           const dStableDepositAmount = parseUnits("100", dStableDecimals);
           // Mint dStable for deployer
           await stable.mint(deployer.address, dStableDepositAmount);
-          // Approve DStakeToken to spend dStable for deposit
+          // Approve DStakeTokenV2 to spend dStable for deposit
           await dStableToken
             .connect(deployer)
-            .approve(DStakeTokenAddress, dStableDepositAmount);
-          // Deposit via DStakeToken to fund collateral vault
-          await DStakeToken.connect(deployer).deposit(
+            .approve(DStakeTokenV2Address, dStableDepositAmount);
+          // Deposit via DStakeTokenV2 to fund collateral vault
+          await DStakeTokenV2.connect(deployer).deposit(
             dStableDepositAmount,
             deployer.address,
           );
@@ -368,12 +368,12 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const dStableDepositAmount = parseUnits("100", dStableDecimals);
         // Mint dStable for deployer
         await stable.mint(deployer.address, dStableDepositAmount);
-        // Approve DStakeToken to spend dStable for deposit
+        // Approve DStakeTokenV2 to spend dStable for deposit
         await dStableToken
           .connect(deployer)
-          .approve(DStakeTokenAddress, dStableDepositAmount);
-        // Deposit via DStakeToken to fund collateral vault
-        await DStakeToken.connect(deployer).deposit(
+          .approve(DStakeTokenV2Address, dStableDepositAmount);
+        // Deposit via DStakeTokenV2 to fund collateral vault
+        await DStakeTokenV2.connect(deployer).deposit(
           dStableDepositAmount,
           deployer.address,
         );
@@ -406,12 +406,12 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const dStableDepositAmount = parseUnits("100", dStableDecimals);
         // Mint dStable for deployer
         await stable.mint(deployer.address, dStableDepositAmount);
-        // Approve DStakeToken to spend dStable for deposit
+        // Approve DStakeTokenV2 to spend dStable for deposit
         await dStableToken
           .connect(deployer)
-          .approve(DStakeTokenAddress, dStableDepositAmount);
-        // Deposit via DStakeToken to fund collateral vault
-        await DStakeToken.connect(deployer).deposit(
+          .approve(DStakeTokenV2Address, dStableDepositAmount);
+        // Deposit via DStakeTokenV2 to fund collateral vault
+        await DStakeTokenV2.connect(deployer).deposit(
           dStableDepositAmount,
           deployer.address,
         );
@@ -460,8 +460,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           await stable.mint(deployer.address, depositAmount);
           await dStableToken
             .connect(deployer)
-            .approve(DStakeTokenAddress, depositAmount);
-          await DStakeToken.connect(deployer).deposit(
+            .approve(DStakeTokenV2Address, depositAmount);
+          await DStakeTokenV2.connect(deployer).deposit(
             depositAmount,
             deployer.address,
           );
@@ -857,8 +857,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
               await stable.mint(deployer.address, dStableDepositAmount);
               await dStableToken
                 .connect(deployer)
-                .approve(DStakeTokenAddress, dStableDepositAmount);
-              await DStakeToken.connect(deployer).deposit(
+                .approve(DStakeTokenV2Address, dStableDepositAmount);
+              await DStakeTokenV2.connect(deployer).deposit(
                 dStableDepositAmount,
                 deployer.address,
               );

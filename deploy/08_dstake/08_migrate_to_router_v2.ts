@@ -45,9 +45,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       continue;
     }
 
-    // Check if migration is already complete by checking which router the DStakeToken is using
-    const dstakeTokenDeployment = await get(`DStakeToken_${instanceKey}`);
-    const dstakeToken = await ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address, deployerSigner);
+    // Check if migration is already complete by checking which router the DStakeTokenV2 is using
+    const dstakeTokenDeployment = await get(`DStakeTokenV2_${instanceKey}`);
+    const dstakeToken = await ethers.getContractAt("DStakeTokenV2", dstakeTokenDeployment.address, deployerSigner);
     const currentRouter = await dstakeToken.router();
 
     if (currentRouter === newRouterExists.address) {
@@ -70,13 +70,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`🔄 Migrating ${instanceKey} to DStakeRouterV2...`);
 
     // Get contract instances
-    const dstakeTokenDeployment = await get(`DStakeToken_${instanceKey}`);
-    const collateralVaultDeployment = await get(`DStakeCollateralVault_${instanceKey}`);
+    const dstakeTokenDeployment = await get(`DStakeTokenV2_${instanceKey}`);
+    const collateralVaultDeployment = await get(`DStakeCollateralVaultV2_${instanceKey}`);
     const oldRouterDeployment = await get(`DStakeRouter_${instanceKey}`);
     const newRouterDeployment = await get(`DStakeRouterV2_${instanceKey}`);
 
-    const dstakeToken = await ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address, deployerSigner);
-    const collateralVault = await ethers.getContractAt("DStakeCollateralVault", collateralVaultDeployment.address, deployerSigner);
+    const dstakeToken = await ethers.getContractAt("DStakeTokenV2", dstakeTokenDeployment.address, deployerSigner);
+    const collateralVault = await ethers.getContractAt("DStakeCollateralVaultV2", collateralVaultDeployment.address, deployerSigner);
     const newRouter = await ethers.getContractAt("DStakeRouterV2", newRouterDeployment.address, deployerSigner);
 
     // --- Step 1: Safety Checks ---
@@ -115,8 +115,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`      Total Supply: ${ethers.formatEther(currentTotalSupply)}`);
     console.log(`      Vault Balance: ${ethers.formatEther(currentVaultBalance)}`);
 
-    // --- Step 4: Update DStakeToken Router Reference ---
-    console.log(`    🔗 Updating DStakeToken router reference for ${instanceKey}...`);
+    // --- Step 4: Update DStakeTokenV2 Router Reference ---
+    console.log(`    🔗 Updating DStakeTokenV2 router reference for ${instanceKey}...`);
     await dstakeToken.setRouter(newRouterDeployment.address);
 
     // Verify the change
@@ -127,7 +127,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     // --- Step 5: Update Collateral Vault Router Reference ---
-    console.log(`    🔗 Updating DStakeCollateralVault router reference for ${instanceKey}...`);
+    console.log(`    🔗 Updating DStakeCollateralVaultV2 router reference for ${instanceKey}...`);
     const currentVaultRouter = await collateralVault.router();
 
     if (currentVaultRouter !== newRouterDeployment.address) {
@@ -162,7 +162,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const finalHasOldRouterRole = await collateralVault.hasRole(routerRole, oldRouterDeployment.address);
 
     if (finalTokenRouter !== newRouterDeployment.address) {
-      throw new Error(`Migration verification failed: DStakeToken router not updated for ${instanceKey}`);
+      throw new Error(`Migration verification failed: DStakeTokenV2 router not updated for ${instanceKey}`);
     }
 
     if (finalVaultRouter !== newRouterDeployment.address) {
@@ -174,7 +174,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     console.log(`    ✅ Migration completed successfully for ${instanceKey}`);
-    console.log(`      - DStakeToken router: ${finalTokenRouter}`);
+    console.log(`      - DStakeTokenV2 router: ${finalTokenRouter}`);
     console.log(`      - CollateralVault router: ${finalVaultRouter}`);
     console.log(`      - New router has ROUTER_ROLE: ${finalHasNewRouterRole}`);
     console.log(`      - Old router has ROUTER_ROLE: ${finalHasOldRouterRole}`);
@@ -210,8 +210,8 @@ func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
 
     // Check if migration is needed
     try {
-      const dstakeTokenDeployment = await deployments.get(`DStakeToken_${instanceKey}`);
-      const dstakeToken = await hre.ethers.getContractAt("DStakeToken", dstakeTokenDeployment.address);
+      const dstakeTokenDeployment = await deployments.get(`DStakeTokenV2_${instanceKey}`);
+      const dstakeToken = await hre.ethers.getContractAt("DStakeTokenV2", dstakeTokenDeployment.address);
       const currentRouter = await dstakeToken.router();
 
       if (currentRouter !== newRouterExists.address) {
