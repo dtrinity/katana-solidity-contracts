@@ -8,19 +8,19 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - Mints/burns shares against dSTABLE deposits and redemptions.
   - Delegates conversions to the router and reads TVL from the collateral vault.
   - Implements configurable withdrawal fees with on-chain previews that surface net values.
-  - Exposes solver-only entry points (batch deposit/withdraw) for off-chain keepers to service multi-vault flows.
+  - Exposes solver entry points (batch deposit/withdraw) for off-chain computed multi-vault flows (e.g. from a user-facing frontend).
   - Custodies collected fees until `reinvestFees()` is called, paying an optional caller incentive before routing the balance back through the router.
 
 - `DStakeCollateralVaultV2` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVaultV2.sol`)
   - Holds ERC20 "strategy shares" (e.g., ERC4626 wrapper shares from upstream strategies) and exposes `totalValueInDStable()`.
   - Maintains a registry of supported strategy shares; adapters can be rotated without migrating balances.
-  - Allows governance to delist strategy shares even if dust remains (removes previous griefing vector).
+  - Allows governance to delist strategy shares even if dust remains (avoids griefing vector).
   - Grants `ROUTER_ROLE` to the active router so only the router can move collateral.
 
 - `DStakeRouterV2` – deterministic orchestrator (`contracts/vaults/dstake/DStakeRouterV2.sol`)
   - Owner of vault configuration, adapter registry, and operational limits.
-  - Auto-routes user deposits to the most under-allocated active vault and withdrawals to the most over-allocated vault (one vault per user operation by default).
-  - Provides solver routes that accept vault/amount arrays for multi-vault servicing when automation is required.
+  - Auto-routes user deposits to the most under-allocated active vault and withdrawals from the most over-allocated vault (one vault per user operation by default).
+  - Provides solver routes that accept vault/amount arrays for multi-vault servicing, typically from dSTAKE deposits/withdrawals.
   - Supports collateral exchanges, pausing, dust tolerance settings, surplus sweeping, and vault health checks.
 
 - Adapters (`contracts/vaults/dstake/adapters/`)
@@ -112,8 +112,8 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 1. **Onboard a new strategy**
    - Implement `IDStableConversionAdapterV2` for the protocol and deploy it.
-  - Call `addAdapter(strategyShare, adapter)` and grant `STRATEGY_REBALANCER_ROLE` if cross-strategy swaps are required.
-   - Add a vault config (target BPS, activation flag). Ensure aggregate targets sum to 10,000 BPS.
+   - Call `addAdapter(strategyShare, adapter)` and grant `STRATEGY_REBALANCER_ROLE` if cross-strategy swaps are required.
+   - Add a vault config (target BPS, activation flag). Ensure aggregate targets sum to 100%.
    - Optionally call `setDefaultDepositStrategyShare` to make the new strategy the default for surplus sweeps.
 
 2. **Rotate routers**
