@@ -48,6 +48,8 @@ contract MockMetaMorphoVault is ERC4626 {
   bool public mockPaused = false;
   bool public mockRevertOnDeposit = false;
   bool public mockRevertOnWithdraw = false;
+  bool public mockRevertOnPreviewRedeem = false;
+  bool public mockRevertOnConvertToAssets = false;
   uint256 public mockDepositFee = 0; // in basis points
   uint256 public mockWithdrawFee = 0; // in basis points
 
@@ -98,6 +100,17 @@ contract MockMetaMorphoVault is ERC4626 {
     mockRevertOnWithdraw = _revertOnWithdraw;
     emit MockBehaviorSet("revertOnDeposit", _revertOnDeposit);
     emit MockBehaviorSet("revertOnWithdraw", _revertOnWithdraw);
+  }
+
+  /**
+   * @notice Configure preview functions to revert for valuation testing
+   */
+  function setPreviewRevertFlags(bool _revertPreviewRedeem, bool _revertConvertToAssets) external {
+    require(msg.sender == owner, "Not owner");
+    mockRevertOnPreviewRedeem = _revertPreviewRedeem;
+    mockRevertOnConvertToAssets = _revertConvertToAssets;
+    emit MockBehaviorSet("revertPreviewRedeem", _revertPreviewRedeem);
+    emit MockBehaviorSet("revertConvertToAssets", _revertConvertToAssets);
   }
 
   /**
@@ -378,5 +391,15 @@ contract MockMetaMorphoVault is ERC4626 {
     IERC20(asset()).transfer(receiver, assets);
 
     emit Withdraw(caller, receiver, owner, assets, shares);
+  }
+
+  function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
+    if (mockRevertOnPreviewRedeem) revert("Mock previewRedeem revert");
+    return super.previewRedeem(shares);
+  }
+
+  function convertToAssets(uint256 shares) public view virtual override returns (uint256) {
+    if (mockRevertOnConvertToAssets) revert("Mock convertToAssets revert");
+    return super.convertToAssets(shares);
   }
 }

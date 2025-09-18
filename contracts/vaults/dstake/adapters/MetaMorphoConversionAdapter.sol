@@ -52,6 +52,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
   error VaultOperationFailed();
   error DustAmount();
   error SlippageTooHigh(uint256 slippage, uint256 maximum);
+  error ValuationUnavailable();
 
   // --- Events ---
   event ConversionToVault(address indexed from, uint256 dStableAmount, uint256 vaultShares);
@@ -226,8 +227,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
       try metaMorphoVault.convertToAssets(strategyShareAmount) returns (uint256 assets) {
         return assets;
       } catch {
-        // If both fail, return 0 (caller should handle this case)
-        return 0;
+        revert ValuationUnavailable();
       }
     }
   }
