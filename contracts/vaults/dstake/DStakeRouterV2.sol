@@ -470,8 +470,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert SlippageCheckFailed(toStrategyShare, locals.calculatedToStrategyShareAmount, minToShareAmount);
     }
 
-    collateralVault.transferStrategyShares(toStrategyShare, locals.calculatedToStrategyShareAmount, msg.sender);
-
     IERC20(fromStrategyShare).safeTransferFrom(msg.sender, address(this), fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, fromShareAmount);
     uint256 receivedDStable = locals.fromAdapter.withdrawFromStrategy(fromShareAmount);
@@ -481,9 +479,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (actualToStrategyShare != toStrategyShare)
       revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
-    if (resultingToShareAmount < minToShareAmount) {
+    // Validate that actual conversion result meets minimum requirements (allowing for dust tolerance)
+    uint256 minRequiredWithDust = minToShareAmount > dustTolerance ? minToShareAmount - dustTolerance : 0;
+    if (resultingToShareAmount < minRequiredWithDust) {
       revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
+
+    // Only transfer shares to operator after actual conversion is complete and validated
+    collateralVault.transferStrategyShares(toStrategyShare, resultingToShareAmount, msg.sender);
 
     emit StrategySharesExchanged(
       fromStrategyShare,

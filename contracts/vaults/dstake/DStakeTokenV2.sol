@@ -434,6 +434,21 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
     // Delegate to router's solver withdrawal method
     // Router withdraws from strategy vaults and returns gross assets to this contract
+    //
+    // FEE RESPONSIBILITY DESIGN:
+    // The router receives net asset requests from solvers but performs gross withdrawals from strategy vaults.
+    // It returns the GROSS amount withdrawn to this contract, which then applies the withdrawal fee.
+    // This ensures:
+    // 1. Only DStakeTokenV2 applies withdrawal fees (router does NOT apply any fees)
+    // 2. Fees are applied exactly once on the gross amount returned by the router
+    // 3. Router focuses solely on vault operations and slippage management
+    // 4. Fee calculation is centralized in the token contract for consistency
+    //
+    // DOUBLE-CHARGING PREVENTION:
+    // The router's solverWithdrawAssets function explicitly does NOT apply any fees.
+    // It withdraws the requested amounts from strategy vaults and returns all proceeds
+    // as gross amounts to this contract. This contract then applies the withdrawal fee
+    // once on the gross amount and transfers the net amount to the receiver.
     uint256 grossWithdrawn = router.solverWithdrawAssets(strategyVaults, assets, receiver, owner);
 
     // Calculate fee on gross amount and determine net amount for receiver
@@ -512,6 +527,22 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     _burn(owner, shares);
 
     // Delegate to router's solver withdrawal method - router returns gross assets
+    //
+    // FEE RESPONSIBILITY DESIGN:
+    // The router receives share amounts to withdraw and performs the actual withdrawals from strategy vaults.
+    // It returns the GROSS amount of assets obtained from those withdrawals to this contract.
+    // This ensures:
+    // 1. Only DStakeTokenV2 applies withdrawal fees (router does NOT apply any fees)
+    // 2. Fees are applied exactly once on the gross amount returned by the router
+    // 3. Router focuses solely on vault operations and share-to-asset conversions
+    // 4. Fee calculation is centralized in the token contract for consistency
+    //
+    // DOUBLE-CHARGING PREVENTION:
+    // The router's solverWithdrawShares function explicitly does NOT apply any fees.
+    // It converts the requested shares to assets via strategy vault withdrawals and
+    // returns all proceeds as gross amounts to this contract. This contract then
+    // applies the withdrawal fee once on the gross amount and transfers the net
+    // amount to the receiver.
     uint256 grossWithdrawn = router.solverWithdrawShares(strategyVaults, strategyShares, receiver, owner);
 
     // Calculate fee and net amount

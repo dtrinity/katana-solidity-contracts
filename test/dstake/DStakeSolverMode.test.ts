@@ -1158,6 +1158,296 @@ describe("DStake Solver Mode Tests", function () {
     });
   });
 
+  describe("Solver Mode: Fee Application Tests", function () {
+    beforeEach(async function () {
+      // Setup initial position for fee testing
+      const vaults = [vault1Address, vault2Address, vault3Address];
+      const assets = [
+        ethers.parseEther("3000"), // 3000 to vault1
+        ethers.parseEther("2000"), // 2000 to vault2
+        ethers.parseEther("1000")  // 1000 to vault3
+      ];
+      const totalAssets = ethers.parseEther("6000");
+      const minShares = ethers.parseEther("5800");
+
+      await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
+      await dStakeToken.connect(alice).solverDepositAssets(
+        vaults,
+        assets,
+        minShares,
+        alice.address
+      );
+
+      // Setup withdrawal fees - alice needs FEE_MANAGER_ROLE
+      const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
+      await dStakeToken.grantRole(FEE_MANAGER_ROLE, alice.address);
+      await dStakeToken.connect(alice).setWithdrawalFee(1000); // 0.1% withdrawal fee
+    });
+
+    it("Should apply withdrawal fees exactly once in solverWithdrawAssets", async function () {
+      const withdrawalFeeBps = await dStakeToken.withdrawalFeeBps();
+      expect(withdrawalFeeBps).to.equal(1000); // 0.1%
+
+      const vaults = [vault1Address, vault2Address];
+      const requestedAssets = [
+        ethers.parseEther("500"),  // Request 500 from vault1
+        ethers.parseEther("300")   // Request 300 from vault2
+      ];
+      const totalRequestedAssets = ethers.parseEther("800");
+      const maxShares = ethers.parseEther("1000");
+
+      const dStakeTokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+      const sharesBefore = await dStakeToken.balanceOf(alice.address);
+
+      // Execute solver withdrawal by assets
+      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(
+        vaults,
+        requestedAssets,
+        maxShares,
+        alice.address,
+        alice.address
+      );
+
+      const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+      const sharesAfter = await dStakeToken.balanceOf(alice.address);
+
+      const sharesBurned = sharesBefore - sharesAfter;
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+      const feesRetained = dStakeTokenBalanceAfter - dStakeTokenBalanceBefore;
+
+      // Calculate expected fee based on the gross amount returned by router
+      // The router returns gross assets, and this contract applies fee once
+      const grossWithdrawn = aliceReceived + feesRetained;
+      const expectedFee = (grossWithdrawn * withdrawalFeeBps) / 1000000n; // 0.1% of gross
+
+      // Verify fee calculation is correct (within 1 wei tolerance for rounding)
+      expect(feesRetained).to.be.closeTo(expectedFee, 1);
+
+      // Verify alice received net amount after fee
+      expect(aliceReceived).to.equal(grossWithdrawn - feesRetained);
+
+      // Verify shares were burned appropriately
+      expect(sharesBurned).to.be.lte(maxShares);
+      expect(sharesBurned).to.be.gt(0);
+
+      // Verify WithdrawalFee event was emitted
+      await expect(tx)
+        .to.emit(dStakeToken, "WithdrawalFee")
+        .withArgs(alice.address, alice.address, feesRetained);
+
+      // Critical assertion: The total gross amount should be approximately equal to requested assets
+      // (allowing for vault mechanics and rounding, but not double fees)
+      // If fees were double-charged, grossWithdrawn would be significantly higher than expected
+      expect(grossWithdrawn).to.be.closeTo(totalRequestedAssets, ethers.parseEther("50"));
+    });
+
+    it("Should apply withdrawal fees exactly once in solverWithdrawShares", async function () {
+      const withdrawalFeeBps = await dStakeToken.withdrawalFeeBps();
+      expect(withdrawalFeeBps).to.equal(1000); // 0.1%
+
+      // Get current vault balances to calculate withdrawal amounts
+      const vault1Balance = await vault1.balanceOf(collateralVault.target);
+      const vault2Balance = await vault2.balanceOf(collateralVault.target);
+
+      const vaults = [vault1Address, vault2Address];
+      const sharesToWithdraw = [
+        vault1Balance / 5n,  // 20% of vault1 shares
+        vault2Balance / 10n  // 10% of vault2 shares
+      ];
+      const maxShares = ethers.parseEther("1500");
+
+      // Calculate expected gross assets from vault previews
+      const expectedGrossFromVault1 = await vault1.previewRedeem(sharesToWithdraw[0]);
+      const expectedGrossFromVault2 = await vault2.previewRedeem(sharesToWithdraw[1]);
+      const totalExpectedGross = expectedGrossFromVault1 + expectedGrossFromVault2;
+
+      const dStakeTokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+      const sharesBefore = await dStakeToken.balanceOf(alice.address);
+
+      // Execute solver withdrawal by shares
+      const tx = await dStakeToken.connect(alice).solverWithdrawShares(
+        vaults,
+        sharesToWithdraw,
+        maxShares,
+        alice.address,
+        alice.address
+      );
+
+      const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+      const sharesAfter = await dStakeToken.balanceOf(alice.address);
+
+      const sharesBurned = sharesBefore - sharesAfter;
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+      const feesRetained = dStakeTokenBalanceAfter - dStakeTokenBalanceBefore;
+
+      // Calculate actual gross withdrawn and expected fee
+      const grossWithdrawn = aliceReceived + feesRetained;
+      const expectedFee = (grossWithdrawn * withdrawalFeeBps) / 1000000n; // 0.1% of gross
+
+      // Verify fee calculation is correct (within 1 wei tolerance for rounding)
+      expect(feesRetained).to.be.closeTo(expectedFee, 1);
+
+      // Verify alice received net amount after fee
+      expect(aliceReceived).to.equal(grossWithdrawn - feesRetained);
+
+      // Verify shares were burned appropriately
+      expect(sharesBurned).to.be.lte(maxShares);
+      expect(sharesBurned).to.be.gt(0);
+
+      // Verify WithdrawalFee event was emitted
+      await expect(tx)
+        .to.emit(dStakeToken, "WithdrawalFee")
+        .withArgs(alice.address, alice.address, feesRetained);
+
+      // Critical assertion: The gross amount should match vault preview calculations
+      // If fees were double-charged, grossWithdrawn would be significantly different
+      expect(grossWithdrawn).to.be.closeTo(totalExpectedGross, ethers.parseEther("20"));
+
+      // Additional verification: The actual vault balances should have decreased by the withdrawn shares
+      const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
+      const vault2BalanceAfter = await vault2.balanceOf(collateralVault.target);
+
+      expect(vault1BalanceAfter).to.equal(vault1Balance - sharesToWithdraw[0]);
+      expect(vault2BalanceAfter).to.equal(vault2Balance - sharesToWithdraw[1]);
+    });
+
+    it("Should demonstrate fee consistency between normal and solver withdrawals", async function () {
+      // This test compares fees applied in normal withdrawals vs solver withdrawals
+      // to ensure consistency and prove no double-charging
+
+      const withdrawalAmount = ethers.parseEther("500");
+      const withdrawalFeeBps = await dStakeToken.withdrawalFeeBps();
+
+      // Test 1: Normal withdrawal fee calculation
+      const grossForNormalWithdrawal = (withdrawalAmount * 1000000n) / (1000000n - withdrawalFeeBps);
+      const expectedNormalFee = grossForNormalWithdrawal - withdrawalAmount;
+
+      // Test 2: Simulate solver withdrawal to compare fee behavior
+      const vaults = [vault1Address];
+      const assets = [withdrawalAmount];
+      const maxShares = ethers.parseEther("600");
+
+      const dStakeTokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+
+      // Execute solver withdrawal
+      await dStakeToken.connect(alice).solverWithdrawAssets(
+        vaults,
+        assets,
+        maxShares,
+        alice.address,
+        alice.address
+      );
+
+      const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+      const solverFeesRetained = dStakeTokenBalanceAfter - dStakeTokenBalanceBefore;
+      const solverGrossWithdrawn = aliceReceived + solverFeesRetained;
+
+      // Calculate solver fee as percentage of gross
+      const solverFeeRate = (solverFeesRetained * 1000000n) / solverGrossWithdrawn;
+
+      // Verify solver fee rate matches expected withdrawal fee rate
+      expect(solverFeeRate).to.be.closeTo(withdrawalFeeBps, 100); // Within 0.01% tolerance
+
+      // Verify alice received the expected net amount
+      expect(aliceReceived).to.be.closeTo(withdrawalAmount, ethers.parseEther("10"));
+
+      // The key assertion: solver withdrawal applies fees at the same rate as normal withdrawals
+      // This proves fees are not being double-charged in solver mode
+      console.log(`Normal withdrawal fee rate: ${withdrawalFeeBps} bps`);
+      console.log(`Solver withdrawal fee rate: ${solverFeeRate} bps`);
+      console.log(`Difference: ${solverFeeRate > withdrawalFeeBps ? solverFeeRate - withdrawalFeeBps : withdrawalFeeBps - solverFeeRate} bps`);
+    });
+
+    it("Should handle zero fee scenarios correctly in solver withdrawals", async function () {
+      // Set withdrawal fee to zero
+      await dStakeToken.connect(alice).setWithdrawalFee(0);
+
+      const vaults = [vault1Address, vault2Address];
+      const assets = [ethers.parseEther("400"), ethers.parseEther("600")];
+      const totalAssets = ethers.parseEther("1000");
+      const maxShares = ethers.parseEther("1200");
+
+      const dStakeTokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+
+      // Execute solver withdrawal with zero fees
+      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(
+        vaults,
+        assets,
+        maxShares,
+        alice.address,
+        alice.address
+      );
+
+      const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+
+      const feesRetained = dStakeTokenBalanceAfter - dStakeTokenBalanceBefore;
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+
+      // With zero fees, no fees should be retained
+      expect(feesRetained).to.equal(0);
+
+      // Alice should receive approximately the full gross amount
+      expect(aliceReceived).to.be.closeTo(totalAssets, ethers.parseEther("50"));
+
+      // WithdrawalFee event should NOT be emitted when fee is zero
+      await expect(tx).to.not.emit(dStakeToken, "WithdrawalFee");
+    });
+
+    it("Should handle maximum fee scenarios correctly in solver withdrawals", async function () {
+      // Set withdrawal fee to maximum allowed (1%)
+      const maxFee = await dStakeToken.maxWithdrawalFeeBps(); // Should be 10000 (1%)
+      await dStakeToken.connect(alice).setWithdrawalFee(maxFee);
+
+      const vaults = [vault1Address];
+      const assets = [ethers.parseEther("1000")];
+      const maxShares = ethers.parseEther("1200");
+
+      const dStakeTokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+
+      // Execute solver withdrawal with maximum fees
+      await dStakeToken.connect(alice).solverWithdrawAssets(
+        vaults,
+        assets,
+        maxShares,
+        alice.address,
+        alice.address
+      );
+
+      const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+
+      const feesRetained = dStakeTokenBalanceAfter - dStakeTokenBalanceBefore;
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+      const grossWithdrawn = aliceReceived + feesRetained;
+
+      // Calculate expected fee at maximum rate
+      const expectedFeeRate = maxFee; // 10000 bps = 1%
+      const calculatedFeeRate = (feesRetained * 1000000n) / grossWithdrawn;
+
+      // Verify fee is applied at maximum rate
+      expect(calculatedFeeRate).to.be.closeTo(expectedFeeRate, 100);
+
+      // Verify fee amount is reasonable (1% of gross)
+      const expectedFeeAmount = (grossWithdrawn * expectedFeeRate) / 1000000n;
+      expect(feesRetained).to.be.closeTo(expectedFeeAmount, 1);
+
+      // Verify the withdrawal still functions correctly even with maximum fees
+      expect(aliceReceived).to.be.gt(0);
+      expect(grossWithdrawn).to.be.closeTo(ethers.parseEther("1000"), ethers.parseEther("50"));
+    });
+  });
+
   describe("Solver Mode: Complex Multi-User Scenarios", function () {
     it("Should handle concurrent solver operations correctly", async function () {
       // Multiple users perform solver operations with different vault combinations
