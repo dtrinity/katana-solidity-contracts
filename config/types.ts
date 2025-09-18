@@ -14,7 +14,7 @@ export interface Config {
   readonly dStables: {
     [key: string]: DStableConfig;
   };
-  readonly dLend: DLendConfig;
+  readonly dLend?: DLendConfig;
   readonly odos?: {
     readonly router: string;
   };
@@ -117,6 +117,29 @@ export interface OracleAggregatorConfig {
   readonly priceDecimals: number;
   readonly hardDStablePeg: bigint;
   readonly baseCurrency: string;
+  readonly api3OracleAssets: {
+    plainApi3OracleWrappers: {
+      [key: string]: string;
+    };
+    api3OracleWrappersWithThresholding: {
+      [key: string]: {
+        proxy: string;
+        lowerThreshold: bigint;
+        fixedPrice: bigint;
+      };
+    };
+    compositeApi3OracleWrappersWithThresholding: {
+      [key: string]: {
+        feedAsset: string;
+        proxy1: string;
+        proxy2: string;
+        lowerThresholdInBase1: bigint;
+        fixedPriceInBase1: bigint;
+        lowerThresholdInBase2: bigint;
+        fixedPriceInBase2: bigint;
+      };
+    };
+  };
   readonly redstoneOracleAssets: {
     plainRedstoneOracleWrappers: {
       [key: string]: string;

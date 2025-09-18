@@ -4,13 +4,6 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ONE_PERCENT_BPS } from "../../typescript/common/bps_constants";
 import { DETH_TOKEN_ID, DUSD_TOKEN_ID, INCENTIVES_PROXY_ID, SDUSD_DSTAKE_TOKEN_ID } from "../../typescript/deploy-ids";
 import { ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT, ORACLE_AGGREGATOR_PRICE_DECIMALS } from "../../typescript/oracle_aggregator/constants";
-import {
-  rateStrategyHighLiquidityStable,
-  rateStrategyHighLiquidityVolatile,
-  rateStrategyMediumLiquidityStable,
-  rateStrategyMediumLiquidityVolatile,
-} from "../dlend/interest-rate-strategies";
-import { strategyDETH, strategyDUSD, strategySFRXUSD, strategySTETH, strategyWETH } from "../dlend/reserves-params";
 import { Config } from "../types";
 
 /**
@@ -169,6 +162,35 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         hardDStablePeg: 1n * ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
         baseCurrency: ZeroAddress,
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {
+            ...(frxUSDDeployment?.address && mockOracleNameToAddress["frxUSD_USD"]
+              ? {
+                  [frxUSDDeployment.address]: {
+                    proxy: mockOracleNameToAddress["frxUSD_USD"],
+                    lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                    fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                  },
+                }
+              : {}),
+          },
+          compositeApi3OracleWrappersWithThresholding: {
+            ...(sfrxUSDDeployment?.address && mockOracleNameToAddress["sfrxUSD_frxUSD"] && mockOracleNameToAddress["frxUSD_USD"]
+              ? {
+                  [sfrxUSDDeployment.address]: {
+                    feedAsset: sfrxUSDDeployment.address,
+                    proxy1: mockOracleNameToAddress["sfrxUSD_frxUSD"],
+                    proxy2: mockOracleNameToAddress["frxUSD_USD"],
+                    lowerThresholdInBase1: 0n,
+                    fixedPriceInBase1: 0n,
+                    lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                    fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
+                  },
+                }
+              : {}),
+          },
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             ...(WETHDeployment?.address && mockOracleNameToAddress["WETH_USD"]
@@ -215,30 +237,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
                   },
                 }
               : {}),
-            ...(frxUSDDeployment?.address && mockOracleNameToAddress["frxUSD_USD"]
-              ? {
-                  [frxUSDDeployment.address]: {
-                    feed: mockOracleNameToAddress["frxUSD_USD"],
-                    lowerThreshold: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                    fixedPrice: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                  },
-                }
-              : {}),
           },
           compositeRedstoneOracleWrappersWithThresholding: {
-            ...(sfrxUSDDeployment?.address && mockOracleNameToAddress["sfrxUSD_frxUSD"] && mockOracleNameToAddress["frxUSD_USD"]
-              ? {
-                  [sfrxUSDDeployment.address]: {
-                    feedAsset: sfrxUSDDeployment.address,
-                    feed1: mockOracleNameToAddress["sfrxUSD_frxUSD"],
-                    feed2: mockOracleNameToAddress["frxUSD_USD"],
-                    lowerThresholdInBase1: 0n,
-                    fixedPriceInBase1: 0n,
-                    lowerThresholdInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                    fixedPriceInBase2: ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
-                  },
-                }
-              : {}),
             ...(stETHDeployment?.address && mockOracleNameToAddress["stETH_WETH"] && mockOracleNameToAddress["WETH_USD"]
               ? {
                   [stETHDeployment.address]: {
@@ -259,6 +259,11 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         hardDStablePeg: 1n * ORACLE_AGGREGATOR_BASE_CURRENCY_UNIT,
         priceDecimals: ORACLE_AGGREGATOR_PRICE_DECIMALS,
         baseCurrency: WETHDeployment?.address || ZeroAddress, // Base currency is WETH
+        api3OracleAssets: {
+          plainApi3OracleWrappers: {},
+          api3OracleWrappersWithThresholding: {},
+          compositeApi3OracleWrappersWithThresholding: {},
+        },
         redstoneOracleAssets: {
           plainRedstoneOracleWrappers: {
             ...(stETHDeployment?.address && mockOracleNameToAddress["stETH_WETH"]
@@ -271,29 +276,6 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
           compositeRedstoneOracleWrappersWithThresholding: {},
         },
       },
-    },
-    dLend: {
-      providerID: 1, // Arbitrary as long as we don't repeat
-      flashLoanPremium: {
-        total: 0.0005e4, // 0.05%
-        protocol: 0.0004e4, // 0.04%
-      },
-      rateStrategies: [
-        rateStrategyHighLiquidityVolatile,
-        rateStrategyMediumLiquidityVolatile,
-        rateStrategyHighLiquidityStable,
-        rateStrategyMediumLiquidityStable,
-      ],
-      reservesConfig: {
-        dUSD: strategyDUSD,
-        dETH: strategyDETH,
-        WETH: strategyWETH,
-        stETH: strategySTETH,
-        sfrxUSD: strategySFRXUSD,
-      },
-    },
-    odos: {
-      router: "", // Odos doesn't work on localhost
     },
     dStake: {
       sdUSD: {
