@@ -8,8 +8,8 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
-import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
-import { IDStableConversionAdapter } from "./interfaces/IDStableConversionAdapter.sol";
+import { IDStakeRouterV2 } from "./interfaces/IDStakeRouterV2.sol";
+import { IDStableConversionAdapterV2 } from "./interfaces/IDStableConversionAdapterV2.sol";
 import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
@@ -21,7 +21,7 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
  * @dev Extends the original single-vault router with allocation-aware selection, vault governance tooling,
  *      and shared buffer logic for adapter conversions.
  */
-contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausable {
+contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
   using AllocationCalculator for uint256[];
 
@@ -74,8 +74,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   struct ExchangeLocals {
     address fromAdapterAddress;
     address toAdapterAddress;
-    IDStableConversionAdapter fromAdapter;
-    IDStableConversionAdapter toAdapter;
+    IDStableConversionAdapterV2 fromAdapter;
+    IDStableConversionAdapterV2 toAdapter;
     uint256 dStableValueIn;
     uint256 calculatedToStrategyShareAmount;
   }
@@ -404,8 +404,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
     if (toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
 
-    IDStableConversionAdapter fromAdapter = IDStableConversionAdapter(fromAdapterAddress);
-    IDStableConversionAdapter toAdapter = IDStableConversionAdapter(toAdapterAddress);
+    IDStableConversionAdapterV2 fromAdapter = IDStableConversionAdapterV2(fromAdapterAddress);
+    IDStableConversionAdapterV2 toAdapter = IDStableConversionAdapterV2(toAdapterAddress);
 
     uint256 dStableAmountEquivalent = fromAdapter.previewWithdrawFromStrategy(fromShareAmount);
     collateralVault.transferStrategyShares(fromStrategyShare, fromShareAmount, address(this));
@@ -456,8 +456,8 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (locals.fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
     if (locals.toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
 
-    locals.fromAdapter = IDStableConversionAdapter(locals.fromAdapterAddress);
-    locals.toAdapter = IDStableConversionAdapter(locals.toAdapterAddress);
+    locals.fromAdapter = IDStableConversionAdapterV2(locals.fromAdapterAddress);
+    locals.toAdapter = IDStableConversionAdapterV2(locals.toAdapterAddress);
 
     locals.dStableValueIn = locals.fromAdapter.previewWithdrawFromStrategy(fromShareAmount);
     if (locals.dStableValueIn == 0) revert ZeroInputDStableValue(fromStrategyShare, fromShareAmount);
@@ -528,7 +528,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
 
   function _addAdapter(address strategyShare, address adapterAddress) internal {
     if (adapterAddress == address(0) || strategyShare == address(0)) revert ZeroAddress();
-    address adapterStrategyShare = IDStableConversionAdapter(adapterAddress).strategyShare();
+    address adapterStrategyShare = IDStableConversionAdapterV2(adapterAddress).strategyShare();
     if (adapterStrategyShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, adapterStrategyShare);
     if (_strategyShareToAdapter[strategyShare] != address(0) && _strategyShareToAdapter[strategyShare] != adapterAddress) {
       revert VaultAssetManagedByDifferentAdapter(strategyShare, _strategyShareToAdapter[strategyShare]);
@@ -569,7 +569,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     address adapterAddress = _strategyShareToAdapter[defaultDepositStrategyShare];
     if (adapterAddress == address(0)) revert AdapterNotFound(defaultDepositStrategyShare);
 
-    IDStableConversionAdapter adapter = IDStableConversionAdapter(adapterAddress);
+    IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
     address strategyShare = adapter.strategyShare();
 
     IERC20(dStable).approve(adapterAddress, amountToSweep);
@@ -715,7 +715,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     VaultConfig memory config = _getVaultConfig(vault);
     if (!config.isActive) revert VaultNotActive(vault);
 
-    IDStableConversionAdapter adapter = IDStableConversionAdapter(config.adapter);
+    IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(config.adapter);
 
     (address vaultExpected, uint256 expectedShares) = adapter.previewDepositIntoStrategy(dStableAmount);
     if (vaultExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultExpected);
@@ -765,7 +765,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     if (!config.isActive) revert VaultNotActive(vault);
 
     address adapter = config.adapter;
-    IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
+    IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
     if (shares > availableShares) revert NoLiquidityAvailable();
@@ -792,7 +792,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   ) internal returns (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
     adapter = config.adapter;
-    IDStableConversionAdapter conversionAdapter = IDStableConversionAdapter(adapter);
+    IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
     // Use the vault's direct preview without slippage discount for planning
     // The adapter's preview includes slippage which is for conservative estimation only
@@ -895,7 +895,7 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
       }
       if (adapter == address(0)) return 0;
 
-      try IDStableConversionAdapter(adapter).strategyShareValueInDStable(vault, shares) returns (uint256 value) {
+      try IDStableConversionAdapterV2(adapter).strategyShareValueInDStable(vault, shares) returns (uint256 value) {
         return value;
       } catch {
         return 0;

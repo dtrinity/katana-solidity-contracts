@@ -2,13 +2,13 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IDStableConversionAdapter Interface
+ * @title IDStableConversionAdapterV2 Interface
  * @notice Interface for contracts that handle the conversion between the core stable asset (dUSD/dETH)
  *         and a specific yield-bearing or convertible ERC20 token (`strategy share`), as well as
  *         valuing that `strategy share` in terms of the stable asset.
  * @dev Implementations interact with specific protocols (lending pools, DEX LPs, wrappers, etc.).
  */
-interface IDStableConversionAdapter {
+interface IDStableConversionAdapterV2 {
   /**
    * @notice Converts a specified amount of the stable asset into the specific `strategyShare`
    *         managed by this adapter.

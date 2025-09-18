@@ -7,13 +7,13 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
-import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "../interfaces/IDStableConversionAdapterV2.sol";
 import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
 
 /**
  * @title MetaMorphoConversionAdapter
  * @notice Adapter for converting between dSTABLE assets and MetaMorpho vault shares
- * @dev Implements IDStableConversionAdapter interface with security considerations for external vault integration
+ * @dev Implements IDStableConversionAdapterV2 interface with security considerations for external vault integration
  *
  * Security considerations:
  * - Validates vault asset matches expected dStable
@@ -32,7 +32,7 @@ import { BasisPointConstants } from "../../../common/BasisPointConstants.sol";
  * 4. Future-proofing against MetaMorpho vaults that may implement dynamic fees
  * 5. Emergency situations where governance may need to allow higher slippage to prevent DoS
  */
-contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGuard, AccessControl {
+contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyGuard, AccessControl {
   using SafeERC20 for IERC20;
   using Math for uint256;
 
@@ -100,10 +100,10 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
     }
   }
 
-  // --- IDStableConversionAdapter Implementation ---
+  // --- IDStableConversionAdapterV2 Implementation ---
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Converts dStable to MetaMorpho vault shares with slippage protection
    */
   function depositIntoStrategy(
@@ -164,7 +164,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Converts MetaMorpho vault shares back to dStable with slippage protection
    */
   function withdrawFromStrategy(uint256 strategyShareAmount) external override nonReentrant returns (uint256 dStableAmount) {
@@ -219,7 +219,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Returns the current value of vault shares in dStable terms
    */
   function strategyShareValueInDStable(address _strategyShare, uint256 strategyShareAmount) external view override returns (uint256) {
@@ -242,7 +242,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    */
   function previewWithdrawFromStrategy(uint256 strategyShareAmount) external view override returns (uint256 dStableAmount) {
     try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
@@ -259,7 +259,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    */
   function previewDepositIntoStrategy(
     uint256 dStableAmount
@@ -278,7 +278,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapter, ReentrancyGua
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    */
   function strategyShare() external view override returns (address) {
     return address(metaMorphoVault);

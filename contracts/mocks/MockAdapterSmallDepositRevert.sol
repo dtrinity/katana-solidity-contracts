@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC4626Simple } from "./MockERC4626Simple.sol";
-import { IDStableConversionAdapter } from "../vaults/dstake/interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "../vaults/dstake/interfaces/IDStableConversionAdapterV2.sol";
 
 /**
  * @title MockAdapterSmallDepositRevert
@@ -11,7 +11,7 @@ import { IDStableConversionAdapter } from "../vaults/dstake/interfaces/IDStableC
  *         is called with < 2 wei of dSTABLE.  Used to reproduce the dStakeRouter
  *         surplus-rounding DoS in unit tests.
  */
-contract MockAdapterSmallDepositRevert is IDStableConversionAdapter {
+contract MockAdapterSmallDepositRevert is IDStableConversionAdapterV2 {
   // --- Errors ---
   error ZeroAddress();
   error DepositTooSmall(uint256 amount);
@@ -34,7 +34,7 @@ contract MockAdapterSmallDepositRevert is IDStableConversionAdapter {
     vaultAssetToken = new MockERC4626Simple(IERC20(_dStable));
   }
 
-  // ---------------- IDStableConversionAdapter ----------------
+  // ---------------- IDStableConversionAdapterV2 ----------------
 
   function depositIntoStrategy(uint256 stableAmount) external override returns (address _strategyShare, uint256 strategyShareAmount) {
     if (stableAmount < MIN_DEPOSIT) revert DepositTooSmall(stableAmount);

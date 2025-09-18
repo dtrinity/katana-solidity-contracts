@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IDStakeRouter Interface
+ * @title IDStakeRouterV2 Interface
  * @notice Defines the external functions of the DStakeRouter required by the DStakeTokenV2
  *         for handling deposits and withdrawals.
  */
-interface IDStakeRouter {
+interface IDStakeRouterV2 {
   /**
    * @notice Handles the conversion of deposited dStable asset into a chosen `strategyShare`
    *         and informs the collateral vault.

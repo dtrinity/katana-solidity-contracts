@@ -8,7 +8,7 @@ import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/ac
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
-import { IDStakeRouter } from "./interfaces/IDStakeRouter.sol";
+import { IDStakeRouterV2 } from "./interfaces/IDStakeRouterV2.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 import { SupportsWithdrawalFee } from "../../common/SupportsWithdrawalFee.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -33,7 +33,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
   // --- State ---
   IDStakeCollateralVaultV2 public collateralVault;
-  IDStakeRouter public router;
+  IDStakeRouterV2 public router;
 
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
   uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS * 20; // 20% max incentive
@@ -589,7 +589,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     if (_router == address(0)) {
       revert ZeroAddress();
     }
-    router = IDStakeRouter(_router);
+    router = IDStakeRouterV2(_router);
     emit RouterSet(_router);
   }
 

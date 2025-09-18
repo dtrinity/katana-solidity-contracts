@@ -2,12 +2,12 @@
 pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IDStableConversionAdapter } from "../vaults/dstake/interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "../vaults/dstake/interfaces/IDStableConversionAdapterV2.sol";
 import { MockERC4626Simple } from "./MockERC4626Simple.sol";
 import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract MockAdapterPositiveSlippage is IDStableConversionAdapter {
+contract MockAdapterPositiveSlippage is IDStableConversionAdapterV2 {
   using SafeERC20 for IERC20;
 
   address public immutable dStable;

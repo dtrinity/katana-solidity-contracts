@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IDStableConversionAdapter } from "contracts/vaults/dstake/interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "contracts/vaults/dstake/interfaces/IDStableConversionAdapterV2.sol";
 import { IMintableERC20 } from "contracts/common/IMintableERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -11,7 +11,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
  * @notice Test adapter that intentionally under-delivers strategy shares compared to the preview result.
  *         Used only in Hardhat tests to verify router slippage protections.
  */
-contract MockUnderDeliveringAdapter is IDStableConversionAdapter {
+contract MockUnderDeliveringAdapter is IDStableConversionAdapterV2 {
   using SafeERC20 for IERC20;
 
   address public immutable dStable;
@@ -30,7 +30,7 @@ contract MockUnderDeliveringAdapter is IDStableConversionAdapter {
     factorBps = _factorBps;
   }
 
-  // ---------------- IDStableConversionAdapter ----------------
+  // ---------------- IDStableConversionAdapterV2 ----------------
 
   function depositIntoStrategy(uint256 stableAmount) external override returns (address, uint256) {
     // Pull dStable from caller

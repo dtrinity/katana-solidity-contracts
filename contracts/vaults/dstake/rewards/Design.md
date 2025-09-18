@@ -20,7 +20,7 @@ The `DStakeRewardManagerDLend` contract interacts with several key components:
 *   **`DStakeRouterDLend`**:
     *   A router contract that provides information about:
         *   The `defaultDepositStrategyShare` for the `DStakeCollateralVaultV2`.
-        *   The appropriate `IDStableConversionAdapter` to use for converting the `exchangeAsset` (dStable) into this `defaultDepositStrategyShare`.
+        *   The appropriate `IDStableConversionAdapterV2` to use for converting the `exchangeAsset` (dStable) into this `defaultDepositStrategyShare`.
 *   **`IDLendRewardsController` (Aave/dLEND `RewardsController`)**:
     *   The external Aave/dLEND contract from which rewards are claimed.
     *   The `DStakeRewardManagerDLend` calls `claimRewardsOnBehalf` on this controller.
@@ -32,7 +32,7 @@ The `DStakeRewardManagerDLend` contract interacts with several key components:
     *   The asset (defined by `IDStakeCollateralVaultV2(_dStakeCollateralVault).dStable()`) that callers provide to the `compoundRewards` function. This asset is then processed and deposited into the `DStakeCollateralVaultV2`.
 *   **Reward Tokens (Addresses)**:
     *   Various ERC20 tokens (e.g., stablecoins, governance tokens) that are distributed as rewards by the dLEND protocol and can be claimed by this manager.
-*   **Adapters (`IDStableConversionAdapter`)**:
+*   **Adapters (`IDStableConversionAdapterV2`)**:
     *   Smart contracts registered in `DStakeRouterDLend`.
     *   Responsible for converting the `exchangeAsset` (dStable) into the `DStakeCollateralVaultV2`'s `defaultDepositStrategyShare`.
     *   Expected to pull the `exchangeAsset` from this manager (after approval) and transfer the converted strategy shares directly to the `DStakeCollateralVaultV2`.
@@ -59,7 +59,7 @@ The primary interaction occurs through the `compoundRewards(uint256 amount, addr
 3.  **Process `exchangeAsset` Deposit (`_processExchangeAssetDeposit`)**:
     *   This step occurs *before* rewards are claimed.
     *   The `defaultDepositStrategyShare` for the `dStakeCollateralVault` is fetched from `dStakeRouter`.
-    *   The corresponding `IDStableConversionAdapter` for this asset is fetched from `dStakeRouter`.
+    *   The corresponding `IDStableConversionAdapterV2` for this asset is fetched from `dStakeRouter`.
     *   The manager contract approves the adapter to spend the received `amount` of `exchangeAsset`.
     *   The manager calls `adapter.convertToStrategyShare(amount)`. This adapter is expected to:
         1.  Pull `amount` of `exchangeAsset` from the manager contract.
@@ -108,7 +108,7 @@ For the `DStakeRewardManagerDLend` contract to function correctly, the following
     *   The `targetStaticATokenWrapper` (or its owner/manager) **MUST** call `setClaimer(targetStaticATokenWrapper, address(DStakeRewardManagerDLend_instance))` on the live `IDLendRewardsController` contract. Without this, reward claiming will fail.
 3.  **`DStakeRouterDLend` Configuration**:
     *   The `DStakeRouterDLend` instance must have a `defaultDepositStrategyShare` configured for the associated `DStakeCollateralVaultV2`.
-    *   The router must have a valid, trusted, and functional `IDStableConversionAdapter` registered for converting `exchangeAsset` (dStable) to this `defaultDepositStrategyShare`.
+    *   The router must have a valid, trusted, and functional `IDStableConversionAdapterV2` registered for converting `exchangeAsset` (dStable) to this `defaultDepositStrategyShare`.
 4.  **Role Assignment**:
     *   `DEFAULT_ADMIN_ROLE` and `REWARDS_MANAGER_ROLE` should be granted to appropriate secure admin/management multisigs or addresses.
 5.  **Token Approvals & Balances**:
@@ -128,7 +128,7 @@ For the `DStakeRewardManagerDLend` contract to function correctly, the following
 ## 6. Assumptions
 
 *   The Aave/dLEND rewards mechanism, particularly the `RewardsController` and its `claimRewardsOnBehalf` function, remains consistent with the expected interface and behavior.
-*   The `IDStableConversionAdapter` contracts registered in the `DStakeRouterDLend` are trusted, secure, and function as expected (i.e., they correctly convert the dStable and deposit the target asset to the collateral vault).
+    *   The `IDStableConversionAdapterV2` contracts registered in the `DStakeRouterDLend` are trusted, secure, and function as expected (i.e., they correctly convert the dStable and deposit the target asset to the collateral vault).
 *   The `dStakeCollateralVault` and `dStakeRouter` are correctly deployed and configured.
 *   Relevant ERC20 tokens (exchangeAsset, rewardTokens, strategy shares) conform to the ERC20 standard.
 

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import { RewardClaimable } from "../../rewards_claimable/RewardClaimable.sol";
 import { DStakeRouterV2 } from "../DStakeRouterV2.sol";
 import { IDStakeCollateralVaultV2 } from "../interfaces/IDStakeCollateralVaultV2.sol";
-import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "../interfaces/IDStableConversionAdapterV2.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -260,7 +260,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     uint256 balanceBefore = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
 
     // Convert dStable to strategy share via adapter
-    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapter(adapter).depositIntoStrategy(exchangeAmountIn);
+    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapterV2(adapter).depositIntoStrategy(exchangeAmountIn);
 
     // Verify the adapter returned the expected strategy share
     if (returnedStrategyShare != defaultStrategyShare) {

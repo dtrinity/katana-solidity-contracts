@@ -24,7 +24,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - Supports collateral exchanges, pausing, dust tolerance settings, surplus sweeping, and vault health checks.
 
 - Adapters (`contracts/vaults/dstake/adapters/`)
-  - Implement `IDStableConversionAdapter`. Each adapter knows how to convert dSTABLE ↔ specific strategy shares and report valuations in dSTABLE terms.
+  - Implement `IDStableConversionAdapterV2`. Each adapter knows how to convert dSTABLE ↔ specific strategy shares and report valuations in dSTABLE terms.
   - Must mint/burn strategy shares directly against the collateral vault. Examples: MetaMorpho, wrapped lending tokens.
 
 - Rewards (optional) (`contracts/vaults/dstake/rewards/`)
@@ -52,7 +52,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - `reinvestFees()` re-deploys accumulated withdrawal fees via the router after optionally paying the caller an incentive (capped at 20% per `MAX_REINVEST_INCENTIVE_BPS`). This keeps totalAssets() aligned with collateral growth and ensures fees compound with the rest of the portfolio.
 
 - **Collateral exchanges & rebalances**
-  - Governance or operations can trigger `rebalanceStrategiesByValue` / `exchangeAssetsUsingAdapters` to move exposure between strategies. These functions work entirely in dSTABLE terms, consult adapter previews, enforce slippage via `dustTolerance`, and stage transfers through the collateral vault.
+  - Governance or operations can trigger `rebalanceStrategiesByValue` / `swapStrategySharesWithOperator` to move exposure between strategies. These functions work entirely in dSTABLE terms, consult adapter previews, enforce slippage via `dustTolerance`, and stage transfers through the collateral vault.
   - `sweepSurplus()` converts any dSTABLE left on the router (for example from rounding during withdrawals) back into the default deposit strategy shares.
 
 ### Router V2 Details
@@ -75,7 +75,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Collateral Vault Notes
 
-- Enumerates supported strategy shares via an `EnumerableSet` and exposes helpers for enumerating them (`supportedAssets`, `getSupportedAssets`).
+- Enumerates supported strategy shares via an `EnumerableSet` and exposes helpers for enumerating them (`supportedStrategyShares`, `getSupportedStrategyShares`).
 - Only the router (via `ROUTER_ROLE`) may move collateral or mutate the supported set; governance rotates routers with `setRouter`.
 - Allows strategy share removal even if a balance remains, so governance can delist griefed strategy shares and recover funds manually if needed.
 - Rescue functions exist for miscellaneous tokens/ETH sent by mistake, but disallow extracting dSTABLE or any supported strategy shares.
@@ -111,7 +111,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 ### Operational Playbooks
 
 1. **Onboard a new strategy**
-   - Implement `IDStableConversionAdapter` for the protocol and deploy it.
+   - Implement `IDStableConversionAdapterV2` for the protocol and deploy it.
   - Call `addAdapter(strategyShare, adapter)` and grant `STRATEGY_REBALANCER_ROLE` if cross-strategy swaps are required.
    - Add a vault config (target BPS, activation flag). Ensure aggregate targets sum to 10,000 BPS.
    - Optionally call `setDefaultDepositStrategyShare` to make the new strategy the default for surplus sweeps.
@@ -128,7 +128,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 4. **Rebalance exposure**
    - Use solver deposit/withdraw functions for one-off targeted moves without changing target allocations.
-   - For structural changes, update vault configs or run `rebalanceStrategiesByValue` / `exchangeAssetsUsingAdapters` with conservative `min` values.
+   - For structural changes, update vault configs or run `rebalanceStrategiesByValue` / `swapStrategySharesWithOperator` with conservative `min` values.
 
 ### Developer Map
 

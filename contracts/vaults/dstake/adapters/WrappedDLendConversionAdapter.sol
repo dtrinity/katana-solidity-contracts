@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IDStableConversionAdapter } from "../interfaces/IDStableConversionAdapter.sol";
+import { IDStableConversionAdapterV2 } from "../interfaces/IDStableConversionAdapterV2.sol";
 import { IStaticATokenLM } from "../../atoken_wrapper/interfaces/IStaticATokenLM.sol"; // Interface for StaticATokenLM
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
@@ -11,10 +11,10 @@ import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
  * @title WrappedDLendConversionAdapter
  * @notice Adapter for converting between a dSTABLE asset (like dUSD) and a specific wrapped dLEND aToken
  *         (like wddUSD, implemented via StaticATokenLM). The wrapped dLEND token address must be provided at deployment.
- * @dev Implements the IDStableConversionAdapter interface.
+ * @dev Implements the IDStableConversionAdapterV2 interface.
  *      Interacts with a specific StaticATokenLM contract provided at deployment.
  */
-contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
+contract WrappedDLendConversionAdapter is IDStableConversionAdapterV2 {
   using SafeERC20 for IERC20;
 
   // --- Errors ---
@@ -47,10 +47,10 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
     }
   }
 
-  // --- IDStableConversionAdapter Implementation ---
+  // --- IDStableConversionAdapterV2 Implementation ---
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Converts dStable -> wrappedDLendToken by depositing into StaticATokenLM.
    *      The StaticATokenLM contract MUST be pre-approved to spend dStable held by this adapter.
    *      The StaticATokenLM contract mints the wrappedDLendToken directly to the collateralVault.
@@ -73,7 +73,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Converts wrappedDLendToken -> dStable by withdrawing from StaticATokenLM.
    *      The StaticATokenLM contract sends the dStable directly to msg.sender.
    */
@@ -96,7 +96,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Uses StaticATokenLM's previewRedeem function to get the underlying value (dStable).
    */
   function strategyShareValueInDStable(
@@ -111,14 +111,14 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    */
   function strategyShare() external view override returns (address) {
     return address(wrappedDLendToken);
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Preview the result of converting a given dSTABLE amount to wrappedDLendToken.
    * @param dStableAmount Amount of dSTABLE to convert
    * @return _strategyShare Address of the strategy share (wrapped dLend token)
@@ -132,7 +132,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapter {
   }
 
   /**
-   * @inheritdoc IDStableConversionAdapter
+   * @inheritdoc IDStableConversionAdapterV2
    * @dev Preview the result of converting a given wrappedDLendToken amount to dSTABLE.
    * @param strategyShareAmount Amount of strategy share to convert
    * @return dStableAmount Amount of dSTABLE that would be received

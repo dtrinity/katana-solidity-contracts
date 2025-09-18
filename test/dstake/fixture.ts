@@ -94,17 +94,14 @@ async function fetchDStakeComponents(
     (await deployments.get(config.collateralVaultContractId)).address
   );
 
-  const router = await ethers.getContractAt(
-    "DStakeRouterV2",
-    (await deployments.get(config.routerContractId)).address
-  );
+  const router = await ethers.getContractAt("DStakeRouterV2", (await deployments.get(config.routerContractId)).address);
 
   // Setup basic admin permissions for DStakeRouterV2
   // Grant DEFAULT_ADMIN_ROLE to the first test signer (standard test owner)
   const signers = await ethers.getSigners();
   const testOwner = signers[0]; // Standard test owner address
   const DEFAULT_ADMIN_ROLE = await router.DEFAULT_ADMIN_ROLE();
-  
+
   try {
     const ownerHasRole = await router.hasRole(DEFAULT_ADMIN_ROLE, testOwner.address);
     if (!ownerHasRole) {
@@ -117,17 +114,9 @@ async function fetchDStakeComponents(
     // Ignore permission setup errors in testing
   }
 
-  const wrappedATokenAddress = (
-    await deployments.get(
-      config.dStableSymbol === "dUSD"
-        ? DUSD_A_TOKEN_WRAPPER_ID
-        : DETH_A_TOKEN_WRAPPER_ID
-    )
-  ).address;
-  const wrappedAToken = await ethers.getContractAt(
-    "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
-    wrappedATokenAddress
-  );
+  const wrappedATokenAddress = (await deployments.get(config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID))
+    .address;
+  const wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", wrappedATokenAddress);
 
   const strategyShareAddress = wrappedATokenAddress;
   let adapterAddress;
@@ -135,7 +124,7 @@ async function fetchDStakeComponents(
   adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
 
   if (adapterAddress !== ethers.ZeroAddress) {
-    adapter = await ethers.getContractAt("IDStableConversionAdapter", adapterAddress);
+    adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
   } else {
     adapter = null;
   }
