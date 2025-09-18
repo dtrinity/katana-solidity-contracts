@@ -541,13 +541,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function removeAdapter(address strategyShare) external onlyRole(ADAPTER_MANAGER_ROLE) {
-    address adapterAddress = _strategyShareToAdapter[strategyShare];
-    if (adapterAddress == address(0)) revert AdapterNotFound(strategyShare);
-    delete _strategyShareToAdapter[strategyShare];
-
-    collateralVault.removeSupportedStrategyShare(strategyShare);
-
-    emit AdapterRemoved(strategyShare, adapterAddress);
+    if (!_removeAdapter(strategyShare)) revert AdapterNotFound(strategyShare);
   }
 
   function setDefaultDepositStrategyShare(address strategyShare) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -981,7 +975,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (config.isActive) {
       _addAdapter(config.strategyVault, config.adapter);
     } else {
-      try this.removeAdapter(config.strategyVault) {} catch {}
+      _removeAdapter(config.strategyVault);
     }
 
     emit VaultConfigUpdated(config.strategyVault, config.adapter, config.targetBps, config.isActive);
@@ -1002,7 +996,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     delete vaultExists[vault];
 
     if (_strategyShareToAdapter[vault] != address(0)) {
-      try this.removeAdapter(vault) {} catch {}
+      _removeAdapter(vault);
     }
 
     emit VaultConfigRemoved(vault);
@@ -1013,9 +1007,22 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       address vault = vaultConfigs[i].strategyVault;
       delete vaultToIndex[vault];
       delete vaultExists[vault];
-      try this.removeAdapter(vault) {} catch {}
+      _removeAdapter(vault);
     }
     delete vaultConfigs;
   }
 
+  function _removeAdapter(address strategyShare) internal returns (bool removed) {
+    address adapterAddress = _strategyShareToAdapter[strategyShare];
+    if (adapterAddress == address(0)) {
+      return false;
+    }
+
+    delete _strategyShareToAdapter[strategyShare];
+
+    try collateralVault.removeSupportedStrategyShare(strategyShare) {} catch {}
+
+    emit AdapterRemoved(strategyShare, adapterAddress);
+    return true;
+  }
 }

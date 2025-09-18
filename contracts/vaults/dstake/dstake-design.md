@@ -35,13 +35,13 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User deposit / mint**
   1. dSTABLE moves into `DStakeTokenV2` via `deposit()`/`mint()`.
   2. The token approves the router and calls `router.deposit(amount)`.
-  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter succeeds, strategy shares land in the collateral vault; if it fails (e.g., downstream caps, inaccurate previews) the router reverts with `NoLiquidityAvailable()` so automation can retry via the solver path.
+  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter fails (e.g., downstream caps, inaccurate previews) the router automatically retries the next eligible vault in priority order. It only reverts with `NoLiquidityAvailable()` after every candidate has failed, signalling that operators should fall back to solver mode.
   4. Shares are minted to the user according to totalAssets() (which includes any pending fee balance held by the token).
 
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
-  3. Router walks the ordered vault list and tries to satisfy the *entire* request from the first over-allocated strategy. If that vault cannot deliver (for example due to soft withdrawal limits or stale previews) the router reverts with `NoLiquidityAvailable()`. Operators are expected to fulfil complex withdrawals through solver endpoints that can split the request across vaults.
+  3. Router walks the ordered vault list and tries to satisfy the *entire* request from the most over-allocated strategy. If that vault cannot deliver (for example due to soft withdrawal limits or stale previews) the router continues down the priority list until it exhausts every option, then reverts with `NoLiquidityAvailable()`. Operators are expected to fulfil complex withdrawals through solver endpoints that can split the request across vaults.
   4. Withdrawal fees remain temporarily inside `DStakeTokenV2` until reinvested.
 
 - **Solver flows**
@@ -63,7 +63,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
 - **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, surplus sweeping, and pause controls live on the router under dedicated roles.
 - **Collateral exchanges** – Exchanges validate adapter previews in both directions and enforce `dustTolerance` when comparing expected vs realised dSTABLE value, preventing silent degradation across strategies.
-- **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default strategy via `sweepSurplus()`. `ShortfallCovered` / `SurplusHeld` events surface when rounding buffers move funds between contracts.
+- **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default strategy via `sweepSurplus()`, which emits `SurplusSwept` with the amount redeployed.
 
 ### DStakeTokenV2 Mechanics
 
@@ -103,7 +103,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 - dSTABLE is the unit of account across previews, valuations, and routing decisions.
 - Auto-routing enforces adapter reports: deposits revert if minted shares deviate, withdrawals revert if converted dSTABLE falls short of the request.
-- `dustTolerance` (default 1 wei) permits small rounding mismatches during exchanges/withdrawals without blocking execution but still protects against meaningful slippage.
+- `dustTolerance` (default 1 wei) permits small rounding mismatches during router-driven share exchanges and rebalances without blocking execution while still protecting against meaningful slippage. Standard auto-withdrawals still require the full requested amount.
 - Router is `Pausable` and `ReentrancyGuard` protected. Deposit/withdraw paths halt when paused; solver routes are also gated by the same modifier chain.
 - Collateral vault ignores unknown dust in TVL calculations so third parties cannot block accounting by donating unsupported tokens.
 - Solver paths are restricted to the token role, preventing arbitrary accounts from bypassing standard fee handling.
@@ -119,6 +119,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 2. **Rotate routers**
    - Deploy the new router with references to the token and collateral vault.
    - Governance grants the router roles (`setRouter` on the collateral vault; `setRouter` on the token) and assigns appropriate admin/config roles.
+   - The router now handles adapter cleanup internally, so it does not require `ADAPTER_MANAGER_ROLE` to remove its own adapters.
    - Optionally migrate vault configs by reusing `setVaultConfigs` on the new router.
 
 3. **Manage fees**
