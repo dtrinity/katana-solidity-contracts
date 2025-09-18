@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -62,6 +63,10 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
   address public immutable dStable;
   IERC4626 public immutable metaMorphoVault;
   address public immutable collateralVault;
+  uint8 public immutable assetDecimals; // decimals of dStable asset
+  uint8 public immutable shareDecimals; // decimals of ERC4626 share token
+  uint256 public immutable assetUnit; // 10 ** assetDecimals
+  uint256 public immutable shareUnit; // 10 ** shareDecimals
 
   // --- Constructor ---
   /**
@@ -92,12 +97,14 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
       revert AssetMismatch(_dStable, vaultUnderlying);
     }
 
-    // Verify vault is functional by checking it can preview operations
-    try metaMorphoVault.previewDeposit(1e18) returns (uint256 shares) {
-      if (shares == 0) revert VaultOperationFailed();
-    } catch {
-      revert VaultOperationFailed();
-    }
+    // Cache decimals and unit scalars for safe probing and gas efficiency
+    assetDecimals = IERC20Metadata(_dStable).decimals();
+    shareDecimals = IERC20Metadata(_metaMorphoVault).decimals();
+    assetUnit = 10 ** uint256(assetDecimals);
+    shareUnit = 10 ** uint256(shareDecimals);
+
+    // Verify vault is functional by checking it can preview operations with a 1 unit asset probe
+    metaMorphoVault.previewDeposit(assetUnit);
   }
 
   // --- IDStableConversionAdapterV2 Implementation ---
@@ -115,12 +122,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
     // 2. Preview expected shares with slippage tolerance
-    uint256 expectedShares;
-    try metaMorphoVault.previewDeposit(dStableAmount) returns (uint256 shares) {
-      expectedShares = shares;
-    } catch {
-      revert VaultOperationFailed();
-    }
+    uint256 expectedShares = metaMorphoVault.previewDeposit(dStableAmount);
 
     // Calculate minimum acceptable shares (with slippage protection)
     uint256 minShares = expectedShares.mulDiv(
@@ -174,12 +176,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
     IERC20(address(metaMorphoVault)).safeTransferFrom(msg.sender, address(this), strategyShareAmount);
 
     // 2. Preview expected assets with slippage tolerance
-    uint256 expectedAssets;
-    try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
-      expectedAssets = assets;
-    } catch {
-      revert VaultOperationFailed();
-    }
+    uint256 expectedAssets = metaMorphoVault.previewRedeem(strategyShareAmount);
 
     // Calculate minimum acceptable assets
     uint256 minAssets = expectedAssets.mulDiv(
@@ -189,13 +186,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
     );
 
     // 3. Redeem shares for dStable, sending directly to caller
-    uint256 actualAssets;
-    try metaMorphoVault.redeem(strategyShareAmount, msg.sender, address(this)) returns (uint256 assets) {
-      actualAssets = assets;
-    } catch {
-      // If redeem fails, revert immediately without transferring shares
-      revert VaultOperationFailed();
-    }
+    uint256 actualAssets = metaMorphoVault.redeem(strategyShareAmount, msg.sender, address(this));
 
     // 4. Validate received assets against slippage
     if (actualAssets < minAssets) {
@@ -344,8 +335,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
         // Check for broken vault state
         if (supply == 0) {
           // No shares minted yet, vault should be healthy if it can preview
-          try metaMorphoVault.previewDeposit(1e18) returns (uint256 shares) {
-            return shares > 0;
+          try metaMorphoVault.previewDeposit(assetUnit) returns (uint256) {
+            return true;
           } catch {
             return false;
           }
@@ -354,8 +345,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
           if (assets == 0) {
             return false; // Vault has shares but no assets - bad state
           }
-          // Check if preview functions work
-          try metaMorphoVault.convertToAssets(1e18) returns (uint256) {
+          // Check if preview functions work using one share unit
+          try metaMorphoVault.convertToAssets(shareUnit) returns (uint256) {
             return true;
           } catch {
             return false;
