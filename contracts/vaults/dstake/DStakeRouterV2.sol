@@ -48,8 +48,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   error AllVaultsPaused();
   error InvalidMaxVaultCount(uint256 count);
   error VaultMustHaveZeroAllocation(address vault, uint256 currentAllocation);
-  error InvalidMaxVaultsPerOperation(uint256 count);
-  error InsufficientActiveVaultsForOperation(uint256 activeCount);
   error RoutingCapacityExceeded(uint256 requested, uint256 fulfilled, uint256 vaultLimit);
   error EmptyArrays();
   error ArrayLengthMismatch();
@@ -68,7 +66,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   address public immutable dStable;
 
   uint256 public dustTolerance = 1;
-  uint256 public maxVaultsPerOperation = 1;
   uint256 public maxVaultCount = 10;
 
   mapping(address => address) private _strategyShareToAdapter;
@@ -130,7 +127,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   event VaultConfigRemoved(address indexed vault);
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
-  event MaxVaultsPerOperationUpdated(uint256 oldCount, uint256 newCount);
 
   constructor(address _dStakeToken, address _collateralVault) {
     if (_dStakeToken == address(0) || _collateralVault == address(0)) {
@@ -633,20 +629,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     emit VaultConfigUpdated(vault, vaultConfigs[index].adapter, vaultConfigs[index].targetBps, false);
   }
 
-  function setMaxVaultsPerOperation(uint256 _maxVaultsPerOperation) external onlyRole(CONFIG_MANAGER_ROLE) {
-    if (_maxVaultsPerOperation == 0) revert InvalidMaxVaultsPerOperation(_maxVaultsPerOperation);
-
-    uint256 activeVaultCount = _countActiveVaults();
-    if (activeVaultCount == 0) revert InsufficientActiveVaultsForOperation(activeVaultCount);
-    if (_maxVaultsPerOperation > activeVaultCount) {
-      revert InvalidMaxVaultsPerOperation(_maxVaultsPerOperation);
-    }
-
-    uint256 oldValue = maxVaultsPerOperation;
-    maxVaultsPerOperation = _maxVaultsPerOperation;
-    emit MaxVaultsPerOperationUpdated(oldValue, _maxVaultsPerOperation);
-  }
-
   function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(CONFIG_MANAGER_ROLE) {
     if (_maxVaultCount == 0 || _maxVaultCount < vaultConfigs.length) {
       revert InvalidMaxVaultCount(_maxVaultCount);
@@ -713,11 +695,6 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
   }
 
   // --- Internal Helpers ---
-
-  function _selectionLimit(uint256 activeCount) internal view returns (uint256) {
-    if (maxVaultsPerOperation == 0) return activeCount;
-    return maxVaultsPerOperation < activeCount ? maxVaultsPerOperation : activeCount;
-  }
 
   function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
     require(msg.sender == address(this), "Only self-callable");
@@ -1041,9 +1018,4 @@ contract DStakeRouterV2 is IDStakeRouter, AccessControl, ReentrancyGuard, Pausab
     delete vaultConfigs;
   }
 
-  function _countActiveVaults() internal view returns (uint256 count) {
-    for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      if (vaultConfigs[i].isActive) count++;
-    }
-  }
 }

@@ -622,7 +622,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       expect(dStableReceived).to.be.closeTo(depositAmount / 2n, ethers.parseEther("100"));
     });
 
-    it("Should select exactly 1 vault per deposit with maxVaultsPerOperation=1", async function () {
+    it("Should select exactly one vault per ERC4626 deposit", async function () {
       const depositAmount = ethers.parseEther("3000");
       
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
@@ -644,7 +644,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       expect(depositEvent).to.not.be.undefined;
       const decoded = router.interface.parseLog(depositEvent!);
       
-      // With maxVaultsPerOperation=1 and 3 active vaults, exactly 1 vault should be selected deterministically
+      // The ERC4626 path intentionally attempts to fill against a single vault
       expect(decoded.args.selectedVaults).to.have.lengthOf(1);
       
       // Check that funds went to exactly one vault
@@ -1051,103 +1051,6 @@ describe("DStakeRouterV2 Integration Tests", function () {
     });
   });
 
-  describe("MaxVaultsPerOperation Constraints", function () {
-    it("Should allow setting maxVaultsPerOperation up to the active vault count", async function () {
-      await expect(router.setMaxVaultsPerOperation(2))
-        .to.emit(router, "MaxVaultsPerOperationUpdated")
-        .withArgs(1, 2);
-
-      await expect(router.setMaxVaultsPerOperation(3))
-        .to.emit(router, "MaxVaultsPerOperationUpdated")
-        .withArgs(2, 3);
-
-      await expect(router.setMaxVaultsPerOperation(4))
-        .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
-        .withArgs(4);
-    });
-
-    it("Should enforce the cap when the active vault set grows", async function () {
-      const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-      const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
-
-      const vault4 = await MockMetaMorphoFactory.deploy(dStable.target, "MetaMorpho Vault 4", "MM4");
-      const adapter4 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault4.target, collateralVault.target, owner.address);
-
-      const vault5 = await MockMetaMorphoFactory.deploy(dStable.target, "MetaMorpho Vault 5", "MM5");
-      const adapter5 = await MetaMorphoAdapterFactory.deploy(dStable.target, vault5.target, collateralVault.target, owner.address);
-
-      await router.setVaultConfigs([
-        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 200000, isActive: true },
-        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 200000, isActive: true },
-        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true },
-        { strategyVault: vault4.target, adapter: adapter4.target, targetBps: 200000, isActive: true },
-        { strategyVault: vault5.target, adapter: adapter5.target, targetBps: 200000, isActive: true }
-      ]);
-
-      await expect(router.setMaxVaultsPerOperation(5))
-        .to.emit(router, "MaxVaultsPerOperationUpdated")
-        .withArgs(1, 5);
-
-      await expect(router.setMaxVaultsPerOperation(6))
-        .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
-        .withArgs(6);
-    });
-
-    it("Should reject maxVaultsPerOperation of 0", async function () {
-      await expect(router.setMaxVaultsPerOperation(0))
-        .to.be.revertedWithCustomError(router, "InvalidMaxVaultsPerOperation")
-        .withArgs(0);
-    });
-
-    it("Should enforce maxVaultsPerOperation in weighted selection", async function () {
-      await router.setVaultConfigs([
-        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 500000, isActive: true },
-        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 300000, isActive: true },
-        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 200000, isActive: true }
-      ]);
-
-      await router.setMaxVaultsPerOperation(1);
-
-      const depositAmount = ethers.parseEther("5000");
-      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-
-      for (let i = 0; i < 3; i++) {
-        const tx = await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
-        const receipt = await tx.wait();
-
-        const weightedDepositEvent = receipt.logs.find(log => {
-          try {
-            const decoded = router.interface.parseLog(log);
-            return decoded?.name === "StrategyDepositRouted";
-          } catch {
-            return false;
-          }
-        });
-
-        expect(weightedDepositEvent).to.not.be.undefined;
-        const decoded = router.interface.parseLog(weightedDepositEvent!);
-        expect(decoded.args.selectedVaults).to.have.lengthOf(1);
-      }
-
-      await router.setMaxVaultsPerOperation(3);
-
-      const tx = await dStakeToken.connect(alice).deposit(ethers.parseEther("1000"), alice.address);
-      const receipt = await tx.wait();
-      const weightedDepositEvent = receipt.logs.find(log => {
-        try {
-          const decoded = router.interface.parseLog(log);
-          return decoded?.name === "StrategyDepositRouted";
-        } catch {
-          return false;
-        }
-      });
-
-      expect(weightedDepositEvent).to.not.be.undefined;
-      const decoded = router.interface.parseLog(weightedDepositEvent!);
-      // With deterministic selection and maxVaultsPerOperation=1, should select exactly 1 vault
-      expect(decoded.args.selectedVaults.length).to.equal(1);
-    });
-  });
 
   describe("Edge Cases", function () {
     it("Should handle all vaults paused scenario", async function () {
@@ -1340,7 +1243,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       expect(gasDifference).to.be.lt(maxAllowedDifference);
       
-      // Both should be under reasonable gas limit for deposits (lower with maxVaultsPerOperation=1)
+      // Both should be under reasonable gas limits for deposits
       expect(gasUsed1).to.be.lt(500000n);
       expect(gasUsed2).to.be.lt(500000n);
     });
@@ -1575,7 +1478,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       
       const decoded = router.interface.parseLog(weightedDepositEvent!);
       expect(decoded.args.totalDStableAmount).to.equal(depositAmount);
-      // With maxVaultsPerOperation=1 and 3 active vaults, exactly 1 vault should be selected deterministically
+      // With the single-vault ERC4626 path, exactly one vault is selected deterministically
       expect(decoded.args.selectedVaults).to.have.lengthOf(1);
     });
   });
@@ -1778,7 +1681,7 @@ describe("DStakeRouterV2 Integration Tests", function () {
       // Should show consistent selection behavior (not necessarily identical since allocations change)
       // but should demonstrate deterministic logic
       for (const selection of selections) {
-        expect(selection).to.have.lengthOf(1); // maxVaultsPerOperation = 1
+        expect(selection).to.have.lengthOf(1);
       }
     });
   });

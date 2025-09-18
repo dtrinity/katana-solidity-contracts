@@ -467,9 +467,6 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         await vault2.setFees(0, 0);
         await vault3.setFees(0, 0);
 
-        // Reset maxVaultsPerOperation to default to see if that helps
-        await router.setMaxVaultsPerOperation(1);
-
         // Make one more attempt at depositing - if this still fails, skip
         const retryDeposit = ethers.parseEther("5000");
         await dStable.connect(alice).approve(dStakeToken.target, retryDeposit);
@@ -489,9 +486,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
           this.skip();
           return;
         }
-
-        // With deterministic single-vault selection, keep maxVaultsPerOperation at 1
-        // Each deposit/withdrawal uses exactly 1 vault based on allocation targets
+        // The deterministic single-vault design keeps each deposit/withdrawal focused on one strategy
       }
 
       // Try to withdraw a large amount that may require multiple vaults
@@ -647,10 +642,6 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       expect(allocationsBefore[1]).to.equal(0);       // Vault2 = 0%
       expect(allocationsBefore[2]).to.equal(0);       // Vault3 = 0%
 
-      // Set maxVaultsPerOperation to allow multiple vault selection
-      // With 3 active vaults, max allowed is 3/2 = 1, so we keep it at 1
-      // await router.setMaxVaultsPerOperation(2); // Would fail with 3 vaults
-
       // Make deposit that should be split proportionally based on underallocations
       const deposit = ethers.parseEther("5000");
       await dStable.connect(alice).approve(dStakeToken.target, deposit);
@@ -672,7 +663,7 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       if (depositEvent) {
         const decoded = router.interface.parseLog(depositEvent);
 
-        // With maxVaultsPerOperation=1, should select exactly one vault
+        // With the single-vault ERC4626 path, exactly one vault should be selected
         expect(decoded.args.selectedVaults).to.have.lengthOf(1);
 
         // Check final allocations - should be more balanced
@@ -705,10 +696,6 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // Reactivate all vaults
       await router.updateVaultConfig(vault1Address, adapter1Address, 500000, true);
       await router.updateVaultConfig(vault3Address, adapter3Address, 200000, true);
-
-      // Allow multiple vault selection
-      // With 3 active vaults, max allowed is 3/2 = 1, so we keep it at 1
-      // await router.setMaxVaultsPerOperation(2); // Would fail with 3 vaults
 
       // Make deposit with amount that will create remainder (use prime number)
       const deposit = ethers.parseEther("1777"); // Prime number to ensure remainder
@@ -757,10 +744,6 @@ describe("DStakeRouterV2 Fixes Tests", function () {
 
       // Check allocations are reasonably balanced
       const [, allocations] = await router.getCurrentAllocations();
-
-      // Allow multiple vault selection for more interesting test
-      // With 3 active vaults, max allowed is 3/2 = 1, so we keep it at 1
-      // await router.setMaxVaultsPerOperation(2); // Would fail with 3 vaults
 
       // Make deposit when vaults are balanced
       const deposit = ethers.parseEther("1000");
@@ -1752,8 +1735,6 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // 3. Test proportional deposit with underallocations
       const [vaultsBefore, allocationsBefore] = await router.getCurrentAllocations();
 
-      // With 3 active vaults, max allowed is 3/2 = 1, so we keep it at 1
-      // await router.setMaxVaultsPerOperation(2); // Would fail
       const proportionalDeposit = ethers.parseEther("2000");
       await dStable.connect(alice).approve(dStakeToken.target, proportionalDeposit);
       await dStakeToken.connect(alice).deposit(proportionalDeposit, alice.address);
