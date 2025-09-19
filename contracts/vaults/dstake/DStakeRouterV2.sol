@@ -738,10 +738,17 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, address receiver, address /* owner */) external {
     require(msg.sender == address(this), "Only self-callable");
     // This is called by this contract only, for auto-routing retries
+    uint256 balanceBefore = IERC20(dStable).balanceOf(address(this));
     _withdrawFromVaultAtomically(vault, dStableAmount);
-    // Transfer the withdrawn dStable to receiver
-    uint256 balance = IERC20(dStable).balanceOf(address(this));
-    IERC20(dStable).safeTransfer(receiver, balance);
+
+    uint256 balanceAfter = IERC20(dStable).balanceOf(address(this));
+    uint256 withdrawn = balanceAfter - balanceBefore;
+    if (withdrawn < dStableAmount) revert SlippageCheckFailed(dStable, withdrawn, dStableAmount);
+
+    // Transfer exactly the requested amount to the receiver and retain any excess for governance handling
+    IERC20(dStable).safeTransfer(receiver, dStableAmount);
+
+    // Any surplus dStable stays on the router for explicit sweep or reinvest logic
   }
 
   function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
