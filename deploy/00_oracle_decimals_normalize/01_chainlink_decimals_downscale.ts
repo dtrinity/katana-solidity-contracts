@@ -8,6 +8,12 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
   const { deploy, getOrNull } = deployments;
   const { deployer } = await getNamedAccounts();
 
+  // Only run on Katana mainnet since it uses live Chainlink feeds
+  if (hre.network.name !== "katana_mainnet") {
+    console.log(`⏭️  Skipping ChainlinkDecimalDownscaler deployment on network: ${hre.network.name}`);
+    return true;
+  }
+
   console.log("🚀 Deploying ChainlinkDecimalDownscaler for yUSD feed...");
 
   // Get network configuration
@@ -29,7 +35,10 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
 
   // If the source feed already has the desired decimals, skip deployment entirely
   try {
-    const sourceFeed = await ethers.getContractAt("AggregatorV3Interface", yUSDFeedAddress);
+    const sourceFeed = await ethers.getContractAt(
+      "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol:AggregatorV3Interface",
+      yUSDFeedAddress
+    );
     const sourceDecimals = await sourceFeed.decimals();
     if (Number(sourceDecimals) === TARGET_DECIMALS) {
       console.log(`♻️  Source feed already at target decimals (${TARGET_DECIMALS}). Skipping downscaler deployment.`);
