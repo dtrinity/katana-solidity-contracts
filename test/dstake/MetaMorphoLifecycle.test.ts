@@ -591,8 +591,13 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       const totalAssets = await dStakeToken.totalAssets();
       const vaultHoldings = await collateralVault.totalValueInDStable();
       
-      // Total assets should match vault holdings
-      expect(totalAssets).to.be.closeTo(vaultHoldings, ethers.parseEther("0.01"));
+      // Total assets should equal vault holdings plus any fees sitting on the token
+      expect(totalAssets).to.be.gte(vaultHoldings);
+
+      const tokenBalance = await dStable.balanceOf(dStakeToken.target);
+      const delta = totalAssets - vaultHoldings;
+      const tolerance = ethers.parseEther("0.005");
+      expect(delta).to.be.closeTo(tokenBalance, tolerance);
       
       // Exchange rate should be reasonable - may be below 1:1 due to fees
       if (totalSupply > 0n) {

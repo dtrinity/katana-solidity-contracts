@@ -41,7 +41,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
-  3. Router walks the ordered vault list and tries to satisfy the *entire* request from the most over-allocated strategy. If that vault cannot deliver (for example due to soft withdrawal limits or stale previews) the router continues down the priority list until it exhausts every option, then reverts with `NoLiquidityAvailable()`. Operators are expected to fulfil complex withdrawals through solver endpoints that can split the request across vaults.
+  3. Router walks the ordered vault list and tries to satisfy the *entire* request from the most over-allocated strategy using strict slippage checks (no tolerance). If that vault cannot deliver (for example due to soft withdrawal limits or stale previews) the router continues down the priority list until it exhausts every option, then reverts with `NoLiquidityAvailable()`. Operators are expected to fulfil complex withdrawals through solver endpoints that can split the request across vaults.
   4. Withdrawal fees remain temporarily inside `DStakeTokenV2` until reinvested.
 
 - **Solver flows**
@@ -58,7 +58,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 ### Router V2 Details
 
 - **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight strategy; auto withdrawals start with the most overweight strategy.
-- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault. This avoids cascading failures when upstream adapters enforce soft caps or expose non-deterministic previews. Operations that need to aggregate liquidity must call the solver entry points instead.
+- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault. Uses external call wrappers (`_depositToVaultWithRetry`, `_withdrawFromVaultWithRetry`) for gas isolation and comprehensive error boundaries, ensuring robust fallback to other vaults when one fails. This avoids cascading failures when upstream adapters enforce soft caps or expose non-deterministic previews. Operations that need to aggregate liquidity must call the solver entry points instead.
 - **Health checks & liveness** – Strategies must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy strategies are skipped automatically.
 - **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
 - **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, surplus sweeping, and pause controls live on the router under dedicated roles.
@@ -68,8 +68,8 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 ### DStakeTokenV2 Mechanics
 
 - **totalAssets()** – Returns collateral-vault TVL plus any dSTABLE balance sitting on the token (primarily accumulated withdrawal fees). After a full withdrawal the strategy may still report value due to `dustTolerance` residual shares accruing yield; first depositor back in receives that windfall.
-- **Withdrawal fee plumbing** – Supports previews and limits through [`SupportsWithdrawalFee`](../../common/SupportsWithdrawalFee.sol). User-facing methods always accept/return net amounts while internal router calls use the gross amount once to avoid charging the fee twice.
-- **Solver functions** – Maintain allowances, ensure non-zero share burns for non-zero withdrawals, and delegate execution to router solver entry points. All flows emit standard ERC4626 events with net amounts for user accounting.
+- **Withdrawal fee plumbing** – Supports previews and limits through [`SupportsWithdrawalFee`](../../common/SupportsWithdrawalFee.sol). User-facing methods always accept/return net amounts while internal router calls use the gross amount once to avoid charging the fee twice. All withdrawal paths converge through `_settleWithdrawal()` for consistent fee application and validation.
+- **Solver functions** – Maintain allowances, ensure non-zero share burns for non-zero withdrawals, and delegate execution to router solver entry points. Solver withdrawals apply precise fee rounding with aggregated gross calculations to prevent shortfalls. All flows emit standard ERC4626 events with net amounts for user accounting.
 - **Fee reinvestment & incentives** – `reinvestFees()` streams a caller incentive (set via `setReinvestIncentive`) before redeploying capital. Incentive and reinvestment events make it easy to audit the cadence of fee compounding.
 - **Upgrade & governance** – Token remains upgradeable via the proxy; router and collateral vault are meant to be replaced instead of upgraded.
 

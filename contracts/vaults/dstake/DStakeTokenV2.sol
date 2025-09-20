@@ -30,6 +30,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   error ERC4626ExceedsMaxWithdraw(uint256 assets, uint256 maxAssets);
   error ERC4626ExceedsMaxRedeem(uint256 shares, uint256 maxShares);
   error InvalidIncentiveBps(uint256 incentiveBps, uint256 maxIncentiveBps);
+  error AutoWithdrawShortfall(uint256 expectedNet, uint256 actualNet);
 
   // --- State ---
   IDStakeCollateralVaultV2 public collateralVault;
@@ -158,8 +159,13 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   /**
    * @dev Override to handle withdrawals with fees correctly.
    *      The `assets` parameter is the net amount of assets the user wants to receive.
-   */
+  */
   function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256 shares) {
+    uint256 maxAssets = maxWithdraw(owner);
+    if (assets > maxAssets) {
+      revert ERC4626ExceedsMaxWithdraw(assets, maxAssets);
+    }
+
     // Calculate how many shares correspond to the desired NET `assets` amount.
     shares = previewWithdraw(assets);
     // Rounding note: `previewWithdraw` ultimately calls OpenZeppelin's `_convertToShares` with
@@ -167,13 +173,14 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     // A zero-share result therefore implies `assets == 0`, meaning no funds leave the vault.
 
     // Ensure the owner has enough shares to cover the withdrawal (checks in share terms rather than assets).
-    if (shares > maxRedeem(owner)) {
-      revert ERC4626ExceedsMaxRedeem(shares, maxRedeem(owner));
+    uint256 maxRedeemShares = maxRedeem(owner);
+    if (shares > maxRedeemShares) {
+      revert ERC4626ExceedsMaxRedeem(shares, maxRedeemShares);
     }
 
     // Translate the shares back into the GROSS asset amount that needs to be withdrawn
     // so that the internal logic can compute the fee only once.
-    uint256 grossAssets = convertToAssets(shares);
+    uint256 grossAssets = _getGrossAmountRequiredForNet(assets);
 
     _withdraw(_msgSender(), receiver, owner, grossAssets, shares);
     return shares;
@@ -204,8 +211,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256 assets) {
     uint256 grossAssets = convertToAssets(shares); // shares → gross assets before fee
 
-    if (shares > maxRedeem(owner)) {
-      revert ERC4626ExceedsMaxRedeem(shares, maxRedeem(owner));
+    uint256 maxRedeemShares = maxRedeem(owner);
+    if (shares > maxRedeemShares) {
+      revert ERC4626ExceedsMaxRedeem(shares, maxRedeemShares);
     }
 
     // Perform withdrawal using gross assets so that _withdraw computes the correct fee once
@@ -219,7 +227,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   /**
    * @dev Calculates withdrawal fee, then delegates the core withdrawal logic
    *      (converting vault assets back to dSTABLE) to the router.
-   *      The `assets` parameter is now the gross amount that needs to be withdrawn from the vault.
+   *      The `assets` parameter is the gross amount that needs to be withdrawn from the vault.
+   *      The router now returns the gross proceeds to this contract, ensuring all withdrawal
+   *      paths share a single fee application point.
    */
   function _withdraw(
     address caller,
@@ -236,23 +246,43 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       revert ZeroAddress(); // Router or Vault not set
     }
 
-    uint256 fee = _calculateWithdrawalFee(assets); // Calculate fee on GROSS amount
-    uint256 amountToSend = assets - fee; // Send NET amount to user
-
     // Burn shares from owner
     _burn(owner, shares);
 
     // Delegate conversion and vault update logic to router
-    // Router is responsible for ensuring `amountToSend` of dSTABLE reaches the `receiver`.
-    router.withdraw(amountToSend, receiver, owner);
+    uint256 grossWithdrawn = router.withdraw(assets);
+    uint256 minNetAmount = _getNetAmountAfterFee(assets);
+    _settleWithdrawal(caller, receiver, owner, shares, assets, grossWithdrawn, minNetAmount);
+  }
 
-    // Emit ERC4626 Withdraw event with the NET assets that were actually sent
-    emit Withdraw(caller, receiver, owner, amountToSend, shares);
+  function _settleWithdrawal(
+    address caller,
+    address receiver,
+    address owner,
+    uint256 shares,
+    uint256 grossRequested,
+    uint256 grossReceived,
+    uint256 minNetAmount
+  ) internal returns (uint256 netAmount) {
+    if (grossReceived < grossRequested) {
+      revert ERC4626ExceedsMaxWithdraw(grossRequested, grossReceived);
+    }
 
-    // Optional: Emit fee event
+    uint256 fee = _calculateWithdrawalFee(grossReceived);
+    netAmount = grossReceived - fee;
+
+    if (netAmount < minNetAmount) {
+      revert AutoWithdrawShortfall(minNetAmount, netAmount);
+    }
+
+    IERC20(asset()).safeTransfer(receiver, netAmount);
+
+    emit Withdraw(caller, receiver, owner, netAmount, shares);
+
     if (fee > 0) {
       emit WithdrawalFee(owner, receiver, fee);
     }
+    return netAmount;
   }
 
   /**
@@ -409,16 +439,38 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   ) public virtual returns (uint256 shares) {
     // Calculate total net assets requested by the solver
     uint256 totalNetAssets = 0;
+    uint256 totalGrossAssets = 0;
+    uint256[] memory grossAssetRequests = new uint256[](assets.length);
     for (uint256 i = 0; i < assets.length; i++) {
-      totalNetAssets += assets[i];
+      uint256 requestedNetAmount = assets[i];
+      totalNetAssets += requestedNetAmount;
+
+      if (requestedNetAmount > 0) {
+        uint256 requestedGrossAmount = _getGrossAmountRequiredForNet(requestedNetAmount);
+        grossAssetRequests[i] = requestedGrossAmount;
+        totalGrossAssets += requestedGrossAmount;
+      }
     }
 
     if (totalNetAssets == 0) {
       revert ZeroShares();
     }
 
-    // Preview shares to be burned based on assets requested
-    shares = previewWithdraw(totalNetAssets);
+    uint256 aggregatedGross = _getGrossAmountRequiredForNet(totalNetAssets);
+    if (aggregatedGross > totalGrossAssets) {
+      uint256 shortfall = aggregatedGross - totalGrossAssets;
+      for (uint256 i = assets.length; i > 0; i--) {
+        uint256 idx = i - 1;
+        if (grossAssetRequests[idx] > 0) {
+          grossAssetRequests[idx] += shortfall;
+          break;
+        }
+      }
+      totalGrossAssets = aggregatedGross;
+    }
+
+    // Convert the gross withdrawal request into shares using ceiling rounding so we never under-burn
+    shares = _convertToShares(totalGrossAssets, Math.Rounding.Ceil);
     if (shares > maxShares) {
       revert ERC4626ExceedsMaxRedeem(shares, maxShares);
     }
@@ -436,10 +488,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     _burn(owner, shares);
 
     // Delegate to router's solver withdrawal method
-    // Router withdraws from strategy vaults and returns gross assets to this contract
+    // Router withdraws the GROSS amounts from strategy vaults and returns those assets to this contract
     //
     // FEE RESPONSIBILITY DESIGN:
-    // The router receives net asset requests from solvers but performs gross withdrawals from strategy vaults.
+    // The router receives gross requests that correspond to a desired net withdrawal after fees.
     // It returns the GROSS amount withdrawn to this contract, which then applies the withdrawal fee.
     // This ensures:
     // 1. Only DStakeTokenV2 applies withdrawal fees (router does NOT apply any fees)
@@ -452,22 +504,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     // It withdraws the requested amounts from strategy vaults and returns all proceeds
     // as gross amounts to this contract. This contract then applies the withdrawal fee
     // once on the gross amount and transfers the net amount to the receiver.
-    uint256 grossWithdrawn = router.solverWithdrawAssets(strategyVaults, assets, receiver, owner);
+    uint256 grossWithdrawn = router.solverWithdrawAssets(strategyVaults, grossAssetRequests);
 
-    // Calculate fee on gross amount and determine net amount for receiver
-    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
-    uint256 netAmount = grossWithdrawn - fee;
-
-    // Transfer net amount to receiver (fee is retained in contract)
-    IERC20(asset()).safeTransfer(receiver, netAmount);
-
-    // Emit fee event if applicable
-    if (fee > 0) {
-      emit WithdrawalFee(owner, receiver, fee);
-    }
-
-    // Emit ERC4626 Withdraw event with net assets
-    emit Withdraw(_msgSender(), receiver, owner, netAmount, shares);
+    _settleWithdrawal(_msgSender(), receiver, owner, shares, totalGrossAssets, grossWithdrawn, totalNetAssets);
 
     return shares;
   }
@@ -546,22 +585,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     // returns all proceeds as gross amounts to this contract. This contract then
     // applies the withdrawal fee once on the gross amount and transfers the net
     // amount to the receiver.
-    uint256 grossWithdrawn = router.solverWithdrawShares(strategyVaults, strategyShares, receiver, owner);
+    uint256 grossWithdrawn = router.solverWithdrawShares(strategyVaults, strategyShares);
 
-    // Calculate fee and net amount
-    uint256 fee = _calculateWithdrawalFee(grossWithdrawn);
-    assets = grossWithdrawn - fee;
-
-    // Transfer net amount to receiver (fee is retained in contract)
-    IERC20(asset()).safeTransfer(receiver, assets);
-
-    // Emit fee event if applicable
-    if (fee > 0) {
-      emit WithdrawalFee(owner, receiver, fee);
-    }
-
-    // Emit ERC4626 Withdraw event with net assets
-    emit Withdraw(_msgSender(), receiver, owner, assets, shares);
+    uint256 minNetAmount = _getNetAmountAfterFee(totalGrossAssets);
+    assets = _settleWithdrawal(_msgSender(), receiver, owner, shares, totalGrossAssets, grossWithdrawn, minNetAmount);
 
     return assets;
   }

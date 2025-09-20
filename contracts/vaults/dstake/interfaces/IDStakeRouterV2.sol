@@ -17,15 +17,13 @@ interface IDStakeRouterV2 {
   function deposit(uint256 dStableAmount) external;
 
   /**
-   * @notice Handles the conversion of a `strategyShare` back into the dStable asset for withdrawal.
-   * @dev Called by `DStakeTokenV2._withdraw()`.
-   * @dev The router coordinates pulling the required `strategyShare` from the collateral vault
-   *      and ensuring the converted dStable asset is sent to the `receiver`.
-   * @param dStableAmount The amount of dStable asset to be withdrawn to the `receiver` (after vault fees).
-   * @param receiver The address that will receive the withdrawn dStable asset.
-   * @param owner The original owner initiating the withdrawal (typically the user burning shares).
+   * @notice Converts strategy shares back into dStable for a withdrawal.
+   * @dev Called by `DStakeTokenV2._withdraw()` after the token has burned shares.
+   *      The router returns the gross amount withdrawn so the token can apply fees centrally.
+   * @param dStableAmount The gross amount of dStable the token expects to receive from the router.
+   * @return totalWithdrawn The gross amount actually returned to the caller (must be ≥ `dStableAmount`).
    */
-  function withdraw(uint256 dStableAmount, address receiver, address owner) external;
+  function withdraw(uint256 dStableAmount) external returns (uint256 totalWithdrawn);
 
   /**
    * @notice Exchanges collateral from one strategy vault to another.
@@ -54,32 +52,26 @@ interface IDStakeRouterV2 {
   function solverDepositShares(address[] calldata strategyVaults, uint256[] calldata strategyShares) external;
 
   /**
-   * @notice Solver-facing withdrawal method using asset amounts
-   * @dev Called by DStakeTokenV2 solver methods to withdraw from multiple strategy vaults using asset amounts
-   * @param strategyVaults Array of strategy vault addresses to withdraw from
-   * @param assets Array of asset amounts to withdraw from each strategy vault
-   * @param receiver The address that will receive the withdrawn dStable asset
-   * @param owner The original owner initiating the withdrawal
+   * @notice Solver-facing withdrawal method using asset amounts.
+   * @dev Called by DStakeTokenV2 solver methods after shares are burned. The router collects the
+   *      requested vault assets, converts them to dStable, and returns the gross proceeds to the caller.
+   * @param strategyVaults Array of strategy vault addresses to withdraw from.
+   * @param assets Array of gross dStable amounts to withdraw from each strategy vault.
+   * @return totalWithdrawn The total gross dStable returned to the caller.
    */
-  function solverWithdrawAssets(
-    address[] calldata strategyVaults,
-    uint256[] calldata assets,
-    address receiver,
-    address owner
-  ) external returns (uint256 totalWithdrawn);
+  function solverWithdrawAssets(address[] calldata strategyVaults, uint256[] calldata assets)
+    external
+    returns (uint256 totalWithdrawn);
 
   /**
-   * @notice Solver-facing withdrawal method using share amounts
-   * @dev Called by DStakeTokenV2 solver methods to withdraw from multiple strategy vaults using share amounts
-   * @param strategyVaults Array of strategy vault addresses to withdraw from
-   * @param strategyShares Array of strategy share amounts to withdraw from each strategy vault
-   * @param receiver The address that will receive the withdrawn dStable asset
-   * @param owner The original owner initiating the withdrawal
+   * @notice Solver-facing withdrawal method using strategy share amounts.
+   * @dev Called by DStakeTokenV2 solver methods after shares are burned. The router converts the
+   *      provided strategy shares into dStable and returns the gross proceeds to the caller.
+   * @param strategyVaults Array of strategy vault addresses to withdraw from.
+   * @param strategyShares Array of strategy share amounts to withdraw from each strategy vault.
+   * @return totalWithdrawn The total gross dStable returned to the caller.
    */
-  function solverWithdrawShares(
-    address[] calldata strategyVaults,
-    uint256[] calldata strategyShares,
-    address receiver,
-    address owner
-  ) external returns (uint256 totalWithdrawn);
+  function solverWithdrawShares(address[] calldata strategyVaults, uint256[] calldata strategyShares)
+    external
+    returns (uint256 totalWithdrawn);
 }

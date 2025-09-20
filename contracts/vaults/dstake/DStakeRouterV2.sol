@@ -211,11 +211,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     revert NoLiquidityAvailable();
   }
 
-  function withdraw(
-    uint256 dStableAmount,
-    address receiver,
-    address owner
-  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+  function withdraw(uint256 dStableAmount)
+    external
+    override
+    onlyRole(DSTAKE_TOKEN_ROLE)
+    nonReentrant
+    whenNotPaused
+    returns (uint256 totalWithdrawn)
+  {
     if (dStableAmount == 0) revert InvalidAmount();
 
     (
@@ -244,14 +247,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
        * Similar to deposit logic, this pattern ensures robust fallback behavior
        * when withdrawing from multiple vaults. Protected by nonReentrant modifier.
        */
-      try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, receiver, owner) {
-        // Success - emit event and return
+      try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, false) returns (uint256 withdrawnAmount) {
+        IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
+
         address[] memory vaultArray = new address[](1);
         uint256[] memory amountArray = new uint256[](1);
         vaultArray[0] = targetVault;
-        amountArray[0] = dStableAmount;
-        emit StrategyWithdrawalRouted(vaultArray, amountArray, dStableAmount, 0);
-        return;
+        amountArray[0] = withdrawnAmount;
+
+        emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount, 0);
+        return withdrawnAmount;
       } catch {
         // Continue to next vault on any error (transient or permanent)
         // External call pattern allows graceful fallback without gas exhaustion
@@ -333,12 +338,13 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     emit StrategyDepositRouted(vaults, assetAmounts, totalAssets, 0);
   }
 
-  function solverWithdrawAssets(
-    address[] calldata vaults,
-    uint256[] calldata assets,
-    address /* receiver */,
-    address /* owner */
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
+  function solverWithdrawAssets(address[] calldata vaults, uint256[] calldata assets)
+    external
+    onlyRole(DSTAKE_TOKEN_ROLE)
+    nonReentrant
+    whenNotPaused
+    returns (uint256 totalWithdrawn)
+  {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
 
@@ -349,27 +355,26 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     if (totalAssets == 0) revert InvalidAmount();
 
-    // Execute withdrawals atomically
+    // Execute withdrawals atomically, enforcing strict slippage checks
     for (uint256 i = 0; i < vaults.length; i++) {
       if (assets[i] > 0) {
-        _withdrawFromVaultAtomically(vaults[i], assets[i]);
+        totalWithdrawn += _withdrawFromVaultAtomically(vaults[i], assets[i], false);
       }
     }
 
-    // Transfer all accumulated dStable back to DStakeTokenV2 for fee handling
-    totalWithdrawn = IERC20(dStable).balanceOf(address(this));
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit StrategyWithdrawalRouted(vaults, assets, totalAssets, 0);
+    emit StrategyWithdrawalRouted(vaults, assets, totalWithdrawn, 0);
     return totalWithdrawn;
   }
 
-  function solverWithdrawShares(
-    address[] calldata vaults,
-    uint256[] calldata shares,
-    address /* receiver */,
-    address /* owner */
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
+  function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares)
+    external
+    onlyRole(DSTAKE_TOKEN_ROLE)
+    nonReentrant
+    whenNotPaused
+    returns (uint256 totalWithdrawn)
+  {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != shares.length) revert ArrayLengthMismatch();
 
@@ -385,6 +390,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     if (totalAssets == 0) revert InvalidAmount();
+    uint256 balanceBefore = IERC20(dStable).balanceOf(address(this));
 
     // Execute withdrawals atomically
     for (uint256 i = 0; i < vaults.length; i++) {
@@ -393,11 +399,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       }
     }
 
-    // Transfer all accumulated dStable back to DStakeTokenV2 for fee handling
-    totalWithdrawn = IERC20(dStable).balanceOf(address(this));
+    totalWithdrawn = IERC20(dStable).balanceOf(address(this)) - balanceBefore;
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalAssets, 0);
+    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalWithdrawn, 0);
     return totalWithdrawn;
   }
 
@@ -728,27 +733,20 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   /**
-   * @notice External wrapper for internal withdrawal logic used in retry mechanism
-   * @dev Similar to deposit retry function, this provides gas isolation for withdrawal
+   * @notice External wrapper for internal withdrawal logic used in retry mechanism.
+   * @dev Similar to the deposit retry function, this provides gas isolation for withdrawal
    *      fallback operations. Only callable by this contract itself.
-   * @param vault Target vault for withdrawal
-   * @param dStableAmount Amount to withdraw
-   * @param receiver Address to receive withdrawn assets
+   * @param vault Target vault for withdrawal.
+   * @param dStableAmount Gross dStable amount the router aims to obtain from the vault.
+   * @return withdrawn The actual gross dStable amount obtained (must be ≥ `dStableAmount`).
    */
-  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, address receiver, address /* owner */) external {
+  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, bool allowSlippage)
+    external
+    returns (uint256 withdrawn)
+  {
     require(msg.sender == address(this), "Only self-callable");
     // This is called by this contract only, for auto-routing retries
-    uint256 balanceBefore = IERC20(dStable).balanceOf(address(this));
-    _withdrawFromVaultAtomically(vault, dStableAmount);
-
-    uint256 balanceAfter = IERC20(dStable).balanceOf(address(this));
-    uint256 withdrawn = balanceAfter - balanceBefore;
-    if (withdrawn < dStableAmount) revert SlippageCheckFailed(dStable, withdrawn, dStableAmount);
-
-    // Transfer exactly the requested amount to the receiver and retain any excess for governance handling
-    IERC20(dStable).safeTransfer(receiver, dStableAmount);
-
-    // Any surplus dStable stays on the router for explicit sweep or reinvest logic
+    withdrawn = _withdrawFromVaultAtomically(vault, dStableAmount, allowSlippage);
   }
 
   function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
@@ -792,12 +790,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IERC20(dStable).forceApprove(config.adapter, 0);
   }
 
-  function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal {
-    (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) = _withdrawFromVault(vault, dStableAmount);
+  function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount, bool allowSlippage)
+    internal
+    returns (uint256 receivedDStable)
+  {
+    uint256 strategyShareAmount;
+    address adapter;
+    (receivedDStable, strategyShareAmount, adapter) = _withdrawFromVault(vault, dStableAmount, allowSlippage);
     if (receivedDStable == 0) revert NoLiquidityAvailable();
 
     IERC20(vault).forceApprove(adapter, 0);
     emit Withdrawn(vault, strategyShareAmount, receivedDStable, msg.sender, msg.sender);
+    return receivedDStable;
   }
 
   function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal {
@@ -828,7 +832,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function _withdrawFromVault(
     address vault,
-    uint256 dStableAmount
+    uint256 dStableAmount,
+    bool allowSlippage
   ) internal returns (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
     adapter = config.adapter;
@@ -852,15 +857,29 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     collateralVault.transferStrategyShares(vault, strategyShareAmount, address(this));
     IERC20(vault).forceApprove(adapter, strategyShareAmount);
 
+    uint256 minAcceptable = dStableAmount;
+    if (allowSlippage) {
+      try conversionAdapter.previewWithdrawFromStrategy(strategyShareAmount) returns (uint256 conservativeAmount) {
+        if (conservativeAmount > 0 && conservativeAmount < minAcceptable) {
+          minAcceptable = conservativeAmount;
+        }
+      } catch {
+        // If preview fails, fall back to requiring the full amount
+        minAcceptable = dStableAmount;
+      }
+    }
+
     try conversionAdapter.withdrawFromStrategy(strategyShareAmount) returns (uint256 converted) {
       receivedDStable = converted;
-      // Verify we received at least what was requested
-      // If not, this vault cannot fulfill the request (slippage/fees too high)
-      if (receivedDStable < dStableAmount) {
-        // Clean up and revert - let auto-routing try another vault
-        IERC20(vault).forceApprove(adapter, 0);
-        IERC20(vault).safeTransfer(address(collateralVault), strategyShareAmount);
-        revert SlippageCheckFailed(vault, receivedDStable, dStableAmount);
+      // Verify we received at least what was requested (respecting slippage allowance if enabled)
+      uint256 requiredAmount = allowSlippage ? minAcceptable : dStableAmount;
+      if (receivedDStable < requiredAmount) {
+        if (!allowSlippage) {
+          IERC20(vault).forceApprove(adapter, 0);
+          IERC20(vault).safeTransfer(address(collateralVault), strategyShareAmount);
+          revert SlippageCheckFailed(vault, receivedDStable, requiredAmount);
+        }
+        // allowSlippage == true: accept the shortfall to avoid user-facing reverts
       }
     } catch {
       // If conversion fails (e.g., due to slippage/fees), clean up and return 0

@@ -500,12 +500,16 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       // Try a smaller withdrawal that fits within single vault capacity
       const smallerWithdrawShares = aliceShares / 10n; // 10% withdrawal
       const balanceBefore = await dStable.balanceOf(alice.address);
+      const tokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
 
       // This smaller withdrawal should succeed
       await dStakeToken.connect(alice).redeem(smallerWithdrawShares, alice.address, alice.address);
 
       const balanceAfter = await dStable.balanceOf(alice.address);
+      const tokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const received = balanceAfter - balanceBefore;
+      const feesRetained = tokenBalanceAfter - tokenBalanceBefore;
+      const grossExpected = received + feesRetained;
 
       expect(received).to.be.gt(0);
       // With single-vault selection and 1% fees on vault1, expect reasonable withdrawal
@@ -535,13 +539,17 @@ describe("DStakeRouterV2 Fixes Tests", function () {
       const withdrawShares = aliceShares / 10n; // Smaller withdrawal to avoid issues
 
       const balanceBefore = await dStable.balanceOf(alice.address);
+      const tokenBalanceBefore = await dStable.balanceOf(dStakeToken.target);
 
       // Execute withdrawal
       const tx = await dStakeToken.connect(alice).redeem(withdrawShares, alice.address, alice.address);
       const receipt = await tx.wait();
 
       const balanceAfter = await dStable.balanceOf(alice.address);
+      const tokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const received = balanceAfter - balanceBefore;
+      const feesRetained = tokenBalanceAfter - tokenBalanceBefore;
+      const grossExpected = received + feesRetained;
 
       expect(received).to.be.gt(0);
 
@@ -561,12 +569,17 @@ describe("DStakeRouterV2 Fixes Tests", function () {
         expect(decoded.args.selectedVaults.length).to.be.gte(1);
         expect(decoded.args.withdrawalAmounts.length).to.equal(decoded.args.selectedVaults.length);
 
-        // Verify total withdrawal amounts sum to expected value (with larger tolerance for single-vault behavior)
+        // Verify total withdrawal amounts sum to expected gross withdrawn value
         let totalWithdrawn = 0n;
         for (const amount of decoded.args.withdrawalAmounts) {
           totalWithdrawn += BigInt(amount.toString());
         }
-        expect(totalWithdrawn).to.be.closeTo(received, ethers.parseEther("50"));
+        const tolerance = ethers.parseUnits("0.000001", 18); // 1e-6 dStable tolerance
+        expect(totalWithdrawn).to.be.gte(grossExpected - tolerance);
+        const diff = totalWithdrawn >= grossExpected
+          ? totalWithdrawn - grossExpected
+          : grossExpected - totalWithdrawn;
+        expect(diff).to.be.lte(tolerance);
       }
     });
 

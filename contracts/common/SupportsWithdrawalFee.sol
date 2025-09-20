@@ -81,8 +81,12 @@ abstract contract SupportsWithdrawalFee {
     }
     // grossAmount = netAmount / (1 - feeBps/ONE_HUNDRED_PERCENT_BPS)
     // grossAmount = netAmount * ONE_HUNDRED_PERCENT_BPS / (ONE_HUNDRED_PERCENT_BPS - feeBps)
-    return
-      Math.mulDiv(netAmount, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - withdrawalFeeBps_);
+    return Math.mulDiv(
+      netAmount,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - withdrawalFeeBps_,
+      Math.Rounding.Ceil
+    );
   }
 
   /**
