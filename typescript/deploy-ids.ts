@@ -1,5 +1,8 @@
 // USD Oracles
 export const USD_ORACLE_AGGREGATOR_ID = "USD_OracleAggregator";
+export const USD_API3_ORACLE_WRAPPER_ID = "USD_API3Wrapper";
+export const USD_API3_WRAPPER_WITH_THRESHOLDING_ID = "USD_API3WrapperWithThresholding";
+export const USD_API3_COMPOSITE_WRAPPER_WITH_THRESHOLDING_ID = "USD_API3CompositeWrapperWithThresholding";
 export const USD_REDSTONE_ORACLE_WRAPPER_ID = "USD_RedstoneChainlinkWrapper";
 export const USD_REDSTONE_WRAPPER_WITH_THRESHOLDING_ID = "USD_RedstoneChainlinkWrapperWithThresholding";
 export const USD_REDSTONE_COMPOSITE_WRAPPER_WITH_THRESHOLDING_ID = "USD_RedstoneChainlinkCompositeWrapperWithThresholding";
@@ -13,6 +16,9 @@ export const WOS_TO_OS_DECIMAL_CONVERTER_ID = "ChainlinkDecimalConverter_wOS_to_
 
 // ETH Oracles
 export const ETH_ORACLE_AGGREGATOR_ID = "ETH_OracleAggregator";
+export const ETH_API3_ORACLE_WRAPPER_ID = "ETH_API3Wrapper";
+export const ETH_API3_WRAPPER_WITH_THRESHOLDING_ID = "ETH_API3WrapperWithThresholding";
+export const ETH_API3_COMPOSITE_WRAPPER_WITH_THRESHOLDING_ID = "ETH_API3CompositeWrapperWithThresholding";
 export const ETH_REDSTONE_ORACLE_WRAPPER_ID = "ETH_RedstoneWrapper";
 export const ETH_REDSTONE_WRAPPER_WITH_THRESHOLDING_ID = "ETH_RedstoneWrapperWithThresholding";
 export const ETH_REDSTONE_COMPOSITE_WRAPPER_WITH_THRESHOLDING_ID = "ETH_RedstoneCompositeWrapperWithThresholding";

@@ -12,7 +12,7 @@ export interface OracleFeedConfig {
 }
 
 // Define oracle providers
-export type OracleProvider = "REDSTONE"; // Only Redstone now
+export type OracleProvider = "REDSTONE" | "API3";
 
 // Export the feeds array
 // Updated to match the oracle feeds expected in localhost.ts and katana_testnet.ts
@@ -22,14 +22,18 @@ export const redstoneFeeds: OracleFeedConfig[] = [
   { name: "USDC_USD", symbol: "USDC", price: "1" },
   { name: "USDT_USD", symbol: "USDT", price: "1" },
   { name: "AUSD_USD", symbol: "AUSD", price: "1" },
-  { name: "frxUSD_USD", symbol: "frxUSD", price: "1" },
 
   // Vault feeds for yield-bearing tokens
-  { name: "sfrxUSD_frxUSD", symbol: "sfrxUSD", price: "1.1" },
   { name: "yUSD_USD", symbol: "yUSD", price: "1.1" },
 
   // ETH-based feeds for dETH
   { name: "stETH_WETH", symbol: "stETH", price: "1.1" }, // stETH to WETH ratio
+];
+
+// API3 feeds that should use API3 mock oracles
+export const api3Feeds: OracleFeedConfig[] = [
+  { name: "frxUSD_USD", symbol: "frxUSD", price: "1" },
+  { name: "sfrxUSD_frxUSD", symbol: "sfrxUSD", price: "1.1" },
 ];
 
 // Redstone oracle feeds - This array is now merged into redstoneFeeds above
@@ -74,6 +78,31 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     // Store the deployment for config
     mockOracleNameToAddress[feed.name] = mockOracle.address;
     mockOracleNameToProvider[feed.name] = "REDSTONE"; // All are Redstone now
+
+    console.log(`Deployed ${mockOracleName} at ${mockOracle.address} with price ${feed.price}`);
+  }
+
+  // Deploy individual MockAPI3OracleAlwaysAlive instances for each API3 feed
+  for (const feed of api3Feeds) {
+    const mockOracleName = `MockAPI3OracleAlwaysAlive_${feed.name}`;
+    const mockOracle = await hre.deployments.deploy(mockOracleName, {
+      from: deployer,
+      args: [deployer], // API3 oracle takes deployer as manager address
+      contract: "MockAPI3OracleAlwaysAlive",
+      autoMine: true,
+      log: false,
+    });
+
+    // Get the deployed mock oracle contract
+    const mockOracleContract = await hre.ethers.getContractAt("MockAPI3OracleAlwaysAlive", mockOracle.address, signer);
+
+    // Convert price to int224 format expected by API3 (18 decimals)
+    const priceInWei = hre.ethers.parseUnits(feed.price, 18); // API3 uses 18 decimals
+    await mockOracleContract.setMock(priceInWei);
+
+    // Store the deployment for config
+    mockOracleNameToAddress[feed.name] = mockOracle.address;
+    mockOracleNameToProvider[feed.name] = "API3";
 
     console.log(`Deployed ${mockOracleName} at ${mockOracle.address} with price ${feed.price}`);
   }
