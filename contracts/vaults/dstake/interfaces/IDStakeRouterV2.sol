@@ -59,9 +59,7 @@ interface IDStakeRouterV2 {
    * @param assets Array of gross dStable amounts to withdraw from each strategy vault.
    * @return totalWithdrawn The total gross dStable returned to the caller.
    */
-  function solverWithdrawAssets(address[] calldata strategyVaults, uint256[] calldata assets)
-    external
-    returns (uint256 totalWithdrawn);
+  function solverWithdrawAssets(address[] calldata strategyVaults, uint256[] calldata assets) external returns (uint256 totalWithdrawn);
 
   /**
    * @notice Solver-facing withdrawal method using strategy share amounts.
@@ -71,7 +69,8 @@ interface IDStakeRouterV2 {
    * @param strategyShares Array of strategy share amounts to withdraw from each strategy vault.
    * @return totalWithdrawn The total gross dStable returned to the caller.
    */
-  function solverWithdrawShares(address[] calldata strategyVaults, uint256[] calldata strategyShares)
-    external
-    returns (uint256 totalWithdrawn);
+  function solverWithdrawShares(
+    address[] calldata strategyVaults,
+    uint256[] calldata strategyShares
+  ) external returns (uint256 totalWithdrawn);
 }

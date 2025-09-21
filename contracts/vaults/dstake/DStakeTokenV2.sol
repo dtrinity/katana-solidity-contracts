@@ -150,7 +150,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     super._deposit(caller, receiver, assets, shares); // This handles the ERC20 transfer
 
     // Approve router to spend the received assets (necessary because super._deposit transfers to this contract)
-    IERC20(asset()).forceApprove(address(router), assets);
+    IERC20(asset()).approve(address(router), assets);
 
     // Delegate conversion and vault update logic to router
     router.deposit(assets);
@@ -159,7 +159,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   /**
    * @dev Override to handle withdrawals with fees correctly.
    *      The `assets` parameter is the net amount of assets the user wants to receive.
-  */
+   */
   function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256 shares) {
     uint256 maxAssets = maxWithdraw(owner);
     if (assets > maxAssets) {
@@ -628,11 +628,15 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     amountReinvested = totalAmount - incentive;
 
     if (amountReinvested > 0) {
-      // Approve router to spend the remaining fees
-      IERC20(asset()).approve(address(router), amountReinvested);
+      // Approve router to spend the remaining fees and clear afterwards to
+      // ensure no lingering allowance on non-standard ERC20s.
+      IERC20(asset()).forceApprove(address(router), amountReinvested);
 
       // Reinvest fees through the router (converts to strategy shares and deposits)
       router.deposit(amountReinvested);
+
+      // Defensive clear in case the asset does not decrement allowances on transfer.
+      IERC20(asset()).forceApprove(address(router), 0);
     }
 
     emit FeesReinvested(amountReinvested, incentive, _msgSender());

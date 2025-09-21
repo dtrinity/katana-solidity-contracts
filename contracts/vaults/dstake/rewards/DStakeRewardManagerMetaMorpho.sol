@@ -260,7 +260,9 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     uint256 balanceBefore = IERC20(defaultStrategyShare).balanceOf(dStakeCollateralVault);
 
     // Convert dStable to strategy share via adapter
-    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapterV2(adapter).depositIntoStrategy(exchangeAmountIn);
+    (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapterV2(adapter).depositIntoStrategy(
+      exchangeAmountIn
+    );
 
     // Verify the adapter returned the expected strategy share
     if (returnedStrategyShare != defaultStrategyShare) {

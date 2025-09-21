@@ -40,6 +40,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
       yUSDFeedAddress
     );
     const sourceDecimals = await sourceFeed.decimals();
+
     if (Number(sourceDecimals) === TARGET_DECIMALS) {
       console.log(`♻️  Source feed already at target decimals (${TARGET_DECIMALS}). Skipping downscaler deployment.`);
       return true;
@@ -50,6 +51,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
 
   // If already deployed, reuse and exit
   const existing = await getOrNull("ChainlinkDecimalDownscaler_yUSD");
+
   if (existing?.address) {
     console.log(`♻️  Reusing existing ChainlinkDecimalDownscaler at: ${existing.address}`);
     return true;

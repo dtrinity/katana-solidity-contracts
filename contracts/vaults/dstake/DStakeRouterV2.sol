@@ -45,6 +45,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error InvalidMaxVaultCount(uint256 count);
   error EmptyArrays();
   error ArrayLengthMismatch();
+  error InvalidMaxRoutingAttempts(uint256 attempts);
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -61,6 +62,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   uint256 public dustTolerance = 1;
   uint256 public maxVaultCount = 10;
+  uint256 public maxRoutingAttempts = 3;
 
   mapping(address => address) private _strategyShareToAdapter;
   address public defaultDepositStrategyShare;
@@ -119,6 +121,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event VaultConfigRemoved(address indexed vault);
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
+  event MaxRoutingAttemptsUpdated(uint256 oldCount, uint256 newCount);
 
   constructor(address _dStakeToken, address _collateralVault) {
     if (_dStakeToken == address(0) || _collateralVault == address(0)) {
@@ -158,11 +161,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
     // Get vaults sorted by under-allocation (most under-allocated first)
+    uint256 selectionCount = activeVaults.length > maxRoutingAttempts ? maxRoutingAttempts : activeVaults.length;
     (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
       activeVaults,
       currentAllocations,
       targetAllocations,
-      activeVaults.length
+      selectionCount
     );
 
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
@@ -171,7 +175,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     // This maintains balance across vaults according to target allocations
     for (uint256 i = 0; i < sortedVaults.length; i++) {
       address targetVault = sortedVaults[i];
-      
+
       /**
        * @dev Uses external call for gas isolation and comprehensive error boundary.
        * This ensures that gas-greedy or failing adapters don't prevent fallback
@@ -203,14 +207,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     revert NoLiquidityAvailable();
   }
 
-  function withdraw(uint256 dStableAmount)
-    external
-    override
-    onlyRole(DSTAKE_TOKEN_ROLE)
-    nonReentrant
-    whenNotPaused
-    returns (uint256 totalWithdrawn)
-  {
+  function withdraw(
+    uint256 dStableAmount
+  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
     if (dStableAmount == 0) revert InvalidAmount();
 
     (
@@ -223,17 +222,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     // Get vaults sorted by over-allocation (most over-allocated first)
     // Prioritizes over-allocated vaults to rebalance the system
+    uint256 selectionCount = activeVaults.length > maxRoutingAttempts ? maxRoutingAttempts : activeVaults.length;
     (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
       activeVaults,
       currentAllocations,
       targetAllocations,
-      activeVaults.length
+      selectionCount
     );
 
     // Try vaults in allocation-aware order until one succeeds
     for (uint256 i = 0; i < sortedVaults.length; i++) {
       address targetVault = sortedVaults[i];
-      
+
       /**
        * @dev Uses external call for gas isolation and comprehensive error boundary.
        * Similar to deposit logic, this pattern ensures robust fallback behavior
@@ -330,13 +330,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     emit StrategyDepositRouted(vaults, assetAmounts, totalAssets, 0);
   }
 
-  function solverWithdrawAssets(address[] calldata vaults, uint256[] calldata assets)
-    external
-    onlyRole(DSTAKE_TOKEN_ROLE)
-    nonReentrant
-    whenNotPaused
-    returns (uint256 totalWithdrawn)
-  {
+  function solverWithdrawAssets(
+    address[] calldata vaults,
+    uint256[] calldata assets
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
 
@@ -360,13 +357,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return totalWithdrawn;
   }
 
-  function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares)
-    external
-    onlyRole(DSTAKE_TOKEN_ROLE)
-    nonReentrant
-    whenNotPaused
-    returns (uint256 totalWithdrawn)
-  {
+  function solverWithdrawShares(
+    address[] calldata vaults,
+    uint256[] calldata shares
+  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != shares.length) revert ArrayLengthMismatch();
 
@@ -585,9 +579,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
     address strategyShare = adapter.strategyShare();
 
-    IERC20(dStable).approve(adapterAddress, amountToSweep);
+    IERC20(dStable).forceApprove(adapterAddress, amountToSweep);
     (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
     if (mintedShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, mintedShare);
+
+    // Prevent residual allowances for the adapter regardless of token behaviour.
+    IERC20(dStable).forceApprove(adapterAddress, 0);
 
     emit SurplusSwept(amountToSweep, mintedShare);
   }
@@ -650,6 +647,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 oldValue = maxVaultCount;
     maxVaultCount = _maxVaultCount;
     emit MaxVaultCountUpdated(oldValue, _maxVaultCount);
+  }
+
+  function setMaxRoutingAttempts(uint256 _maxRoutingAttempts) external onlyRole(CONFIG_MANAGER_ROLE) {
+    if (_maxRoutingAttempts == 0 || _maxRoutingAttempts > maxVaultCount) {
+      revert InvalidMaxRoutingAttempts(_maxRoutingAttempts);
+    }
+
+    uint256 oldValue = maxRoutingAttempts;
+    maxRoutingAttempts = _maxRoutingAttempts;
+    emit MaxRoutingAttemptsUpdated(oldValue, _maxRoutingAttempts);
   }
 
   function pause() external onlyRole(PAUSER_ROLE) {
@@ -732,10 +739,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @param dStableAmount Gross dStable amount the router aims to obtain from the vault.
    * @return withdrawn The actual gross dStable amount obtained (must be ≥ `dStableAmount`).
    */
-  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, bool allowSlippage)
-    external
-    returns (uint256 withdrawn)
-  {
+  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, bool allowSlippage) external returns (uint256 withdrawn) {
     require(msg.sender == address(this), "Only self-callable");
     // This is called by this contract only, for auto-routing retries
     withdrawn = _withdrawFromVaultAtomically(vault, dStableAmount, allowSlippage);
@@ -782,10 +786,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IERC20(dStable).forceApprove(config.adapter, 0);
   }
 
-  function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount, bool allowSlippage)
-    internal
-    returns (uint256 receivedDStable)
-  {
+  function _withdrawFromVaultAtomically(
+    address vault,
+    uint256 dStableAmount,
+    bool allowSlippage
+  ) internal returns (uint256 receivedDStable) {
     uint256 strategyShareAmount;
     address adapter;
     (receivedDStable, strategyShareAmount, adapter) = _withdrawFromVault(vault, dStableAmount, allowSlippage);

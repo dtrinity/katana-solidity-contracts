@@ -3,32 +3,14 @@ pragma solidity ^0.8.20;
 
 /**
  * @title DeterministicVaultSelector
- * @notice Library for deterministic selection of vaults based on allocation deltas
- * @dev Provides stateless functions for implementing top-X vault selection algorithms
- *      used in the DStake Morpho Router V2 for vault selection during deposits and withdrawals
+ * @notice Library for selecting vaults based on allocation deltas for optimal rebalancing
+ * @dev Used by DStake Router V2 to deterministically select top under/over allocated vaults
+ *      during deposits and withdrawals. Provides gas-efficient alternative to weighted random
+ *      selection by using partial sort algorithm for predictable vault selection.
  *
- * DESIGN PRINCIPLES:
- *
- * 1. DETERMINISTIC SELECTION FOR GAS EFFICIENCY:
- *    - Replaces weighted random selection with deterministic top-X selection
- *    - Achieves 5-10% gas savings by removing randomness overhead
- *    - Provides predictable behavior for easier testing and integration
- *
- * 2. ALLOCATION-BASED PRIORITIZATION:
- *    - For deposits: Select vaults with largest underallocations (target - current)
- *    - For withdrawals: Select vaults with largest overallocations (current - target)
- *    - Natural convergence toward target allocations over time
- *
- * 3. PARTIAL SORT ALGORITHM:
- *    - Uses O(k*n) complexity where k = selection count, n = total vaults
- *    - More efficient than full sort for small k values (typical use case)
- *    - Optimal for the expected use case of selecting 1-3 vaults from 5-10 total
- *
- * 4. EQUIVALENT REBALANCING EFFECTIVENESS:
- *    - Deterministic selection of most misallocated vaults achieves same rebalancing
- *      goals as weighted random selection but with better predictability
- *    - Users can still interact directly with specific vaults if desired
- *    - All vaults in selection pool are pre-approved and equivalent for user needs
+ * Key Features:
+ * - Allocation-based prioritization: Selects most misallocated vaults to converge toward targets
+ * - Partial sort algorithm: O(k*n) complexity optimized for selecting 1-3 vaults from 5-10 total
  */
 library DeterministicVaultSelector {
   /// @dev Error thrown when arrays have mismatched lengths
@@ -284,6 +266,4 @@ library DeterministicVaultSelector {
 
     return (selectedVaults, selectedIndices);
   }
-
-  // Utility functions removed as part of refactor: hasNonZeroDeltas, calculateTotalDelta, getVaultsWithNonZeroDeltas
 }
