@@ -17,9 +17,8 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 
 /**
  * @title DStakeRouterV2
- * @notice Unified router that supports deterministic, multi-vault routing for deposits and withdrawals.
- * @dev Extends the original single-vault router with allocation-aware selection, vault governance tooling,
- *      and shared buffer logic for adapter conversions.
+ * @notice Supports deterministic, multi-vault routing for deposits and withdrawals.
+ * @dev Extends the original single-dLEND router with allocation-aware selection and off-chain solver support.
  */
 contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
@@ -29,7 +28,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error ZeroAddress();
   error AdapterNotFound(address strategyShare);
   error ZeroPreviewWithdrawAmount(address strategyShare);
-  error InsufficientDStableFromAdapter(address strategyShare, uint256 expected, uint256 actual);
   error VaultAssetManagedByDifferentAdapter(address strategyShare, address existingAdapter);
   error ZeroInputDStableValue(address fromAsset, uint256 fromAmount);
   error AdapterAssetMismatch(address adapter, address expectedAsset, address actualAsset);
@@ -39,16 +37,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error InvalidAmount();
   error InvalidVaultConfig();
   error VaultNotActive(address vault);
+  error VaultNotFound(address vault);
   error InsufficientActiveVaults();
-  error TargetAllocationsMismatch();
   error VaultAlreadyExists(address vault);
-  error InvalidTargetAllocation(uint256 target);
   error TotalAllocationInvalid(uint256 total);
   error NoLiquidityAvailable();
-  error AllVaultsPaused();
   error InvalidMaxVaultCount(uint256 count);
-  error VaultMustHaveZeroAllocation(address vault, uint256 currentAllocation);
-  error RoutingCapacityExceeded(uint256 requested, uint256 fulfilled, uint256 vaultLimit);
   error EmptyArrays();
   error ArrayLengthMismatch();
 
@@ -117,9 +111,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event AdapterRemoved(address indexed strategyShare, address adapterAddress);
   event DefaultDepositStrategyShareSet(address indexed strategyShare);
   event DustToleranceSet(uint256 newDustTolerance);
-  event SurplusHeld(uint256 amount);
   event SurplusSwept(uint256 amount, address vaultAsset);
-  event ShortfallCovered(uint256 amount);
   event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount, uint256 randomSeed);
   event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount, uint256 randomSeed);
   event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps);
@@ -634,17 +626,17 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function removeVault(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
-    if (!vaultExists[vault]) revert AdapterNotFound(vault);
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
     _removeVault(vault);
   }
 
   function removeVaultConfig(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
-    if (!vaultExists[vault]) revert AdapterNotFound(vault);
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
     _removeVault(vault);
   }
 
   function emergencyPauseVault(address vault) external onlyRole(PAUSER_ROLE) {
-    if (!vaultExists[vault]) revert AdapterNotFound(vault);
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
     uint256 index = vaultToIndex[vault];
     vaultConfigs[index].isActive = false;
     emit VaultConfigUpdated(vault, vaultConfigs[index].adapter, vaultConfigs[index].targetBps, false);
@@ -679,7 +671,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function getVaultConfig(address vault) external view returns (VaultConfig memory config) {
-    if (!vaultExists[vault]) revert AdapterNotFound(vault);
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
     return vaultConfigs[vaultToIndex[vault]];
   }
 
@@ -965,7 +957,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _getVaultConfig(address vault) internal view returns (VaultConfig memory config) {
-    if (!vaultExists[vault]) revert AdapterNotFound(vault);
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
     return vaultConfigs[vaultToIndex[vault]];
   }
 
@@ -1032,7 +1024,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _updateVaultConfig(VaultConfig memory config) internal {
-    if (!vaultExists[config.strategyVault]) revert AdapterNotFound(config.strategyVault);
+    if (!vaultExists[config.strategyVault]) revert VaultNotFound(config.strategyVault);
 
     uint256 index = vaultToIndex[config.strategyVault];
     vaultConfigs[index] = config;

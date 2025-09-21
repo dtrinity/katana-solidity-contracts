@@ -8,7 +8,7 @@ import {
   TestMintableERC20,
   DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeTokenV2
+  DStakeTokenV2,
 } from "../../typechain-types";
 import { SDUSD_CONFIG } from "./fixture";
 import { createDStakeRouterV2Fixture } from "./routerFixture";
@@ -24,21 +24,21 @@ describe("DStakeRouterV2", function () {
   let charlie: SignerWithAddress;
   let guardian: SignerWithAddress;
   let collateralExchanger: SignerWithAddress;
-  
+
   let dStable: TestMintableERC20;
   let router: DStakeRouterV2;
   let collateralVault: DStakeCollateralVaultV2;
   let dStakeToken: DStakeTokenV2;
-  
+
   // Multi-vault setup (3 vaults for comprehensive testing)
-  let vault1: MockMetaMorphoVault;  // Target: 50% (5000 bps)
-  let vault2: MockMetaMorphoVault;  // Target: 30% (3000 bps)
-  let vault3: MockMetaMorphoVault;  // Target: 20% (2000 bps)
+  let vault1: MockMetaMorphoVault; // Target: 50% (5000 bps)
+  let vault2: MockMetaMorphoVault; // Target: 30% (3000 bps)
+  let vault3: MockMetaMorphoVault; // Target: 20% (2000 bps)
   let adapter1: MetaMorphoConversionAdapter;
   let adapter2: MetaMorphoConversionAdapter;
   let adapter3: MetaMorphoConversionAdapter;
   let urd: MockUniversalRewardsDistributor;
-  
+
   // Address strings to avoid ethers resolveName issues
   let vault1Address: string;
   let vault2Address: string;
@@ -88,7 +88,7 @@ describe("DStakeRouterV2", function () {
     it("Should deploy with correct vault configurations", async function () {
       const vaultCount = await router.getVaultCount();
       expect(vaultCount).to.equal(3);
-      
+
       // Check each vault configuration
       const config1 = await router.getVaultConfig(vault1Address);
       expect(config1.strategyVault).to.equal(vault1Address);
@@ -119,19 +119,17 @@ describe("DStakeRouterV2", function () {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% (in correct 1,000,000 basis point scale)
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30% - Total = 90%, should fail
-          isActive: true
-        }
+          isActive: true,
+        },
       ];
-      
-      await expect(
-        router.setVaultConfigs(invalidConfigs)
-      ).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
+
+      await expect(router.setVaultConfigs(invalidConfigs)).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
     });
 
     it("Should accept configurations that total exactly 1,000,000 basis points (100%)", async function () {
@@ -141,26 +139,25 @@ describe("DStakeRouterV2", function () {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 600000, // 60% in correct scale (600,000 out of 1,000,000)
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 250000, // 25% in correct scale (250,000 out of 1,000,000)
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 150000, // 15% in correct scale (150,000 out of 1,000,000)
-          isActive: true
-        }
+          isActive: true,
+        },
       ];
-      
+
       // This should pass since it totals exactly 1,000,000 (100%)
-      await expect(router.setVaultConfigs(correctConfigs))
-        .to.not.be.reverted;
-        
+      await expect(router.setVaultConfigs(correctConfigs)).to.not.be.reverted;
+
       // Verify the configurations were set correctly
       expect(await router.getVaultCount()).to.equal(3);
       const config1 = await router.getVaultConfigByIndex(0);
@@ -174,51 +171,49 @@ describe("DStakeRouterV2", function () {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 5000, // 50% in old incorrect scale (5,000 out of 10,000)
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 3000, // 30% in old incorrect scale (3,000 out of 10,000)
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 2000, // 20% in old incorrect scale (2,000 out of 10,000)
-          isActive: true
-        }
+          isActive: true,
+        },
       ];
-      
+
       // This should fail because total is 10,000, not 1,000,000
-      await expect(
-        router.setVaultConfigs(oldScaleConfigs)
-      ).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
+      await expect(router.setVaultConfigs(oldScaleConfigs)).to.be.revertedWithCustomError(router, "TotalAllocationInvalid");
     });
   });
 
   describe("Complete Deposit/Withdrawal Flow", function () {
     it("Should handle deposits with deterministic vault selection", async function () {
       const depositAmount = ethers.parseEther("1000");
-      
+
       // Approve and deposit
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       const sharesBefore = await dStakeToken.balanceOf(alice.address);
-      
+
       // Capture the deposit event to verify vault selection
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
-      
+
       const sharesAfter = await dStakeToken.balanceOf(alice.address);
       const sharesReceived = sharesAfter - sharesBefore;
-      
+
       expect(sharesReceived).to.be.gt(0);
-      
+
       // With deterministic selection, verify that funds went to the most underallocated vault
       const [vaults, currentAllocations, , totalBalance] = await router.getCurrentAllocations();
       expect(totalBalance).to.be.gt(0);
-      
+
       // For first deposit with empty vaults, should deterministically go to first vault (vault1)
       expect(currentAllocations[0]).to.be.gt(0); // Vault1 should have received the deposit
     });
@@ -248,15 +243,15 @@ describe("DStakeRouterV2", function () {
 
     it("Should select exactly one vault per ERC4626 deposit", async function () {
       const depositAmount = ethers.parseEther("3000");
-      
+
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       // Listen for DeterministicDeposit event and verify only 1 vault is selected
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
-      
+
       // Find DeterministicDeposit event (or StrategyDepositRouted for backward compatibility)
-      const depositEvent = receipt.logs.find(log => {
+      const depositEvent = receipt.logs.find((log) => {
         try {
           const decoded = router.interface.parseLog(log);
           return decoded?.name === "StrategyDepositRouted" || decoded?.name === "DeterministicDeposit";
@@ -264,23 +259,23 @@ describe("DStakeRouterV2", function () {
           return false;
         }
       });
-      
+
       expect(depositEvent).to.not.be.undefined;
       const decoded = router.interface.parseLog(depositEvent!);
-      
+
       // The ERC4626 path intentionally attempts to fill against a single vault
       expect(decoded.args.selectedVaults).to.have.lengthOf(1);
-      
+
       // Check that funds went to exactly one vault
       const [, currentAllocations] = await router.getCurrentAllocations();
-      
+
       // Should have at least some distribution across vaults over time,
       // but for a single deposit, only one vault gets funds
       let activeCount = 0;
       for (let allocation of currentAllocations) {
         if (allocation > 0) activeCount++;
       }
-      
+
       // Should have exactly 1 vault with funds after first deposit
       expect(activeCount).to.equal(1);
     });
@@ -289,33 +284,34 @@ describe("DStakeRouterV2", function () {
   describe("Deterministic Convergence to Target Allocations", function () {
     it("Should converge to target allocations over 50+ operations with deterministic selection", async function () {
       this.timeout(60000); // Extended timeout for convergence test
-      
-      // Start with heavily skewed allocation by depositing only to vault1 initially  
+
+      // Start with heavily skewed allocation by depositing only to vault1 initially
       const initialDeposit = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
-      
+
       // Temporarily configure router to have only vault1 active for initial skew
       await router.updateVaultConfig(vault1.target, adapter1.target, 500000, true);
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
-      
+
       // Re-activate all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Verify initial skew
       let [, currentAllocations] = await router.getCurrentAllocations();
       expect(currentAllocations[0]).to.be.gt(800000); // Vault1 should have >80%
-      
+
       // Perform deterministic deposits/withdrawals to test convergence
       // With deterministic selection, convergence should be faster and more predictable
       const operations = [];
-      for (let i = 0; i < 50; i++) { // Reduced from 100 since deterministic is more efficient
+      for (let i = 0; i < 50; i++) {
+        // Reduced from 100 since deterministic is more efficient
         const isDeposit = i % 4 !== 3; // 75% deposits, 25% withdrawals (deterministic pattern)
         const amount = ethers.parseEther(((i % 5) * 100 + 200).toString()); // 200-600 dStable (deterministic pattern)
-        
+
         if (isDeposit) {
           await dStable.connect(alice).approve(dStakeToken.target, amount);
           await dStakeToken.connect(alice).deposit(amount, alice.address);
@@ -330,23 +326,23 @@ describe("DStakeRouterV2", function () {
             operations.push(`Withdraw: ${ethers.formatEther(withdrawShares)} shares`);
           }
         }
-        
+
         // Log progress every 10 operations
         if ((i + 1) % 10 === 0) {
           const [, currentAllocsBps] = await router.getCurrentAllocations();
-          console.log(`After ${i + 1} operations: [${currentAllocsBps.map(a => (Number(a) / 100).toFixed(1)).join('%, ')}%]`);
+          console.log(`After ${i + 1} operations: [${currentAllocsBps.map((a) => (Number(a) / 100).toFixed(1)).join("%, ")}%]`);
         }
       }
-      
+
       // Check final convergence - should be within 5% of targets
       const [, finalAllocations] = await router.getCurrentAllocations();
-      
-      console.log("Final allocations:", finalAllocations.map(a => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
+
+      console.log("Final allocations:", finalAllocations.map((a) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
       console.log("Target allocations: [50.0%, 30.0%, 20.0%]");
-      
+
       // Allow 5% tolerance for convergence (500 basis points) - deterministic should achieve this easily
       expect(finalAllocations[0]).to.be.closeTo(500000, 50000); // 50% ± 5%
-      expect(finalAllocations[1]).to.be.closeTo(300000, 50000); // 30% ± 5%  
+      expect(finalAllocations[1]).to.be.closeTo(300000, 50000); // 30% ± 5%
       expect(finalAllocations[2]).to.be.closeTo(200000, 50000); // 20% ± 5%
     });
 
@@ -354,37 +350,37 @@ describe("DStakeRouterV2", function () {
       // Create initial imbalance: put all funds in vault1
       const initialAmount = ethers.parseEther("5000");
       await dStable.connect(alice).approve(dStakeToken.target, initialAmount);
-      
+
       // Force all to vault1 first
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
       await dStakeToken.connect(alice).deposit(initialAmount, alice.address);
-      
+
       // Record initial skewed state
       let [, allocsBefore] = await router.getCurrentAllocations();
-      console.log("Initial (skewed):", allocsBefore.map(a => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
-      
+      console.log("Initial (skewed):", allocsBefore.map((a) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
+
       // Re-enable all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Perform several deposits and track allocation changes
       for (let i = 0; i < 20; i++) {
         const depositAmount = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
-        
+
         if ((i + 1) % 5 === 0) {
           const [, currentAllocs] = await router.getCurrentAllocations();
-          console.log(`After ${i + 1} deposits:`, currentAllocs.map(a => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
+          console.log(`After ${i + 1} deposits:`, currentAllocs.map((a) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
         }
       }
-      
+
       const [, allocsAfter] = await router.getCurrentAllocations();
-      
+
       // Vault1 allocation should decrease (was overweight)
       expect(allocsAfter[0]).to.be.lt(allocsBefore[0]);
-      
+
       // Vault2 and Vault3 allocations should increase (were underweight)
       expect(allocsAfter[1]).to.be.gt(allocsBefore[1]);
       expect(allocsAfter[2]).to.be.gt(allocsBefore[2]);
@@ -404,11 +400,11 @@ describe("DStakeRouterV2", function () {
       await router.updateVaultConfig(vault1.target, adapter1.target, 500000, true);
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // With deterministic selection, ensure vault1 has some balance
       // If vault1 doesn't have balance initially, make targeted deposits to rebalance
       let vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
-      
+
       if (vault1BalanceBefore == 0n) {
         // Make deposits that will deterministically go to most underallocated vaults
         // Since vault1 target is 50% and has 0%, it should be selected
@@ -416,22 +412,22 @@ describe("DStakeRouterV2", function () {
         await dStable.connect(alice).approve(dStakeToken.target, additionalAmount);
         await dStakeToken.connect(alice).deposit(additionalAmount, alice.address);
         vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
-        
+
         // With deterministic selection, this should now have balance
         if (vault1BalanceBefore == 0n) {
           this.skip(); // Skip if still no balance (unexpected with deterministic selection)
           return;
         }
       }
-      
+
       const [vaultsBefore, allocationsBefore] = await router.getCurrentAllocations();
-      
+
       // Get initial balance for vault2
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
-      
+
       // Exchange 1000 dStable equivalent from vault1 to vault2
       const exchangeAmount = ethers.parseEther("1000");
-      
+
       const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
         vault1.target,
         vault2.target,
@@ -441,7 +437,7 @@ describe("DStakeRouterV2", function () {
       const receipt = await tx.wait();
 
       // Verify the StrategySharesExchanged event was emitted with correct parameters
-      const exchangeEvent = receipt.logs.find(log => {
+      const exchangeEvent = receipt.logs.find((log) => {
         try {
           const decoded = router.interface.parseLog(log);
           return decoded?.name === "StrategySharesExchanged";
@@ -460,14 +456,14 @@ describe("DStakeRouterV2", function () {
         expect(decoded.args.dStableAmountEquivalent).to.be.gt(0);
         expect(decoded.args.exchanger).to.equal(collateralExchanger.address);
       }
-      
+
       // Check balances changed appropriately
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
       const vault2BalanceAfter = await vault2.balanceOf(collateralVault.target);
-      
+
       expect(vault1BalanceAfter).to.be.lt(vault1BalanceBefore);
       expect(vault2BalanceAfter).to.be.gt(vault2BalanceBefore);
-      
+
       // Check allocations shifted
       const [, allocationsAfter] = await router.getCurrentAllocations();
       expect(allocationsAfter[0]).to.be.lt(allocationsBefore[0]); // Vault1 decreased
@@ -477,9 +473,9 @@ describe("DStakeRouterV2", function () {
     it("Should revert when exchanging to inactive vault", async function () {
       // Deactivate vault2
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
-      
+
       const exchangeAmount = ethers.parseEther("1000");
-      
+
       await expect(
         router.connect(collateralExchanger).rebalanceStrategiesByValue(
           vault1.target,
@@ -492,7 +488,7 @@ describe("DStakeRouterV2", function () {
 
     it("Should revert when called by unauthorized user", async function () {
       const exchangeAmount = ethers.parseEther("1000");
-      
+
       await expect(
         router.connect(alice).rebalanceStrategiesByValue(
           vault1.target,
@@ -508,52 +504,48 @@ describe("DStakeRouterV2", function () {
     it("Should allow admin to add new vault configuration", async function () {
       // Deploy a new vault and adapter
       const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-      const newVault = await MockMetaMorphoFactory.deploy(
-        dStable.target,
-        "New Vault",
-        "NV"
-      );
+      const newVault = await MockMetaMorphoFactory.deploy(dStable.target, "New Vault", "NV");
 
       const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
       const newAdapter = await MetaMorphoAdapterFactory.deploy(
-        dStable.target,      // _dStable
-        newVault.target,     // _metaMorphoVault
-        collateralVault.target,  // _collateralVault
-        owner.address        // _initialAdmin
+        dStable.target, // _dStable
+        newVault.target, // _metaMorphoVault
+        collateralVault.target, // _collateralVault
+        owner.address // _initialAdmin
       );
-      
+
       // Need to adjust existing allocations to make room
       const newConfigs = [
         {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 400000, // Reduce from 50% to 40%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // Keep at 30%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // Keep at 20%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 100000, // New 10% allocation
-          isActive: true
-        }
+          isActive: true,
+        },
       ];
-      
+
       await expect(router.setVaultConfigs(newConfigs))
         .to.emit(router, "VaultConfigAdded")
         .withArgs(newVault.target, newAdapter.target, 100000);
-      
+
       const vaultCount = await router.getVaultCount();
       expect(vaultCount).to.equal(4);
     });
@@ -562,16 +554,17 @@ describe("DStakeRouterV2", function () {
       await expect(
         router.updateVaultConfig(
           vault1.target,
-          adapter1.target, 
+          adapter1.target,
           5000,
           false // Deactivate
         )
-      ).to.emit(router, "VaultConfigUpdated")
+      )
+        .to.emit(router, "VaultConfigUpdated")
         .withArgs(vault1.target, adapter1.target, 5000, false);
-      
+
       const config = await router.getVaultConfig(vault1.target);
       expect(config.isActive).to.be.false;
-      
+
       const activeVaults = await router.getActiveVaults();
       expect(activeVaults).to.not.include(vault1.target);
     });
@@ -579,102 +572,93 @@ describe("DStakeRouterV2", function () {
     it("Should allow admin to remove vault configuration", async function () {
       // First configure to make vault3 inactive and zero allocation, but keep it in the list
       await router.updateVaultConfig(vault3.target, adapter3.target, 0, false);
-      
+
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
-          isActive: false
-        }
+          isActive: false,
+        },
       ];
-      
+
       await router.setVaultConfigs(newConfigs);
-      
+
       // Now remove vault3
-      await expect(router.removeVaultConfig(vault3.target))
-        .to.emit(router, "VaultConfigRemoved")
-        .withArgs(vault3.target);
-      
+      await expect(router.removeVaultConfig(vault3.target)).to.emit(router, "VaultConfigRemoved").withArgs(vault3.target);
+
       const vaultCount = await router.getVaultCount();
       expect(vaultCount).to.equal(2);
-      
-      await expect(router.getVaultConfig(vault3.target))
-        .to.be.revertedWithCustomError(router, "AdapterNotFound");
+
+      await expect(router.getVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
     });
 
     it("Should revert when calling removeVaultConfig on non-existent vault", async function () {
       // First configure to make vault3 inactive and zero allocation
       await router.updateVaultConfig(vault3.target, adapter3.target, 0, false);
-      
+
       // Redistribute allocations to remaining vaults to ensure total = 100%
       const newConfigs = [
         {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 700000, // 70%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 300000, // 30%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 0, // 0% - must be zero before removal
-          isActive: false
-        }
+          isActive: false,
+        },
       ];
-      
-      await router.setVaultConfigs(newConfigs);
-      
-      // First removal - should emit event
-      await expect(router.removeVaultConfig(vault3.target))
-        .to.emit(router, "VaultConfigRemoved")
-        .withArgs(vault3.target);
-      
-      // Second removal - should revert with AdapterNotFound (contract is not idempotent)
-      await expect(router.removeVaultConfig(vault3.target))
-        .to.be.revertedWithCustomError(router, "AdapterNotFound");
 
-      // Third removal - should also revert with AdapterNotFound
-      await expect(router.removeVaultConfig(vault3.target))
-        .to.be.revertedWithCustomError(router, "AdapterNotFound");
-      
+      await router.setVaultConfigs(newConfigs);
+
+      // First removal - should emit event
+      await expect(router.removeVaultConfig(vault3.target)).to.emit(router, "VaultConfigRemoved").withArgs(vault3.target);
+
+      // Second removal - should revert with VaultNotFound (contract is not idempotent)
+      await expect(router.removeVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+
+      // Third removal - should also revert with VaultNotFound
+      await expect(router.removeVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+
       const vaultCount = await router.getVaultCount();
       expect(vaultCount).to.equal(2);
-      
-      await expect(router.getVaultConfig(vault3.target))
-        .to.be.revertedWithCustomError(router, "AdapterNotFound");
+
+      await expect(router.getVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
     });
 
     it("Should allow admin to emergency pause vault", async function () {
       await router.emergencyPauseVault(vault1.target);
-      
+
       const config = await router.getVaultConfig(vault1.target);
       expect(config.isActive).to.be.false;
-      
+
       const activeVaults = await router.getActiveVaults();
       expect(activeVaults).to.not.include(vault1.target);
     });
   });
-
 
   describe("Edge Cases", function () {
     it("Should handle all vaults paused scenario", async function () {
@@ -682,48 +666,45 @@ describe("DStakeRouterV2", function () {
       await router.updateVaultConfig(vault1.target, adapter1.target, 500000, false);
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const depositAmount = ethers.parseEther("1000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       // Should fail when no active vaults
-      await expect(
-        dStakeToken.connect(alice).deposit(depositAmount, alice.address)
-      ).to.be.revertedWithCustomError(router, "InsufficientActiveVaults");
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
+        router,
+        "InsufficientActiveVaults"
+      );
     });
 
     it("Should handle single vault active scenario", async function () {
       // Pause vault2 and vault3, keep only vault1 active
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const depositAmount = ethers.parseEther("1000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
-      
+
       // All funds should go to vault1
       const [, currentAllocations] = await router.getCurrentAllocations();
       expect(currentAllocations[0]).to.equal(1000000); // 100% to vault1
-      expect(currentAllocations[1]).to.equal(0);     // 0% to vault2 
-      expect(currentAllocations[2]).to.equal(0);     // 0% to vault3
+      expect(currentAllocations[1]).to.equal(0); // 0% to vault2
+      expect(currentAllocations[2]).to.equal(0); // 0% to vault3
     });
 
     it("Should handle new vault with 0 balance", async function () {
       // Deploy new vault
       const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-      const newVault = await MockMetaMorphoFactory.deploy(
-        dStable.target,
-        "Zero Balance Vault",
-        "ZBV"
-      );
-      
+      const newVault = await MockMetaMorphoFactory.deploy(dStable.target, "Zero Balance Vault", "ZBV");
+
       const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
       const newAdapter = await MetaMorphoAdapterFactory.deploy(
-        dStable.target,      // _dStable
-        newVault.target,     // _metaMorphoVault
-        collateralVault.target,  // _collateralVault
-        owner.address        // _initialAdmin
+        dStable.target, // _dStable
+        newVault.target, // _metaMorphoVault
+        collateralVault.target, // _collateralVault
+        owner.address // _initialAdmin
       );
 
       // Add zero-balance vault with significant allocation
@@ -732,45 +713,45 @@ describe("DStakeRouterV2", function () {
           strategyVault: vault1.target,
           adapter: adapter1.target,
           targetBps: 200000, // 20%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault2.target,
           adapter: adapter2.target,
           targetBps: 200000, // 20%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: vault3.target,
           adapter: adapter3.target,
           targetBps: 200000, // 20%
-          isActive: true
+          isActive: true,
         },
         {
           strategyVault: newVault.target,
           adapter: newAdapter.target,
           targetBps: 400000, // 40% - Should get high selection weight
-          isActive: true
-        }
+          isActive: true,
+        },
       ];
-      
+
       await router.setVaultConfigs(newConfigs);
-      
+
       // Make multiple deposits - new vault should be heavily favored due to 0 current vs 40% target
       let newVaultReceiveDeposit = false;
-      
+
       for (let i = 0; i < 10; i++) {
         const depositAmount = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
-        
+
         const newVaultBalance = await newVault.balanceOf(collateralVault.target);
         if (newVaultBalance > 0) {
           newVaultReceiveDeposit = true;
           break;
         }
       }
-      
+
       // New vault should have received at least one deposit due to high target allocation (40%) vs current (0%)
       expect(newVaultReceiveDeposit).to.be.true;
     });
@@ -779,31 +760,31 @@ describe("DStakeRouterV2", function () {
       // Create extreme skew by depositing only to vault1
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const largeDeposit = ethers.parseEther("50000");
       await dStable.connect(alice).approve(dStakeToken.target, largeDeposit);
       await dStakeToken.connect(alice).deposit(largeDeposit, alice.address);
-      
+
       // Re-enable other vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Verify extreme skew
       const [, allocationsBefore] = await router.getCurrentAllocations();
       expect(allocationsBefore[0]).to.be.gt(950000); // >95% in vault1
-      
+
       // Small deposits should strongly favor other vaults
       for (let i = 0; i < 10; i++) {
         const smallDeposit = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, smallDeposit);
         await dStakeToken.connect(alice).deposit(smallDeposit, alice.address);
       }
-      
+
       const [, allocationsAfter] = await router.getCurrentAllocations();
-      
+
       // Vault1 should still be dominant but reduced
       expect(allocationsAfter[0]).to.be.lt(allocationsBefore[0]);
-      
+
       // Other vaults should have gained
       expect(allocationsAfter[1]).to.be.gt(allocationsBefore[1]);
       expect(allocationsAfter[2]).to.be.gt(allocationsBefore[2]);
@@ -814,25 +795,25 @@ describe("DStakeRouterV2", function () {
       const depositAmount = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
-      
+
       // Test that the system can handle large withdrawals even when there are minor inefficiencies
       // Remove any fees to avoid slippage protection issues
-      await vault1.setFees(0, 0); 
+      await vault1.setFees(0, 0);
       await vault2.setFees(0, 0);
       await vault3.setFees(0, 0);
-      
+
       // Attempt large withdrawal
       const aliceShares = await dStakeToken.balanceOf(alice.address);
       const largeWithdrawShares = aliceShares / 2n; // Try to withdraw 50%
-      
+
       // Should still work but might get less due to fees
       const dStableBalanceBefore = await dStable.balanceOf(alice.address);
-      
+
       await dStakeToken.connect(alice).redeem(largeWithdrawShares, alice.address, alice.address);
-      
+
       const dStableBalanceAfter = await dStable.balanceOf(alice.address);
       const received = dStableBalanceAfter - dStableBalanceBefore;
-      
+
       expect(received).to.be.gt(0);
       // With single-vault deterministic selection, allow for more variance due to vault fees
       // and potential conversion differences between vaults
@@ -845,28 +826,28 @@ describe("DStakeRouterV2", function () {
       // Small deposit
       const smallDeposit = ethers.parseEther("100");
       await dStable.connect(alice).approve(dStakeToken.target, smallDeposit);
-      
+
       const tx1 = await dStakeToken.connect(alice).deposit(smallDeposit, alice.address);
       const receipt1 = await tx1.wait();
       const gasUsed1 = receipt1.gasUsed;
-      
+
       // Large deposit (reduced to avoid balance issues in tests)
       const largeDeposit = ethers.parseEther("50000");
       await dStable.connect(alice).approve(dStakeToken.target, largeDeposit);
-      
+
       const tx2 = await dStakeToken.connect(alice).deposit(largeDeposit, alice.address);
       const receipt2 = await tx2.wait();
       const gasUsed2 = receipt2.gasUsed;
-      
+
       console.log(`Small deposit gas: ${gasUsed1}`);
       console.log(`Large deposit gas: ${gasUsed2}`);
-      
+
       // Gas should be very similar (within 10% variance)
       const gasDifference = gasUsed1 > gasUsed2 ? gasUsed1 - gasUsed2 : gasUsed2 - gasUsed1;
       const maxAllowedDifference = gasUsed1 / 10n; // 10% tolerance
-      
+
       expect(gasDifference).to.be.lt(maxAllowedDifference);
-      
+
       // Both should be under reasonable gas limits for deposits
       expect(gasUsed1).to.be.lt(500000n);
       expect(gasUsed2).to.be.lt(500000n);
@@ -877,32 +858,32 @@ describe("DStakeRouterV2", function () {
       const initialDeposit = ethers.parseEther("50000");
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
-      
+
       const aliceShares = await dStakeToken.balanceOf(alice.address);
-      
+
       // Small withdrawal
       const smallWithdrawShares = aliceShares / 100n; // 1%
       const tx1 = await dStakeToken.connect(alice).redeem(smallWithdrawShares, alice.address, alice.address);
       const receipt1 = await tx1.wait();
       const gasUsed1 = receipt1.gasUsed;
-      
+
       // Large withdrawal
       const largeWithdrawShares = aliceShares / 10n; // 10%
       const tx2 = await dStakeToken.connect(alice).redeem(largeWithdrawShares, alice.address, alice.address);
       const receipt2 = await tx2.wait();
       const gasUsed2 = receipt2.gasUsed;
-      
+
       console.log(`Small withdrawal gas: ${gasUsed1}`);
       console.log(`Large withdrawal gas: ${gasUsed2}`);
-      
+
       // Gas should be reasonable for withdrawals (typically higher than deposits due to liquidity calculations)
       expect(gasUsed1).to.be.lt(350000n); // Increased limit to account for new weighted selection logic
       expect(gasUsed2).to.be.lt(350000n);
-      
+
       // Gas difference should still be reasonable
       const gasDifference = gasUsed1 > gasUsed2 ? gasUsed1 - gasUsed2 : gasUsed2 - gasUsed1;
       const maxAllowedDifference = gasUsed1 / 5n; // 20% tolerance for withdrawals
-      
+
       expect(gasDifference).to.be.lt(maxAllowedDifference);
     });
   });
@@ -915,30 +896,30 @@ describe("DStakeRouterV2", function () {
         [vault2.target.toString()]: 0,
         [vault3.target.toString()]: 0,
       };
-      
+
       // Create imbalance - all in vault1 initially
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const initialDeposit = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
-      
+
       // Re-enable all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Track which vaults get selected for deposits
       for (let i = 0; i < iterations; i++) {
         const depositAmount = ethers.parseEther("500");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-        
+
         // Listen for StrategyDepositRouted event to see which vaults were selected
         const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
         const receipt = await tx.wait();
-        
+
         // Find StrategyDepositRouted event
-        const weightedDepositEvent = receipt.logs.find(log => {
+        const weightedDepositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -946,38 +927,37 @@ describe("DStakeRouterV2", function () {
             return false;
           }
         });
-        
+
         if (weightedDepositEvent) {
           const decoded = router.interface.parseLog(weightedDepositEvent);
           const selectedVaults = decoded.args.selectedVaults;
-          
+
           for (const selectedVault of selectedVaults) {
             results[selectedVault.toString()]++;
           }
         }
       }
-      
+
       console.log("Vault selection frequency over", iterations, "deposits (deterministic):");
       console.log(`Vault1 (overweight, target 50%): ${results[vault1.target.toString()]} selections`);
       console.log(`Vault2 (underweight, target 30%): ${results[vault2.target.toString()]} selections`);
       console.log(`Vault3 (underweight, target 20%): ${results[vault3.target.toString()]} selections`);
-      
+
       // With deterministic selection, underweight vaults should be strongly preferred
       // Vault1 should be selected less often since it's overweight
       // Vault2 and Vault3 should be selected more often since they're underweight
       expect(results[vault2.target.toString()]).to.be.gte(results[vault1.target.toString()]);
       expect(results[vault3.target.toString()]).to.be.gte(results[vault1.target.toString()]);
-      
+
       // Combined, vault2 + vault3 should be selected much more than vault1 with deterministic selection
-      expect(results[vault2.target.toString()] + results[vault3.target.toString()])
-        .to.be.gt(results[vault1.target.toString()] * 2); // Much stronger bias expected
-      
+      expect(results[vault2.target.toString()] + results[vault3.target.toString()]).to.be.gt(results[vault1.target.toString()] * 2); // Much stronger bias expected
+
       // Verify final allocations moved toward targets
       const [, finalAllocations] = await router.getCurrentAllocations();
-      
+
       // Vault1 should have decreased from initial 100% (1000000 bps)
       expect(finalAllocations[0]).to.be.lt(1000000); // Less than 100%
-      
+
       // Vault2 and Vault3 should have increased from initial 0%
       expect(finalAllocations[1]).to.be.gt(0);
       expect(finalAllocations[2]).to.be.gt(0);
@@ -990,23 +970,23 @@ describe("DStakeRouterV2", function () {
         await dStable.connect(alice).approve(dStakeToken.target, amount);
         await dStakeToken.connect(alice).deposit(amount, alice.address);
       }
-      
+
       // Check we're reasonably close to targets
       const [, allocations] = await router.getCurrentAllocations();
-      console.log("Balanced state allocations:", allocations.map(a => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
-      
+      console.log("Balanced state allocations:", allocations.map((a) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
+
       // When at targets, deterministic selection should default to first vaults
       const selectionCount = { [vault1.target.toString()]: 0, [vault2.target.toString()]: 0, [vault3.target.toString()]: 0 };
-      
+
       for (let i = 0; i < 20; i++) {
         const amount = ethers.parseEther("200");
         await dStable.connect(alice).approve(dStakeToken.target, amount);
-        
+
         const tx = await dStakeToken.connect(alice).deposit(amount, alice.address);
         const receipt = await tx.wait();
-        
+
         // Track vault selections
-        const weightedDepositEvent = receipt.logs.find(log => {
+        const weightedDepositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1014,22 +994,22 @@ describe("DStakeRouterV2", function () {
             return false;
           }
         });
-        
+
         if (weightedDepositEvent) {
           const decoded = router.interface.parseLog(weightedDepositEvent);
           const selectedVaults = decoded.args.selectedVaults;
-          
+
           for (const selectedVault of selectedVaults) {
             selectionCount[selectedVault.toString()]++;
           }
         }
       }
-      
+
       console.log("Deterministic selection distribution when near targets:");
       console.log(`Vault1: ${selectionCount[vault1.target.toString()]} selections`);
       console.log(`Vault2: ${selectionCount[vault2.target.toString()]} selections`);
       console.log(`Vault3: ${selectionCount[vault3.target.toString()]} selections`);
-      
+
       // With deterministic selection at balance, should consistently select first vault
       // when no underallocations exist
       expect(selectionCount[vault1.target.toString()]).to.be.gt(0);
@@ -1041,18 +1021,18 @@ describe("DStakeRouterV2", function () {
       const initialDeposit = ethers.parseEther("25000");
       await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
       await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
-      
+
       const initialTotalAssets = await dStakeToken.totalAssets();
-      
+
       // Perform various operations
       const bobDeposit = ethers.parseEther("15000");
       await dStable.connect(bob).approve(dStakeToken.target, bobDeposit);
       await dStakeToken.connect(bob).deposit(bobDeposit, bob.address);
-      
+
       const charlieDeposit = ethers.parseEther("10000");
       await dStable.connect(charlie).approve(dStakeToken.target, charlieDeposit);
       await dStakeToken.connect(charlie).deposit(charlieDeposit, charlie.address);
-      
+
       // Exchange some collateral
       const exchangeAmount = ethers.parseEther("5000");
       await router.connect(collateralExchanger).rebalanceStrategiesByValue(
@@ -1061,17 +1041,17 @@ describe("DStakeRouterV2", function () {
         exchangeAmount,
         0 // minToVaultAssetAmount
       );
-      
+
       // Partial withdrawal
       const aliceShares = await dStakeToken.balanceOf(alice.address);
       const withdrawnShares = aliceShares / 4n;
       const withdrawnAssets = await dStakeToken.previewRedeem(withdrawnShares);
       await dStakeToken.connect(alice).redeem(withdrawnShares, alice.address, alice.address);
-      
+
       // Check final integrity
       const finalTotalAssets = await dStakeToken.totalAssets();
       const expectedTotal = initialDeposit + bobDeposit + charlieDeposit - withdrawnAssets;
-      
+
       // Total assets should be close to expected (allowing for fees and slippage)
       expect(finalTotalAssets).to.be.closeTo(expectedTotal, ethers.parseEther("100"));
 
@@ -1083,13 +1063,13 @@ describe("DStakeRouterV2", function () {
     it("Should emit proper allocation snapshots", async function () {
       const depositAmount = ethers.parseEther("5000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       // Should emit AllocationSnapshot event (if implemented)
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
-      
+
       // Verify StrategyDepositRouted was emitted
-      const weightedDepositEvent = receipt.logs.find(log => {
+      const weightedDepositEvent = receipt.logs.find((log) => {
         try {
           const decoded = router.interface.parseLog(log);
           return decoded?.name === "StrategyDepositRouted";
@@ -1097,9 +1077,9 @@ describe("DStakeRouterV2", function () {
           return false;
         }
       });
-      
+
       expect(weightedDepositEvent).to.not.be.undefined;
-      
+
       const decoded = router.interface.parseLog(weightedDepositEvent!);
       expect(decoded.args.totalDStableAmount).to.equal(depositAmount);
       // With the single-vault ERC4626 path, exactly one vault is selected deterministically
@@ -1110,19 +1090,19 @@ describe("DStakeRouterV2", function () {
   describe("Deterministic Gas Efficiency Tests", function () {
     it("Should achieve efficient gas usage with deterministic selection", async function () {
       const depositAmount = ethers.parseEther("5000");
-      
+
       // Test current deterministic implementation gas usage
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      
+
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
       const gasUsed = receipt.gasUsed;
-      
+
       console.log(`Deterministic implementation gas usage: ${gasUsed}`);
-      
+
       // Gas should be reasonable for deterministic selection (targeting < 500k)
       expect(gasUsed).to.be.lt(500000n);
-      
+
       // Test shows improvement vs baseline - actual savings validation would require
       // comparison with previous WeightedRandomSelector implementation
       // For now, verify gas is within efficient range
@@ -1132,7 +1112,7 @@ describe("DStakeRouterV2", function () {
 
     it("Should maintain consistent gas usage across different vault selection scenarios", async function () {
       const gasResults: bigint[] = [];
-      
+
       // Test 1: Balanced allocation scenario
       for (let i = 0; i < 3; i++) {
         const amount = ethers.parseEther("1000");
@@ -1141,21 +1121,21 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
         gasResults.push(receipt.gasUsed);
       }
-      
+
       // Test 2: Imbalanced allocation scenario
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const skewDeposit = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, skewDeposit);
       const skewTx = await dStakeToken.connect(alice).deposit(skewDeposit, alice.address);
       const skewReceipt = await skewTx.wait();
       gasResults.push(skewReceipt.gasUsed);
-      
+
       // Re-enable all vaults for imbalanced scenario
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       for (let i = 0; i < 3; i++) {
         const amount = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, amount);
@@ -1163,15 +1143,18 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
         gasResults.push(receipt.gasUsed);
       }
-      
-      console.log("Gas usage across scenarios:", gasResults.map(g => g.toString()));
-      
+
+      console.log(
+        "Gas usage across scenarios:",
+        gasResults.map((g) => g.toString())
+      );
+
       // Gas usage should be relatively consistent
-      const minGas = gasResults.reduce((min, gas) => gas < min ? gas : min, gasResults[0]);
-      const maxGas = gasResults.reduce((max, gas) => gas > max ? gas : max, gasResults[0]);
+      const minGas = gasResults.reduce((min, gas) => (gas < min ? gas : min), gasResults[0]);
+      const maxGas = gasResults.reduce((max, gas) => (gas > max ? gas : max), gasResults[0]);
       const variance = maxGas - minGas;
       const avgGas = gasResults.reduce((sum, gas) => sum + gas, 0n) / BigInt(gasResults.length);
-      
+
       // Variance should be reasonable (less than 40% of average)
       // Note: Gas can vary more between balanced vs imbalanced scenarios due to different vault selection paths
       expect(variance).to.be.lt(avgGas / 2n); // Increased tolerance to 50%
@@ -1183,16 +1166,16 @@ describe("DStakeRouterV2", function () {
       // Disable vault2 and vault3
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       // Update vault1 to 100% allocation
       await router.updateVaultConfig(vault1.target, adapter1.target, 1000000, true);
-      
+
       const amount = ethers.parseEther("1000");
       await dStable.connect(alice).approve(dStakeToken.target, amount);
       const tx = await dStakeToken.connect(alice).deposit(amount, alice.address);
       const receipt = await tx.wait();
-      
-      const depositEvent = receipt.logs.find(log => {
+
+      const depositEvent = receipt.logs.find((log) => {
         try {
           const decoded = router.interface.parseLog(log);
           return decoded?.name === "StrategyDepositRouted";
@@ -1200,12 +1183,12 @@ describe("DStakeRouterV2", function () {
           return false;
         }
       });
-      
+
       expect(depositEvent).to.not.be.undefined;
       const decoded = router.interface.parseLog(depositEvent!);
       expect(decoded.args.selectedVaults).to.have.lengthOf(1);
       expect(decoded.args.selectedVaults[0]).to.equal(vault1Address);
-      
+
       // Verify all funds went to vault1
       const [, allocations] = await router.getCurrentAllocations();
       expect(allocations[0]).to.equal(1000000); // 100%
@@ -1215,44 +1198,45 @@ describe("DStakeRouterV2", function () {
       // Start with extreme imbalance: all funds in vault1
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const initialAmount = ethers.parseEther("20000");
       await dStable.connect(alice).approve(dStakeToken.target, initialAmount);
       await dStakeToken.connect(alice).deposit(initialAmount, alice.address);
-      
+
       // Re-enable all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Track convergence over 20 deposits
-      const convergenceData: Array<{iteration: number, allocations: number[]}> = [];
-      
+      const convergenceData: Array<{ iteration: number; allocations: number[] }> = [];
+
       for (let i = 0; i < 20; i++) {
         const amount = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, amount);
         await dStakeToken.connect(alice).deposit(amount, alice.address);
-        
-        if (i % 5 === 4) { // Every 5th iteration
+
+        if (i % 5 === 4) {
+          // Every 5th iteration
           const [, allocations] = await router.getCurrentAllocations();
           convergenceData.push({
             iteration: i + 1,
-            allocations: allocations.map(a => Number(a))
+            allocations: allocations.map((a) => Number(a)),
           });
         }
       }
-      
+
       console.log("Convergence progression:");
-      convergenceData.forEach(data => {
-        const percentages = data.allocations.map(a => (a / 100).toFixed(1));
-        console.log(`  Iteration ${data.iteration}: [${percentages.join('%, ')}%]`);
+      convergenceData.forEach((data) => {
+        const percentages = data.allocations.map((a) => (a / 100).toFixed(1));
+        console.log(`  Iteration ${data.iteration}: [${percentages.join("%, ")}%]`);
       });
-      
+
       // Final allocation should be closer to targets than initial
       const finalData = convergenceData[convergenceData.length - 1];
       expect(finalData.allocations[0]).to.be.lt(900000); // Less than 90% (started at 100%)
-      expect(finalData.allocations[1]).to.be.gt(50000);  // Greater than 5% (started at 0%)
-      expect(finalData.allocations[2]).to.be.gt(50000);  // Greater than 5% (started at 0%)
-      
+      expect(finalData.allocations[1]).to.be.gt(50000); // Greater than 5% (started at 0%)
+      expect(finalData.allocations[2]).to.be.gt(50000); // Greater than 5% (started at 0%)
+
       // Should show monotonic convergence toward targets
       expect(convergenceData[0].allocations[0]).to.be.gt(finalData.allocations[0]); // Vault1 decreasing
       expect(convergenceData[0].allocations[1]).to.be.lt(finalData.allocations[1]); // Vault2 increasing
@@ -1262,28 +1246,28 @@ describe("DStakeRouterV2", function () {
     it("Should demonstrate reproducible vault selection with same inputs", async function () {
       // Test that deterministic selection produces same results for same inputs
       const depositAmount = ethers.parseEther("1000");
-      
+
       // Create initial imbalance
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, false);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, false);
-      
+
       const skewDeposit = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, skewDeposit);
       await dStakeToken.connect(alice).deposit(skewDeposit, alice.address);
-      
+
       // Re-enable all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, true);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, true);
-      
+
       // Record vault selections for multiple identical deposits
       const selections: string[][] = [];
-      
+
       for (let i = 0; i < 5; i++) {
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
         const receipt = await tx.wait();
-        
-        const depositEvent = receipt.logs.find(log => {
+
+        const depositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1291,17 +1275,17 @@ describe("DStakeRouterV2", function () {
             return false;
           }
         });
-        
+
         if (depositEvent) {
           const decoded = router.interface.parseLog(depositEvent);
           selections.push(decoded.args.selectedVaults.map((v: string) => v.toLowerCase()));
         }
       }
-      
+
       // With deterministic selection, the pattern should be predictable based on allocations
       expect(selections.length).to.equal(5);
       console.log("Deterministic vault selections over 5 identical deposits:", selections);
-      
+
       // Should show consistent selection behavior (not necessarily identical since allocations change)
       // but should demonstrate deterministic logic
       for (const selection of selections) {
@@ -1330,8 +1314,8 @@ describe("DStakeRouterV2", function () {
         // With single-vault selection, reduce fees to avoid withdrawal failures
         // Test single-vault behavior with reasonable fees
         await vault1.setFees(0, 100); // 1% withdrawal fee - more reasonable
-        await vault2.setFees(0, 0);   // No fees
-        await vault3.setFees(0, 0);   // No fees
+        await vault2.setFees(0, 0); // No fees
+        await vault3.setFees(0, 0); // No fees
 
         // Check initial balances and allocations
         const [vaults, currentAllocations, targetAllocations, totalBalance] = await router.getCurrentAllocations();
@@ -1340,7 +1324,7 @@ describe("DStakeRouterV2", function () {
         // Verify that some vaults actually have balances before attempting withdrawal
         let vaultsWithBalance = 0;
         for (let i = 0; i < vaults.length; i++) {
-          const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then(c => c.balanceOf(collateralVault.target));
+          const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then((c) => c.balanceOf(collateralVault.target));
           if (vaultShares > 0) {
             vaultsWithBalance++;
             console.log(`Vault ${i} (${vaults[i]}) has ${ethers.formatEther(vaultShares)} shares`);
@@ -1364,7 +1348,7 @@ describe("DStakeRouterV2", function () {
           // Check again after retry
           vaultsWithBalance = 0;
           for (let i = 0; i < vaults.length; i++) {
-            const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then(c => c.balanceOf(collateralVault.target));
+            const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then((c) => c.balanceOf(collateralVault.target));
             if (vaultShares > 0) {
               vaultsWithBalance++;
             }
@@ -1443,7 +1427,7 @@ describe("DStakeRouterV2", function () {
         expect(received).to.be.gt(0);
 
         // Verify the StrategyWithdrawalRouted event was emitted with proper data
-        const withdrawalEvent = receipt.logs.find(log => {
+        const withdrawalEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyWithdrawalRouted";
@@ -1465,9 +1449,7 @@ describe("DStakeRouterV2", function () {
           }
           const tolerance = ethers.parseUnits("0.000001", 18); // 1e-6 dStable tolerance
           expect(totalWithdrawn).to.be.gte(grossExpected - tolerance);
-          const diff = totalWithdrawn >= grossExpected
-            ? totalWithdrawn - grossExpected
-            : grossExpected - totalWithdrawn;
+          const diff = totalWithdrawn >= grossExpected ? totalWithdrawn - grossExpected : grossExpected - totalWithdrawn;
           expect(diff).to.be.lte(tolerance);
         }
       });
@@ -1483,9 +1465,7 @@ describe("DStakeRouterV2", function () {
         const excessiveShares = aliceShares * 2n; // 200% of shares (impossible)
 
         // This should revert due to insufficient liquidity
-        await expect(
-          dStakeToken.connect(alice).redeem(excessiveShares, alice.address, alice.address)
-        ).to.be.reverted; // More flexible revert check
+        await expect(dStakeToken.connect(alice).redeem(excessiveShares, alice.address, alice.address)).to.be.reverted; // More flexible revert check
       });
 
       it("Should handle edge case of partial vault liquidity", async function () {
@@ -1541,8 +1521,8 @@ describe("DStakeRouterV2", function () {
         // Check initial allocations - vault1 should be overweight, others underweight
         const [vaultsBefore, allocationsBefore] = await router.getCurrentAllocations();
         expect(allocationsBefore[0]).to.be.gt(800000); // Vault1 > 80%
-        expect(allocationsBefore[1]).to.equal(0);       // Vault2 = 0%
-        expect(allocationsBefore[2]).to.equal(0);       // Vault3 = 0%
+        expect(allocationsBefore[1]).to.equal(0); // Vault2 = 0%
+        expect(allocationsBefore[2]).to.equal(0); // Vault3 = 0%
 
         // Make deposit that should be split proportionally based on underallocations
         const deposit = ethers.parseEther("5000");
@@ -1552,7 +1532,7 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
 
         // Find the StrategyDepositRouted event
-        const depositEvent = receipt.logs.find(log => {
+        const depositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1575,7 +1555,7 @@ describe("DStakeRouterV2", function () {
           // Since vault2 and vault3 both have 0% vs their targets (30% and 20%),
           // the algorithm should select the one with highest underallocation
           // At minimum, some vault other than vault1 should have increased
-          const totalIncrease = (allocationsAfter[1] - allocationsBefore[1]) + (allocationsAfter[2] - allocationsBefore[2]);
+          const totalIncrease = allocationsAfter[1] - allocationsBefore[1] + (allocationsAfter[2] - allocationsBefore[2]);
           expect(totalIncrease).to.be.gt(0); // At least one underallocated vault should increase
         }
       });
@@ -1615,7 +1595,7 @@ describe("DStakeRouterV2", function () {
         expect(spent).to.equal(deposit);
 
         // Check the event for proper remainder distribution
-        const depositEvent = receipt.logs.find(log => {
+        const depositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1655,7 +1635,7 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
 
         // Find the StrategyDepositRouted event
-        const depositEvent = receipt.logs.find(log => {
+        const depositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1706,7 +1686,7 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
 
         // Should select underallocated vaults (vault2 and/or vault3)
-        const depositEvent = receipt.logs.find(log => {
+        const depositEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategyDepositRouted";
@@ -1779,7 +1759,7 @@ describe("DStakeRouterV2", function () {
         const receipt = await tx.wait();
 
         // Verify the StrategySharesExchanged event was emitted with correct parameters
-        const exchangeEvent = receipt.logs.find(log => {
+        const exchangeEvent = receipt.logs.find((log) => {
           try {
             const decoded = router.interface.parseLog(log);
             return decoded?.name === "StrategySharesExchanged";
@@ -2028,7 +2008,7 @@ describe("DStakeRouterV2", function () {
 
       it("Should return same values for both getVaultBalance methods", async function () {
         // Call the internal _getVaultBalance method (via external functions)
-        const [vaults, , , ] = await router.getCurrentAllocations();
+        const [vaults, , ,] = await router.getCurrentAllocations();
 
         // For each vault with balance, compare the methods
         for (let i = 0; i < vaults.length; i++) {
@@ -2061,11 +2041,7 @@ describe("DStakeRouterV2", function () {
       it("Should handle vaults with zero balances", async function () {
         // Create new vault with zero balance
         const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-        const emptyVault = await MockMetaMorphoFactory.deploy(
-          dStable.target,
-          "Empty Vault",
-          "EMPTY"
-        );
+        const emptyVault = await MockMetaMorphoFactory.deploy(dStable.target, "Empty Vault", "EMPTY");
         await emptyVault.waitForDeployment();
 
         const emptyVaultAddress = await emptyVault.getAddress();
@@ -2123,11 +2099,7 @@ describe("DStakeRouterV2", function () {
       it("Should handle adapter lookup failures gracefully", async function () {
         // Test with vault that has no adapter
         const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-        const noAdapterVault = await MockMetaMorphoFactory.deploy(
-          dStable.target,
-          "No Adapter Vault",
-          "NOADAP"
-        );
+        const noAdapterVault = await MockMetaMorphoFactory.deploy(dStable.target, "No Adapter Vault", "NOADAP");
         await noAdapterVault.waitForDeployment();
 
         const noAdapterVaultAddress = await noAdapterVault.getAddress();
@@ -2283,16 +2255,13 @@ describe("DStakeRouterV2", function () {
           const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
           // Execute exchange with slippage protection
-          const tx = await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            minToVaultAssetAmount
-          );
+          const tx = await router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, minToVaultAssetAmount);
           const receipt = await tx.wait();
 
           // Verify the StrategySharesExchanged event was emitted with correct parameters
-          const exchangeEvent = receipt.logs.find(log => {
+          const exchangeEvent = receipt.logs.find((log) => {
             try {
               const decoded = router.interface.parseLog(log);
               return decoded?.name === "StrategySharesExchanged";
@@ -2334,12 +2303,7 @@ describe("DStakeRouterV2", function () {
 
           // This should revert due to slippage protection
           await expect(
-            router.connect(collateralExchanger).rebalanceStrategiesByValue(
-              vault1Address,
-              vault2Address,
-              exchangeAmount,
-              unrealisticMinimum
-            )
+            router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, unrealisticMinimum)
           ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
         });
 
@@ -2353,12 +2317,9 @@ describe("DStakeRouterV2", function () {
           const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
           // Should succeed even with 0 minimum
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            minToVaultAssetAmount
-          );
+          await router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, minToVaultAssetAmount);
 
           // Verify exchange happened
           const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -2382,12 +2343,9 @@ describe("DStakeRouterV2", function () {
           const minToVaultAssetAmount = (expectedToVaultShares * 999n) / 1000n;
 
           // Should succeed with tight tolerance when no fees
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            minToVaultAssetAmount
-          );
+          await router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, minToVaultAssetAmount);
         });
       });
 
@@ -2400,12 +2358,7 @@ describe("DStakeRouterV2", function () {
           const exchangeAmount = ethers.parseEther("500");
 
           // Normal call should work
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            0
-          );
+          await router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, 0);
 
           // The function completed successfully, indicating reentrancy guard allowed the call
           expect(true).to.be.true; // Test passes if we reach here
@@ -2416,28 +2369,13 @@ describe("DStakeRouterV2", function () {
           const exchangeAmount = ethers.parseEther("200");
 
           // First exchange: vault1 -> vault2
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            0
-          );
+          await router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, 0);
 
           // Second exchange: vault2 -> vault3 (immediately after)
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault2Address,
-            vault3Address,
-            exchangeAmount,
-            0
-          );
+          await router.connect(collateralExchanger).rebalanceStrategiesByValue(vault2Address, vault3Address, exchangeAmount, 0);
 
           // Third exchange: vault3 -> vault1 (completing the cycle)
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault3Address,
-            vault1Address,
-            exchangeAmount,
-            0
-          );
+          await router.connect(collateralExchanger).rebalanceStrategiesByValue(vault3Address, vault1Address, exchangeAmount, 0);
 
           // All exchanges should complete without reentrancy issues
           expect(true).to.be.true;
@@ -2454,12 +2392,7 @@ describe("DStakeRouterV2", function () {
           const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
           const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
 
-          await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-            vault1Address,
-            vault2Address,
-            exchangeAmount,
-            0
-          );
+          await router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, 0);
 
           const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
           const vault2BalanceAfter = await vault2.balanceOf(collateralVault.target);
@@ -2502,12 +2435,7 @@ describe("DStakeRouterV2", function () {
           const customAdmin = bob.address;
 
           const MetaMorphoAdapterFactory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
-          const testAdapter = await MetaMorphoAdapterFactory.deploy(
-            dStable.target,
-            vault1Address,
-            collateralVault.target,
-            customAdmin
-          );
+          const testAdapter = await MetaMorphoAdapterFactory.deploy(dStable.target, vault1Address, collateralVault.target, customAdmin);
           await testAdapter.waitForDeployment();
 
           const DEFAULT_ADMIN_ROLE = await testAdapter.DEFAULT_ADMIN_ROLE();
@@ -2544,9 +2472,7 @@ describe("DStakeRouterV2", function () {
           expect(updatedSlippage).to.equal(newSlippage);
 
           // Verify non-admin cannot change slippage
-          await expect(
-            adminAdapter.connect(alice).setMaxSlippage(300)
-          ).to.be.reverted; // Should revert due to access control
+          await expect(adminAdapter.connect(alice).setMaxSlippage(300)).to.be.reverted; // Should revert due to access control
         });
 
         it("Should revert deployment with zero address initialAdmin", async function () {
@@ -2654,12 +2580,9 @@ describe("DStakeRouterV2", function () {
         // 5. Test exchange collateral using previewWithdraw WITH slippage protection
         const exchangeAmount = ethers.parseEther("1000");
         const minToVaultAssetAmount = 0; // Accept any amount for integration test
-        await router.connect(collateralExchanger).rebalanceStrategiesByValue(
-          vault1Address,
-          vault2Address,
-          exchangeAmount,
-          minToVaultAssetAmount
-        );
+        await router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, minToVaultAssetAmount);
 
         // 6. Verify final state is consistent
         const [vaultsAfter, allocationsAfter, , totalBalanceAfter] = await router.getCurrentAllocations();
@@ -2698,6 +2621,4 @@ describe("DStakeRouterV2", function () {
       });
     });
   });
-
-
 });

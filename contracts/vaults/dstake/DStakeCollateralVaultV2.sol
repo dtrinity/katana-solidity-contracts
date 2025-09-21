@@ -45,7 +45,7 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
   event ETHRescued(address indexed receiver, uint256 amount);
 
   // --- State ---
-  address public immutable dStakeToken; // The DStakeTokenV2 this vault serves
+  address public immutable dStakeToken; // The ERC4626 DStakeToken this vault serves
   address public immutable dStable; // The underlying dStable asset address
 
   address public router; // The DStakeRouter allowed to interact
