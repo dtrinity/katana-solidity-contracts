@@ -101,7 +101,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     });
 
     const collateralVaultDeploymentName = `DStakeCollateralVaultV2_${instanceKey}`;
-    const collateralVaultDeployment = await deploy(collateralVaultDeploymentName, {
+    await deploy(collateralVaultDeploymentName, {
       from: deployer,
       contract: "DStakeCollateralVaultV2",
       args: [DStakeTokenV2Deployment.address, instanceConfig.dStable],

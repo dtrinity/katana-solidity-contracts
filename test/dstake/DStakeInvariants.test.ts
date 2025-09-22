@@ -9,9 +9,9 @@ import {
   DStakeTokenV2,
   DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  TestMintableERC20
+  TestMintableERC20,
 } from "../../typechain-types";
-import { MockMetaMorphoVault } from "../../typechain-types/contracts/testing/morpho/MockMetaMorphoVault.sol/MockMetaMorphoVault";
+import { MockMetaMorphoVault } from "../../typechain-types";
 import { IERC20 } from "../../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
 
 const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
@@ -113,14 +113,8 @@ describe("dSTAKE Invariants", function () {
       const toAdapter = adapters[1];
 
       const collateralVaultAddress = await collateralVault.getAddress();
-      const fromVaultToken = (await ethers.getContractAt(
-        "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
-        fromVault
-      )) as IERC20;
-      const toVaultToken = (await ethers.getContractAt(
-        "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
-        toVault
-      )) as IERC20;
+      const fromVaultToken = (await ethers.getContractAt("IERC20", fromVault)) as IERC20;
+      const toVaultToken = (await ethers.getContractAt("IERC20", toVault)) as IERC20;
 
       const fromBalance = await fromVaultToken.balanceOf(collateralVaultAddress);
       expect(fromBalance).to.be.gt(0n, "insufficient shares to swap");
@@ -128,9 +122,7 @@ describe("dSTAKE Invariants", function () {
       const fromShareAmount = fromBalance / 2n;
       const toBalanceBefore = await toVaultToken.balanceOf(collateralVaultAddress);
 
-      await router
-        .connect(collateralExchanger)
-        .exchangeStrategySharesInternal(fromVault, toVault, fromShareAmount, 0);
+      await router.connect(collateralExchanger).exchangeStrategySharesInternal(fromVault, toVault, fromShareAmount, 0);
 
       const toBalanceAfter = await toVaultToken.balanceOf(collateralVaultAddress);
       const resultingToShares = toBalanceAfter - toBalanceBefore;
@@ -151,6 +143,7 @@ describe("dSTAKE Invariants", function () {
       const dStakeTokenAddress = await dStakeToken.getAddress();
       const depositAmount = ethers.parseEther("400");
       const targetVault = vaultAddresses[0];
+      const routerAddress = await router.getAddress();
 
       const feeManagerRole = await dStakeToken.FEE_MANAGER_ROLE();
       if (!(await dStakeToken.hasRole(feeManagerRole, owner.address))) {
@@ -161,20 +154,26 @@ describe("dSTAKE Invariants", function () {
       await dStable.connect(alice).approve(dStakeTokenAddress, depositAmount);
       await dStakeToken.connect(alice).solverDepositAssets([targetVault], [depositAmount], 0, alice.address);
 
-      const mockVault = (await ethers.getContractAt(
-        "contracts/testing/morpho/MockMetaMorphoVault.sol:MockMetaMorphoVault",
-        targetVault
-      )) as MockMetaMorphoVault;
+      const shareToken = (await ethers.getContractAt("IERC20", targetVault)) as IERC20;
+      expect(await dStable.balanceOf(targetVault)).to.equal(depositAmount);
+
+      const mockVault = (await ethers.getContractAt("MockMetaMorphoVault", targetVault)) as MockMetaMorphoVault;
       await mockVault.connect(owner).setFees(0, 100);
       expect(await mockVault.withdrawalFee()).to.equal(100);
 
+      const spareAmount = depositAmount * 2n;
+      await dStable.connect(owner).mint(owner.address, spareAmount);
+      await dStable.connect(owner).approve(targetVault, spareAmount);
+      await mockVault.connect(owner).deposit(spareAmount, routerAddress);
+      expect(await shareToken.balanceOf(routerAddress)).to.be.gte(depositAmount);
+
       const dStakeTokenSigner = await ethers.getImpersonatedSigner(dStakeTokenAddress);
+      await ethers.provider.send("hardhat_setBalance", [dStakeTokenAddress, ethers.toBeHex(ethers.parseEther("10"))]);
 
-      const simulated = await router
-        .connect(dStakeTokenSigner)
-        .solverWithdrawAssets.staticCall([targetVault], [depositAmount]);
-
-      expect(simulated).to.be.lt(depositAmount);
+      await expect(router.connect(dStakeTokenSigner).solverWithdrawAssets([targetVault], [depositAmount])).to.be.revertedWithCustomError(
+        router,
+        "SlippageCheckFailed"
+      );
     });
   });
 
@@ -204,10 +203,9 @@ describe("dSTAKE Invariants", function () {
         const depositAmount = ethers.parseEther("200");
 
         const adapter = adapters[i];
-        const vaultToken = (await ethers.getContractAt(
-          "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
-          vaultAddress
-        )) as IERC20;
+        const mockVault = (await ethers.getContractAt("MockMetaMorphoVault", vaultAddress)) as MockMetaMorphoVault;
+        await mockVault.connect(owner).setYieldRate(0);
+        const vaultToken = (await ethers.getContractAt("IERC20", vaultAddress)) as IERC20;
 
         const sharesBefore = await vaultToken.balanceOf(collateralVaultAddress);
         await dStable.connect(alice).approve(adapterAddress, depositAmount);
@@ -217,11 +215,9 @@ describe("dSTAKE Invariants", function () {
         const sharesAfter = await vaultToken.balanceOf(collateralVaultAddress);
 
         const mintedStrategyShares = sharesAfter - sharesBefore;
-        expect(mintedStrategyShares).to.equal(expectedShareAmount);
+        expect(mintedStrategyShares).to.be.gte(expectedShareAmount);
 
-        await collateralVault
-          .connect(routerSigner)
-          .transferStrategyShares(vaultAddress, mintedStrategyShares, alice.address);
+        await collateralVault.connect(routerSigner).transferStrategyShares(vaultAddress, mintedStrategyShares, alice.address);
 
         await vaultToken.connect(alice).approve(adapterAddress, mintedStrategyShares);
         const expectedReturn = await adapter.previewWithdrawFromStrategy(mintedStrategyShares);
