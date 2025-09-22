@@ -31,14 +31,23 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   error ERC4626ExceedsMaxRedeem(uint256 shares, uint256 maxShares);
   error InvalidIncentiveBps(uint256 incentiveBps, uint256 maxIncentiveBps);
   error AutoWithdrawShortfall(uint256 expectedNet, uint256 actualNet);
+  error InvalidSettlementRatio(uint256 newRatio);
+  error SettlementRatioDisabled();
 
   // --- State ---
   IDStakeCollateralVaultV2 public collateralVault;
   IDStakeRouterV2 public router;
 
+  uint256 private constant SETTLEMENT_RATIO_SCALE = 1e18;
+
+  uint256 public settlementRatio;
+
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
   uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS * 20; // 20% max incentive
   uint256 public reinvestIncentiveBps;
+
+  // --- Events ---
+  event SettlementRatioUpdated(uint256 oldRatio, uint256 newRatio);
 
   // --- Initializer ---
   /// @custom:oz-upgrades-unsafe-allow constructor
@@ -66,6 +75,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     __ERC4626_init(_dStable);
     __AccessControl_init();
     _initializeWithdrawalFee(0);
+    settlementRatio = SETTLEMENT_RATIO_SCALE;
 
     if (address(_dStable) == address(0) || _initialAdmin == address(0) || _initialFeeManager == address(0)) {
       revert ZeroAddress();
@@ -131,6 +141,61 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
     // Include both vault holdings and any dStable balance in this contract (fees)
     return collateralVault.totalValueInDStable() + IERC20(asset()).balanceOf(address(this));
+  }
+
+  function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual override returns (uint256) {
+    if (assets == 0) {
+      return 0;
+    }
+
+    uint256 ratio = settlementRatio;
+    if (ratio == 0) {
+      revert SettlementRatioDisabled();
+    }
+
+    // Keep the OpenZeppelin mapping as the canonical inverse of `_convertToAssets` so that
+    // withdrawals burn the same number of shares they would pre-haircut. The haircut is applied
+    // when turning shares back into assets, so the router still returns less underlying per share.
+    uint256 baseShares = super._convertToShares(assets, rounding);
+    if (ratio == SETTLEMENT_RATIO_SCALE || baseShares == 0) {
+      return baseShares;
+    }
+
+    return Math.mulDiv(baseShares, SETTLEMENT_RATIO_SCALE, ratio, rounding);
+  }
+
+  function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view virtual override returns (uint256) {
+    if (shares == 0) {
+      return 0;
+    }
+
+    uint256 baseAssets = super._convertToAssets(shares, rounding);
+    uint256 ratio = settlementRatio;
+    if (ratio == SETTLEMENT_RATIO_SCALE || baseAssets == 0) {
+      return baseAssets;
+    }
+
+    return Math.mulDiv(baseAssets, ratio, SETTLEMENT_RATIO_SCALE, rounding);
+  }
+
+  function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
+    // Because `_convertToShares` divides by the settlement ratio, a plain call would mint
+    // extra shares and depress the post-haircut share price. Rescaling here preserves the
+    // pre-haircut mint amount while withdrawals remain ratio-aware via `_convertToAssets`.
+    uint256 rawShares = super.previewDeposit(assets);
+    uint256 ratio = settlementRatio;
+    if (ratio == SETTLEMENT_RATIO_SCALE || rawShares == 0) {
+      return rawShares;
+    }
+    return Math.mulDiv(rawShares, ratio, SETTLEMENT_RATIO_SCALE);
+  }
+
+  function previewMint(uint256 shares) public view virtual override returns (uint256) {
+    uint256 ratio = settlementRatio;
+    if (ratio == 0) {
+      revert SettlementRatioDisabled();
+    }
+    return super.previewMint(shares);
   }
 
   /**
@@ -678,6 +743,23 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
    */
   function setWithdrawalFee(uint256 _feeBps) external onlyRole(FEE_MANAGER_ROLE) {
     _setWithdrawalFee(_feeBps);
+  }
+
+  /**
+   * @notice Sets the settlement ratio applied to all asset/share conversions.
+   * @dev Expressed in 1e18 scale where 1e18 == 100%. Values greater than 1e18 are rejected.
+   *      Setting to zero effectively disables new deposits and makes existing shares redeem to zero.
+   * @param newRatio The new settlement ratio.
+   */
+  function setSettlementRatio(uint256 newRatio) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (newRatio > SETTLEMENT_RATIO_SCALE) {
+      revert InvalidSettlementRatio(newRatio);
+    }
+
+    uint256 oldRatio = settlementRatio;
+    settlementRatio = newRatio;
+
+    emit SettlementRatioUpdated(oldRatio, newRatio);
   }
 
   /**

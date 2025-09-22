@@ -38,7 +38,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
   using Math for uint256;
 
   // --- Constants ---
-  uint256 private constant MIN_SHARES = 100; // Minimum shares to prevent dust attacks (100 wei)
+  uint256 private constant MIN_SHARES = 1; // Minimum shares to prevent dust attacks (1 wei)
 
   // --- Mutable State ---
   uint256 private maxSlippageBps; // Current max slippage protection

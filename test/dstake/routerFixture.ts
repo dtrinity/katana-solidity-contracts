@@ -13,6 +13,12 @@ import {
 import { DStakeFixtureConfig, SDUSD_CONFIG } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
 
+export const VaultStatus = {
+  Active: 0,
+  Suspended: 1,
+  Impaired: 2
+} as const;
+
 export interface DStakeRouterV2FixtureResult {
   owner: SignerWithAddress;
   alice: SignerWithAddress;
@@ -178,19 +184,19 @@ export const createDStakeRouterV2Fixture = (
         strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000,
-        isActive: true
+        status: VaultStatus.Active
       },
       {
         strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000,
-        isActive: true
+        status: VaultStatus.Active
       },
       {
         strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000,
-        isActive: true
+        status: VaultStatus.Active
       }
     ];
 

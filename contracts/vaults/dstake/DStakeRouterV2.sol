@@ -84,11 +84,17 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     WITHDRAWAL
   }
 
+  enum VaultStatus {
+    Active,
+    Suspended,
+    Impaired
+  }
+
   struct VaultConfig {
     address strategyVault;
     address adapter;
     uint256 targetBps;
-    bool isActive;
+    VaultStatus status;
   }
 
   VaultConfig[] public vaultConfigs;
@@ -119,8 +125,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event SurplusSwept(uint256 amount, address vaultAsset);
   event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount);
   event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount);
-  event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps);
-  event VaultConfigUpdated(address indexed vault, address indexed adapter, uint256 targetBps, bool isActive);
+  event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps, VaultStatus status);
+  event VaultConfigUpdated(address indexed vault, address indexed adapter, uint256 targetBps, VaultStatus status);
   event VaultConfigRemoved(address indexed vault);
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
@@ -310,7 +316,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       if (shares[i] > 0) {
         // Validate vault is registered and active
         VaultConfig memory config = _getVaultConfig(vaults[i]);
-        if (!config.isActive) revert VaultNotActive(vaults[i]);
+        if (config.status != VaultStatus.Active) revert VaultNotActive(vaults[i]);
 
         // Use previewMint to determine assets needed to mint the desired shares
         uint256 assetsNeeded = IERC4626(vaults[i]).previewMint(shares[i]);
@@ -526,8 +532,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     VaultConfig memory fromConfig = _getVaultConfig(fromVault);
     VaultConfig memory toConfig = _getVaultConfig(toVault);
 
-    if (!fromConfig.isActive || !toConfig.isActive) {
-      revert VaultNotActive(fromConfig.isActive ? toVault : fromVault);
+    if (fromConfig.status != VaultStatus.Active || toConfig.status != VaultStatus.Active) {
+      revert VaultNotActive(fromConfig.status == VaultStatus.Active ? toVault : fromVault);
     }
 
     if (!_isVaultHealthyForDeposits(toVault)) revert VaultNotActive(toVault);
@@ -561,6 +567,19 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function removeAdapter(address strategyShare) external onlyRole(ADAPTER_MANAGER_ROLE) {
     if (!_removeAdapter(strategyShare)) revert AdapterNotFound(strategyShare);
+  }
+
+  function _syncAdapter(address strategyShare, address adapterAddress) internal {
+    address currentAdapter = _strategyShareToAdapter[strategyShare];
+    if (currentAdapter == adapterAddress) {
+      return;
+    }
+
+    if (currentAdapter != address(0)) {
+      _removeAdapter(strategyShare);
+    }
+
+    _addAdapter(strategyShare, adapterAddress);
   }
 
   function setDefaultDepositStrategyShare(address strategyShare) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -635,8 +654,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @notice Adds a vault configuration without enforcing total target-sum normalization.
    * @dev See notes on the overload above. Intended for operational flexibility.
    */
-  function addVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
-    _addVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
+  function addVaultConfig(address vault, address adapter, uint256 targetBps, VaultStatus status) external onlyRole(VAULT_MANAGER_ROLE) {
+    _addVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, status: status }));
   }
 
   /**
@@ -653,8 +672,28 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @notice Updates a vault configuration without enforcing total target-sum normalization.
    * @dev See notes on the overload above. Targets are used as-is by the router.
    */
-  function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
-    _updateVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
+  function updateVaultConfig(address vault, address adapter, uint256 targetBps, VaultStatus status) external onlyRole(VAULT_MANAGER_ROLE) {
+    _updateVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, status: status }));
+  }
+
+  /**
+   * @notice Updates only the status of a vault configuration.
+   * @dev Convenience helper for governance to quickly quarantine or reactivate vaults without
+   *      needing to resupply adapter/target details.
+   * @param vault Address of the vault to update.
+   * @param status New status to set.
+   */
+  function setVaultStatus(address vault, VaultStatus status) external onlyRole(VAULT_MANAGER_ROLE) {
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
+    uint256 index = vaultToIndex[vault];
+    VaultConfig storage config = vaultConfigs[index];
+    if (config.status == status) {
+      return;
+    }
+
+    config.status = status;
+
+    emit VaultConfigUpdated(config.strategyVault, config.adapter, config.targetBps, status);
   }
 
   /**
@@ -689,8 +728,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   function emergencyPauseVault(address vault) external onlyRole(PAUSER_ROLE) {
     if (!vaultExists[vault]) revert VaultNotFound(vault);
     uint256 index = vaultToIndex[vault];
-    vaultConfigs[index].isActive = false;
-    emit VaultConfigUpdated(vault, vaultConfigs[index].adapter, vaultConfigs[index].targetBps, false);
+    vaultConfigs[index].status = VaultStatus.Suspended;
+    emit VaultConfigUpdated(vault, vaultConfigs[index].adapter, vaultConfigs[index].targetBps, VaultStatus.Suspended);
   }
 
   function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -770,7 +809,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return vaultConfigs[index];
   }
 
-
   // --- Internal Helpers ---
 
   /**
@@ -810,7 +848,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
     VaultConfig memory config = _getVaultConfig(vault);
-    if (!config.isActive) revert VaultNotActive(vault);
+    if (config.status != VaultStatus.Active) revert VaultNotActive(vault);
 
     IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(config.adapter);
 
@@ -862,7 +900,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal {
     VaultConfig memory config = _getVaultConfig(vault);
-    if (!config.isActive) revert VaultNotActive(vault);
 
     address adapter = config.adapter;
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
@@ -888,6 +925,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     bool allowSlippage
   ) internal returns (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
+    if (config.status != VaultStatus.Active) revert VaultNotActive(vault);
     adapter = config.adapter;
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
@@ -946,7 +984,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   ) internal view returns (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) {
     uint256 activeCount = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      if (vaultConfigs[i].isActive && _isVaultHealthyForOperation(vaultConfigs[i].strategyVault, operationType)) {
+      if (vaultConfigs[i].status == VaultStatus.Active && _isVaultHealthyForOperation(vaultConfigs[i].strategyVault, operationType)) {
         activeCount++;
       }
     }
@@ -960,7 +998,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 activeIndex = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       VaultConfig memory config = vaultConfigs[i];
-      if (config.isActive && _isVaultHealthyForOperation(config.strategyVault, operationType)) {
+      if (config.status == VaultStatus.Active && _isVaultHealthyForOperation(config.strategyVault, operationType)) {
         activeVaults[activeIndex] = config.strategyVault;
         balances[activeIndex] = _getVaultBalance(config.strategyVault);
         targetAllocations[activeIndex] = config.targetBps;
@@ -1075,11 +1113,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     vaultToIndex[config.strategyVault] = index;
     vaultExists[config.strategyVault] = true;
 
-    if (config.isActive) {
-      _addAdapter(config.strategyVault, config.adapter);
-    }
+    _syncAdapter(config.strategyVault, config.adapter);
 
-    emit VaultConfigAdded(config.strategyVault, config.adapter, config.targetBps);
+    emit VaultConfigAdded(config.strategyVault, config.adapter, config.targetBps, config.status);
   }
 
   function _updateVaultConfig(VaultConfig memory config) internal {
@@ -1088,13 +1124,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 index = vaultToIndex[config.strategyVault];
     vaultConfigs[index] = config;
 
-    if (config.isActive) {
-      _addAdapter(config.strategyVault, config.adapter);
-    } else {
-      _removeAdapter(config.strategyVault);
-    }
+    _syncAdapter(config.strategyVault, config.adapter);
 
-    emit VaultConfigUpdated(config.strategyVault, config.adapter, config.targetBps, config.isActive);
+    emit VaultConfigUpdated(config.strategyVault, config.adapter, config.targetBps, config.status);
   }
 
   function _removeVault(address vault) internal {

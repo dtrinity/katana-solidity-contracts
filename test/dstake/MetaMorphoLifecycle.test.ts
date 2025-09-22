@@ -14,6 +14,7 @@ import {
 } from "../../typechain-types";
 import { SDUSD_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
+import { VaultStatus } from "./routerFixture";
 
 /**
  * Comprehensive lifecycle test for dSTAKE with MetaMorpho integration
@@ -209,7 +210,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
         strategyVault: metaMorphoVaultContract.target,
         adapter: adapterContract.target,
         targetBps: 1000000, // 100% allocation to single vault (1,000,000 basis points = 100%)
-        isActive: true
+        status: VaultStatus.Active
       };
       await routerContract.setVaultConfigs([vaultConfig]);
       await routerContract.setDefaultDepositStrategyShare(metaMorphoVaultContract.target);

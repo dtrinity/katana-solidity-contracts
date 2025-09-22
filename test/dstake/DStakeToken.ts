@@ -10,8 +10,8 @@ import {
   ERC20,
 } from "../../typechain-types";
 import { ERC20StablecoinUpgradeable } from "../../typechain-types/contracts/dstable/ERC20StablecoinUpgradeable";
-import { WrappedDLendConversionAdapter } from "../../typechain-types/contracts/vaults/dstake/adapters/WrappedDLendConversionAdapter";
-import { WrappedDLendConversionAdapter__factory } from "../../typechain-types/factories/contracts/vaults/dstake/adapters/WrappedDLendConversionAdapter__factory";
+import { MetaMorphoConversionAdapter } from "../../typechain-types/contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter";
+import { MetaMorphoConversionAdapter__factory } from "../../typechain-types/factories/contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter__factory";
 import {
   createDStakeFixture,
   DSTAKE_CONFIGS,
@@ -34,7 +34,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let stable: ERC20StablecoinUpgradeable;
     let minterRole: string;
     let adapterAddress: string;
-    let adapter: WrappedDLendConversionAdapter;
+    let adapter: MetaMorphoConversionAdapter;
 
     let DStakeTokenV2Address: string;
     let collateralVaultAddress: string;
@@ -49,7 +49,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       // Revert to snapshot instead of re-deploying
       const out = await fixture();
       adapterAddress = out.adapterAddress;
-      adapter = WrappedDLendConversionAdapter__factory.connect(
+      adapter = MetaMorphoConversionAdapter__factory.connect(
         adapterAddress,
         deployer,
       );
