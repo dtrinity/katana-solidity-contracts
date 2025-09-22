@@ -122,7 +122,7 @@ describe("dSTAKE Invariants", function () {
       const fromShareAmount = fromBalance / 2n;
       const toBalanceBefore = await toVaultToken.balanceOf(collateralVaultAddress);
 
-      await router.connect(collateralExchanger).exchangeStrategySharesInternal(fromVault, toVault, fromShareAmount, 0);
+      await (router.connect(collateralExchanger) as any).rebalanceStrategiesByShares(fromVault, toVault, fromShareAmount, 0);
 
       const toBalanceAfter = await toVaultToken.balanceOf(collateralVaultAddress);
       const resultingToShares = toBalanceAfter - toBalanceBefore;

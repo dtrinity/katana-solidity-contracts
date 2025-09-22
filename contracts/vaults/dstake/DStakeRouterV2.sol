@@ -177,14 +177,17 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       address targetVault = sortedVaults[i];
 
       /**
-       * @dev Uses external call for gas isolation and comprehensive error boundary.
-       * This ensures that gas-greedy or failing adapters don't prevent fallback
-       * to other vaults. The external call is protected by nonReentrant modifier
-       * and only accepts calls from this contract address. Benefits:
-       * - Gas limit isolation: Failed vault operations don't consume all available gas
-       * - Complete exception boundary: Catches ALL failure modes (reverts, OOG, stack overflow)
-       * - Stack depth reset: Prevents overflow in complex adapter call chains
-       * - Graceful degradation: System remains functional even with problematic adapters
+       * @dev External self-call with try/catch to isolate adapter failures and allow fallback.
+       * Notes:
+       * - Reentrancy: the public entrypoint is nonReentrant; the called wrapper is self-callable only.
+       * - Gas: there is no explicit gas cap. Under EIP-150 the caller retains ~1/64 gas on callee
+       *   failure, which usually allows continuing, but a callee can still consume most gas and
+       *   jeopardize subsequent attempts.
+       * - Exceptions: try/catch captures callee-side failures (revert/panic/OOG/call failure). It
+       *   cannot catch if this function itself runs out of gas.
+       * - Call frames: the external self-call creates a new call frame (separate operand stack) but
+       *   increases call depth; it does not prevent call-depth overflow.
+       * - Behavior: on any failure, continue to the next vault.
        */
       try this._depositToVaultWithRetry(targetVault, dStableAmount) {
         // Success - emit event and return
@@ -235,9 +238,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       address targetVault = sortedVaults[i];
 
       /**
-       * @dev Uses external call for gas isolation and comprehensive error boundary.
-       * Similar to deposit logic, this pattern ensures robust fallback behavior
-       * when withdrawing from multiple vaults. Protected by nonReentrant modifier.
+       * @dev External self-call with try/catch for withdrawals to enable fallback across vaults.
+       * Mirrors the deposit path semantics regarding gas, exceptions, and call depth. The
+       * entrypoint is nonReentrant; the called wrapper is self-callable only.
        */
       try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, false) returns (uint256 withdrawnAmount) {
         IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
@@ -392,18 +395,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return totalWithdrawn;
   }
 
-  // --- Exchange Functions ---
+  // --- Rebalance/Exchange Functions ---
 
-  function exchangeStrategySharesInternal(
+  function rebalanceStrategiesByShares(
     address fromStrategyShare,
     address toStrategyShare,
     uint256 fromShareAmount,
     uint256 minToShareAmount
   ) external onlyRole(STRATEGY_REBALANCER_ROLE) nonReentrant {
-    _exchangeStrategyShares(fromStrategyShare, toStrategyShare, fromShareAmount, minToShareAmount);
+    _rebalanceStrategiesByShares(fromStrategyShare, toStrategyShare, fromShareAmount, minToShareAmount);
   }
 
-  function _exchangeStrategyShares(
+  function _rebalanceStrategiesByShares(
     address fromStrategyShare,
     address toStrategyShare,
     uint256 fromShareAmount,
@@ -450,7 +453,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     );
   }
 
-  function swapStrategySharesWithOperator(
+  function rebalanceStrategiesBySharesViaExternalLiquidity(
     address fromStrategyShare,
     address toStrategyShare,
     uint256 fromShareAmount,
@@ -528,7 +531,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (!_isVaultHealthyForWithdrawals(fromVault)) revert VaultNotActive(fromVault);
 
     uint256 requiredVaultAssetAmount = IERC4626(fromVault).previewWithdraw(amount);
-    _exchangeStrategyShares(fromVault, toVault, requiredVaultAssetAmount, minToShareAmount);
+    _rebalanceStrategiesByShares(fromVault, toVault, requiredVaultAssetAmount, minToShareAmount);
 
     emit StrategiesRebalanced(fromVault, toVault, amount, msg.sender);
   }
@@ -718,10 +721,13 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   /**
    * @notice External wrapper for internal deposit logic used in retry mechanism
-   * @dev This function is intentionally external to provide gas isolation and comprehensive
-   *      error boundary for the auto-routing fallback system. It can only be called by
-   *      this contract itself to prevent unauthorized access while enabling the benefits
-   *      of external call error handling.
+   * @dev External self-call wrapper used solely by the router's auto-routing loop. Rationale:
+   *      - Enables try/catch around the adapter path to tolerate callee failures and fall back.
+   *      - No explicit gas cap is applied; under EIP-150 the caller retains ~1/64 gas on callee
+   *        failure, but a misbehaving callee can still consume most remaining gas.
+   *      - Creates a new call frame (separate operand stack) but increases call depth; it does not
+   *        prevent call-depth overflow. Internal state changes before the call still revert on failure.
+   *      - Guarded via `require(msg.sender == address(this))` so only the router can invoke it.
    * @param vault Target vault for deposit
    * @param dStableAmount Amount to deposit
    */
@@ -733,8 +739,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   /**
    * @notice External wrapper for internal withdrawal logic used in retry mechanism.
-   * @dev Similar to the deposit retry function, this provides gas isolation for withdrawal
-   *      fallback operations. Only callable by this contract itself.
+   * @dev External self-call wrapper for the withdrawal retry path. Semantics mirror the deposit
+   *      wrapper:
+   *      - try/catch allows fallback on callee failures; no hard gas isolation (EIP-150 applies).
+   *      - New call frame but increased call depth; does not avoid call-depth overflow.
+   *      - Only callable by this contract via `require(msg.sender == address(this))`.
    * @param vault Target vault for withdrawal.
    * @param dStableAmount Gross dStable amount the router aims to obtain from the vault.
    * @return withdrawn The actual gross dStable amount obtained (must be ≥ `dStableAmount`).
