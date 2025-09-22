@@ -114,8 +114,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event DefaultDepositStrategyShareSet(address indexed strategyShare);
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusSwept(uint256 amount, address vaultAsset);
-  event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount, uint256 randomSeed);
-  event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount, uint256 randomSeed);
+  event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount);
+  event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount);
   event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps);
   event VaultConfigUpdated(address indexed vault, address indexed adapter, uint256 targetBps, bool isActive);
   event VaultConfigRemoved(address indexed vault);
@@ -192,7 +192,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         uint256[] memory amountArray = new uint256[](1);
         vaultArray[0] = targetVault;
         amountArray[0] = dStableAmount;
-        emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount, 0);
+        emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount);
         return;
       } catch {
         // Continue to next vault on any error (transient or permanent)
@@ -247,7 +247,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         vaultArray[0] = targetVault;
         amountArray[0] = withdrawnAmount;
 
-        emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount, 0);
+        emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount);
         return withdrawnAmount;
       } catch {
         // Continue to next vault on any error (transient or permanent)
@@ -286,7 +286,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       }
     }
 
-    emit StrategyDepositRouted(vaults, assets, totalAssets, 0);
+    emit StrategyDepositRouted(vaults, assets, totalAssets);
   }
 
   function solverDepositShares(
@@ -327,7 +327,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       }
     }
 
-    emit StrategyDepositRouted(vaults, assetAmounts, totalAssets, 0);
+    emit StrategyDepositRouted(vaults, assetAmounts, totalAssets);
   }
 
   function solverWithdrawAssets(
@@ -353,7 +353,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit StrategyWithdrawalRouted(vaults, assets, totalWithdrawn, 0);
+    emit StrategyWithdrawalRouted(vaults, assets, totalWithdrawn);
     return totalWithdrawn;
   }
 
@@ -388,7 +388,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     totalWithdrawn = IERC20(dStable).balanceOf(address(this)) - balanceBefore;
     IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
 
-    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalWithdrawn, 0);
+    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalWithdrawn);
     return totalWithdrawn;
   }
 

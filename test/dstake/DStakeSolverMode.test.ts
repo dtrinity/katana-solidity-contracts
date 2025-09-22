@@ -7,7 +7,7 @@ import {
   TestMintableERC20,
   DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeTokenV2
+  DStakeTokenV2,
 } from "../../typechain-types";
 import { SDUSD_CONFIG } from "./fixture";
 import { createDStakeRouterV2Fixture } from "./routerFixture";
@@ -30,9 +30,9 @@ describe("DStake Solver Mode Tests", function () {
   let dStakeToken: DStakeTokenV2;
 
   // Multi-vault setup (3 vaults for comprehensive testing)
-  let vault1: MockMetaMorphoVault;  // Target: 50% (500,000 bps)
-  let vault2: MockMetaMorphoVault;  // Target: 30% (300,000 bps)
-  let vault3: MockMetaMorphoVault;  // Target: 20% (200,000 bps)
+  let vault1: MockMetaMorphoVault; // Target: 50% (500,000 bps)
+  let vault2: MockMetaMorphoVault; // Target: 30% (300,000 bps)
+  let vault3: MockMetaMorphoVault; // Target: 20% (200,000 bps)
   let adapter1: MetaMorphoConversionAdapter;
   let adapter2: MetaMorphoConversionAdapter;
   let adapter3: MetaMorphoConversionAdapter;
@@ -46,7 +46,6 @@ describe("DStake Solver Mode Tests", function () {
   let adapter3Address: string;
 
   const setupDStakeSolverMode = createDStakeRouterV2Fixture(config);
-
 
   beforeEach(async function () {
     const fixture = await setupDStakeSolverMode();
@@ -80,8 +79,8 @@ describe("DStake Solver Mode Tests", function () {
       const vaults = [vault1Address, vault2Address, vault3Address];
       const assets = [
         ethers.parseEther("1000"), // 1000 to vault1
-        ethers.parseEther("600"),  // 600 to vault2
-        ethers.parseEther("400")   // 400 to vault3
+        ethers.parseEther("600"), // 600 to vault2
+        ethers.parseEther("400"), // 400 to vault3
       ];
       const totalAssets = ethers.parseEther("2000");
       const minShares = ethers.parseEther("1900"); // Allow 5% slippage
@@ -93,12 +92,7 @@ describe("DStake Solver Mode Tests", function () {
       const dStableBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver deposit
-      const tx = await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        assets,
-        minShares,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address);
 
       const sharesAfter = await dStakeToken.balanceOf(alice.address);
       const dStableBalanceAfter = await dStable.balanceOf(alice.address);
@@ -115,9 +109,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault3.balanceOf(collateralVault.target)).to.be.gt(0);
 
       // Verify Deposit event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "Deposit")
-        .withArgs(alice.address, alice.address, totalAssets, sharesReceived);
+      await expect(tx).to.emit(dStakeToken, "Deposit").withArgs(alice.address, alice.address, totalAssets, sharesReceived);
     });
 
     it("Should revert with slippage protection when minShares not met", async function () {
@@ -128,14 +120,10 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
 
-      await expect(
-        dStakeToken.connect(alice).solverDepositAssets(
-          vaults,
-          assets,
-          minShares,
-          alice.address
-        )
-      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+      await expect(dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ERC4626ExceedsMaxWithdraw"
+      );
     });
 
     it("Should revert when vaults and assets arrays have mismatched lengths", async function () {
@@ -145,14 +133,10 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, ethers.parseEther("1000"));
 
-      await expect(
-        dStakeToken.connect(alice).solverDepositAssets(
-          vaults,
-          assets,
-          minShares,
-          alice.address
-        )
-      ).to.be.revertedWithCustomError(router, "ArrayLengthMismatch");
+      await expect(dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
+        router,
+        "ArrayLengthMismatch"
+      );
     });
 
     it("Should revert when empty arrays provided", async function () {
@@ -160,14 +144,10 @@ describe("DStake Solver Mode Tests", function () {
       const assets: bigint[] = [];
       const minShares = ethers.parseEther("0");
 
-      await expect(
-        dStakeToken.connect(alice).solverDepositAssets(
-          vaults,
-          assets,
-          minShares,
-          alice.address
-        )
-      ).to.be.revertedWithCustomError(dStakeToken, "ZeroShares");
+      await expect(dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ZeroShares"
+      );
     });
 
     it("Should revert when total assets is zero", async function () {
@@ -175,14 +155,10 @@ describe("DStake Solver Mode Tests", function () {
       const assets = [0, 0]; // Zero assets
       const minShares = 0;
 
-      await expect(
-        dStakeToken.connect(alice).solverDepositAssets(
-          vaults,
-          assets,
-          minShares,
-          alice.address
-        )
-      ).to.be.revertedWithCustomError(dStakeToken, "ZeroShares");
+      await expect(dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ZeroShares"
+      );
     });
   });
 
@@ -203,12 +179,7 @@ describe("DStake Solver Mode Tests", function () {
       const sharesBefore = await dStakeToken.balanceOf(alice.address);
 
       // Execute solver deposit shares
-      const tx = await dStakeToken.connect(alice).solverDepositShares(
-        vaults,
-        shares,
-        minShares,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverDepositShares(vaults, shares, minShares, alice.address);
 
       const sharesAfter = await dStakeToken.balanceOf(alice.address);
       const sharesReceived = sharesAfter - sharesBefore;
@@ -221,9 +192,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault2.balanceOf(collateralVault.target)).to.be.gt(0);
 
       // Verify Deposit event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "Deposit")
-        .withArgs(alice.address, alice.address, totalExpectedAssets, sharesReceived);
+      await expect(tx).to.emit(dStakeToken, "Deposit").withArgs(alice.address, alice.address, totalExpectedAssets, sharesReceived);
     });
 
     it("Should handle zero shares correctly", async function () {
@@ -238,12 +207,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, totalExpectedAssets);
 
-      await dStakeToken.connect(alice).solverDepositShares(
-        vaults,
-        shares,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositShares(vaults, shares, minShares, alice.address);
 
       // Verify only vault1 and vault3 received deposits
       expect(await vault1.balanceOf(collateralVault.target)).to.be.gt(0);
@@ -259,26 +223,21 @@ describe("DStake Solver Mode Tests", function () {
       const assets = [
         ethers.parseEther("2000"), // 2000 to vault1
         ethers.parseEther("1200"), // 1200 to vault2
-        ethers.parseEther("800")   // 800 to vault3
+        ethers.parseEther("800"), // 800 to vault3
       ];
       const totalAssets = ethers.parseEther("4000");
       const minShares = ethers.parseEther("3800");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        assets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address);
     });
 
     it("Should withdraw assets from multiple vaults via DStakeTokenV2", async function () {
       const vaults = [vault1Address, vault2Address, vault3Address];
       const assets = [
-        ethers.parseEther("500"),  // 500 from vault1
-        ethers.parseEther("300"),  // 300 from vault2
-        ethers.parseEther("200")   // 200 from vault3
+        ethers.parseEther("500"), // 500 from vault1
+        ethers.parseEther("300"), // 300 from vault2
+        ethers.parseEther("200"), // 200 from vault3
       ];
       const totalAssets = ethers.parseEther("1000");
       const maxShares = ethers.parseEther("1200"); // Allow some slippage
@@ -287,13 +246,7 @@ describe("DStake Solver Mode Tests", function () {
       const dStableBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver withdrawal
-      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        assets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address);
 
       const sharesAfter = await dStakeToken.balanceOf(alice.address);
       const dStableBalanceAfter = await dStable.balanceOf(alice.address);
@@ -309,8 +262,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(dStableReceived).to.be.closeTo(totalAssets, ethers.parseEther("50")); // Within reasonable tolerance
 
       // Verify Withdraw event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "Withdraw");
+      await expect(tx).to.emit(dStakeToken, "Withdraw");
     });
 
     it("Should revert when maxShares exceeded", async function () {
@@ -319,13 +271,7 @@ describe("DStake Solver Mode Tests", function () {
       const maxShares = ethers.parseEther("100"); // Too low, should fail
 
       await expect(
-        dStakeToken.connect(alice).solverWithdrawAssets(
-          vaults,
-          assets,
-          maxShares,
-          alice.address,
-          alice.address
-        )
+        dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address)
       ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxRedeem");
     });
 
@@ -336,13 +282,7 @@ describe("DStake Solver Mode Tests", function () {
 
       const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
 
-      await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        assets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address);
 
       const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
 
@@ -355,21 +295,12 @@ describe("DStake Solver Mode Tests", function () {
     beforeEach(async function () {
       // Setup initial position by depositing into multiple vaults
       const vaults = [vault1Address, vault2Address, vault3Address];
-      const assets = [
-        ethers.parseEther("2000"),
-        ethers.parseEther("1200"),
-        ethers.parseEther("800")
-      ];
+      const assets = [ethers.parseEther("2000"), ethers.parseEther("1200"), ethers.parseEther("800")];
       const totalAssets = ethers.parseEther("4000");
       const minShares = ethers.parseEther("3800");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        assets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address);
     });
 
     it("Should withdraw shares from multiple vaults via DStakeTokenV2", async function () {
@@ -387,13 +318,7 @@ describe("DStake Solver Mode Tests", function () {
       const dStableBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver withdrawal by shares
-      const tx = await dStakeToken.connect(alice).solverWithdrawShares(
-        vaults,
-        vaultShares,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawShares(vaults, vaultShares, maxShares, alice.address, alice.address);
 
       const sharesAfter = await dStakeToken.balanceOf(alice.address);
       const dStableBalanceAfter = await dStable.balanceOf(alice.address);
@@ -411,8 +336,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault2.balanceOf(collateralVault.target)).to.be.lt(vault2Balance);
 
       // Verify Withdraw event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "Withdraw");
+      await expect(tx).to.emit(dStakeToken, "Withdraw");
     });
 
     it("Should handle zero vault shares correctly", async function () {
@@ -425,13 +349,7 @@ describe("DStake Solver Mode Tests", function () {
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
       const vault3BalanceBefore = await vault3.balanceOf(collateralVault.target);
 
-      await dStakeToken.connect(alice).solverWithdrawShares(
-        vaults,
-        vaultShares,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverWithdrawShares(vaults, vaultShares, maxShares, alice.address, alice.address);
 
       // Verify only vault1 balance changed
       expect(await vault1.balanceOf(collateralVault.target)).to.be.lt(vault1Balance);
@@ -450,14 +368,7 @@ describe("DStake Solver Mode Tests", function () {
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
 
       // Should revert due to invalid vault
-      await expect(
-        dStakeToken.connect(alice).solverDepositAssets(
-          vaults,
-          assets,
-          minShares,
-          alice.address
-        )
-      ).to.be.reverted;
+      await expect(dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.reverted;
 
       // Verify no assets were deposited to any vault
       expect(await vault1.balanceOf(collateralVault.target)).to.equal(0);
@@ -472,12 +383,7 @@ describe("DStake Solver Mode Tests", function () {
       const minShares = ethers.parseEther("2900");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalSetupAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        setupVaults,
-        setupAssets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(setupVaults, setupAssets, minShares, alice.address);
 
       const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
       const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
@@ -487,15 +393,7 @@ describe("DStake Solver Mode Tests", function () {
       const assets = [ethers.parseEther("500"), ethers.parseEther("500")];
       const maxShares = ethers.parseEther("1200");
 
-      await expect(
-        dStakeToken.connect(alice).solverWithdrawAssets(
-          vaults,
-          assets,
-          maxShares,
-          alice.address,
-          alice.address
-        )
-      ).to.be.reverted;
+      await expect(dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address)).to.be.reverted;
 
       // Verify no assets were withdrawn from any vault
       expect(await vault1.balanceOf(collateralVault.target)).to.equal(vault1BalanceBefore);
@@ -527,9 +425,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault2.balanceOf(collateralVault.target)).to.be.gt(0);
 
       // Verify StrategyDepositRouted event was emitted
-      await expect(tx)
-        .to.emit(router, "StrategyDepositRouted")
-        .withArgs(vaults, assets, totalAssets, 0);
+      await expect(tx).to.emit(router, "StrategyDepositRouted").withArgs(vaults, assets, totalAssets);
     });
 
     it("Should revert direct router call without proper role", async function () {
@@ -538,9 +434,10 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(bob).approve(router.target, assets[0]);
 
-      await expect(
-        router.connect(bob).solverDepositAssets(vaults, assets)
-      ).to.be.revertedWithCustomError(router, "AccessControlUnauthorizedAccount");
+      await expect(router.connect(bob).solverDepositAssets(vaults, assets)).to.be.revertedWithCustomError(
+        router,
+        "AccessControlUnauthorizedAccount"
+      );
     });
 
     it("Should allow direct solverWithdrawAssets call with proper role", async function () {
@@ -551,12 +448,7 @@ describe("DStake Solver Mode Tests", function () {
       const minShares = ethers.parseEther("2900");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalSetupAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        setupVaults,
-        setupAssets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(setupVaults, setupAssets, minShares, alice.address);
 
       // Now test direct router withdrawal
       const vaults = [vault1Address];
@@ -573,8 +465,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(aliceBalanceAfter).to.be.gt(aliceBalanceBefore);
 
       // Verify StrategyWithdrawalRouted event was emitted
-      await expect(tx)
-        .to.emit(router, "StrategyWithdrawalRouted");
+      await expect(tx).to.emit(router, "StrategyWithdrawalRouted");
     });
   });
 
@@ -587,21 +478,13 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
 
-      const tx = await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        assets,
-        minShares,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address);
 
       // Verify ERC4626 Deposit event
-      await expect(tx)
-        .to.emit(dStakeToken, "Deposit");
+      await expect(tx).to.emit(dStakeToken, "Deposit");
 
       // Verify router StrategyDepositRouted event
-      await expect(tx)
-        .to.emit(router, "StrategyDepositRouted")
-        .withArgs(vaults, assets, totalAssets, 0);
+      await expect(tx).to.emit(router, "StrategyDepositRouted").withArgs(vaults, assets, totalAssets);
     });
 
     it("Should emit proper events for solverWithdrawShares with fees", async function () {
@@ -617,37 +500,23 @@ describe("DStake Solver Mode Tests", function () {
       const minShares = ethers.parseEther("1900");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalSetupAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        setupVaults,
-        setupAssets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(setupVaults, setupAssets, minShares, alice.address);
 
       // Withdraw
       const vault1Balance = await vault1.balanceOf(collateralVault.target);
       const vaultShares = [vault1Balance / 2n]; // Withdraw half
       const maxShares = ethers.parseEther("1200");
 
-      const tx = await dStakeToken.connect(alice).solverWithdrawShares(
-        setupVaults,
-        vaultShares,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawShares(setupVaults, vaultShares, maxShares, alice.address, alice.address);
 
       // Verify Withdraw event
-      await expect(tx)
-        .to.emit(dStakeToken, "Withdraw");
+      await expect(tx).to.emit(dStakeToken, "Withdraw");
 
       // Verify WithdrawalFee event
-      await expect(tx)
-        .to.emit(dStakeToken, "WithdrawalFee");
+      await expect(tx).to.emit(dStakeToken, "WithdrawalFee");
 
       // Verify router StrategyWithdrawalRouted event
-      await expect(tx)
-        .to.emit(router, "StrategyWithdrawalRouted");
+      await expect(tx).to.emit(router, "StrategyWithdrawalRouted");
     });
   });
 
@@ -663,12 +532,7 @@ describe("DStake Solver Mode Tests", function () {
       const minShares1 = ethers.parseEther("1400");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets1);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        vaults1,
-        assets1,
-        minShares1,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(vaults1, assets1, minShares1, alice.address);
 
       const aliceShares1 = await dStakeToken.balanceOf(alice.address);
       const totalAssetsAfter1 = await dStakeToken.totalAssets();
@@ -681,12 +545,7 @@ describe("DStake Solver Mode Tests", function () {
       const minShares2 = ethers.parseEther("950");
 
       await dStable.connect(bob).approve(dStakeToken.target, totalAssets2);
-      await dStakeToken.connect(bob).solverDepositAssets(
-        vaults2,
-        assets2,
-        minShares2,
-        bob.address
-      );
+      await dStakeToken.connect(bob).solverDepositAssets(vaults2, assets2, minShares2, bob.address);
 
       const bobShares = await dStakeToken.balanceOf(bob.address);
       const totalAssetsAfter2 = await dStakeToken.totalAssets();
@@ -700,7 +559,7 @@ describe("DStake Solver Mode Tests", function () {
       );
 
       // Verify share price is reasonable
-      const sharePrice = totalAssetsAfter2 * ethers.parseEther("1") / totalSharesAfter2;
+      const sharePrice = (totalAssetsAfter2 * ethers.parseEther("1")) / totalSharesAfter2;
       expect(sharePrice).to.be.closeTo(ethers.parseEther("1"), ethers.parseEther("0.1"));
     });
 
@@ -715,21 +574,11 @@ describe("DStake Solver Mode Tests", function () {
 
       // Alice deposits
       await dStable.connect(alice).approve(dStakeToken.target, aliceTotalAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        aliceAssets,
-        ethers.parseEther("1900"),
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(vaults, aliceAssets, ethers.parseEther("1900"), alice.address);
 
       // Bob deposits
       await dStable.connect(bob).approve(dStakeToken.target, bobTotalAssets);
-      await dStakeToken.connect(bob).solverDepositAssets(
-        vaults,
-        bobAssets,
-        ethers.parseEther("950"),
-        bob.address
-      );
+      await dStakeToken.connect(bob).solverDepositAssets(vaults, bobAssets, ethers.parseEther("950"), bob.address);
 
       const totalAssetsBeforeWithdraw = await dStakeToken.totalAssets();
       const totalSharesBeforeWithdraw = await dStakeToken.totalSupply();
@@ -747,17 +596,10 @@ describe("DStake Solver Mode Tests", function () {
         return (numerator + denominator - 1n) / denominator;
       });
       const totalGrossRequested = grossRequests.reduce((acc, amount) => acc + amount, 0n);
-      const expectedShares = (totalGrossRequested * totalSharesBeforeWithdraw + totalAssetsBeforeWithdraw - 1n)
-        / totalAssetsBeforeWithdraw;
+      const expectedShares = (totalGrossRequested * totalSharesBeforeWithdraw + totalAssetsBeforeWithdraw - 1n) / totalAssetsBeforeWithdraw;
       const maxShares = expectedShares;
 
-      await dStakeToken.connect(alice).solverWithdrawAssets(
-        withdrawVaults,
-        withdrawAssets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverWithdrawAssets(withdrawVaults, withdrawAssets, maxShares, alice.address, alice.address);
 
       const totalAssetsAfterWithdraw = await dStakeToken.totalAssets();
       const totalSharesAfterWithdraw = await dStakeToken.totalSupply();
@@ -774,7 +616,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(totalAssetsAfterWithdraw).to.be.lt(totalAssetsBeforeWithdraw);
 
       // Share price should remain reasonable
-      const sharePriceAfter = totalAssetsAfterWithdraw * ethers.parseEther("1") / totalSharesAfterWithdraw;
+      const sharePriceAfter = (totalAssetsAfterWithdraw * ethers.parseEther("1")) / totalSharesAfterWithdraw;
       expect(sharePriceAfter).to.be.closeTo(ethers.parseEther("1"), ethers.parseEther("0.2"));
     });
   });
@@ -786,18 +628,13 @@ describe("DStake Solver Mode Tests", function () {
       const assets = [
         ethers.parseEther("3000"), // 3000 to vault1
         ethers.parseEther("2000"), // 2000 to vault2
-        ethers.parseEther("1000")  // 1000 to vault3
+        ethers.parseEther("1000"), // 1000 to vault3
       ];
       const totalAssets = ethers.parseEther("6000");
       const minShares = ethers.parseEther("5800");
 
       await dStable.connect(alice).approve(dStakeToken.target, totalAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        vaults,
-        assets,
-        minShares,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address);
 
       // Setup withdrawal fees - alice needs FEE_MANAGER_ROLE
       const FEE_MANAGER_ROLE = await dStakeToken.FEE_MANAGER_ROLE();
@@ -812,8 +649,8 @@ describe("DStake Solver Mode Tests", function () {
 
       const vaults = [vault1Address, vault2Address];
       const requestedAssets = [
-        ethers.parseEther("500"),  // Request 500 from vault1
-        ethers.parseEther("300")   // Request 300 from vault2
+        ethers.parseEther("500"), // Request 500 from vault1
+        ethers.parseEther("300"), // Request 300 from vault2
       ];
       const totalRequestedAssets = ethers.parseEther("800");
 
@@ -835,13 +672,7 @@ describe("DStake Solver Mode Tests", function () {
       const maxShares = expectedShares;
 
       // Execute solver withdrawal by assets
-      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        requestedAssets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(vaults, requestedAssets, maxShares, alice.address, alice.address);
 
       const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
@@ -877,15 +708,12 @@ describe("DStake Solver Mode Tests", function () {
       expect(sharesBurned).to.equal(expectedShares);
 
       // Verify WithdrawalFee event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "WithdrawalFee")
-        .withArgs(alice.address, alice.address, feesRetained);
+      await expect(tx).to.emit(dStakeToken, "WithdrawalFee").withArgs(alice.address, alice.address, feesRetained);
 
       // With single-fee charging the user receives exactly the net assets they requested
       expect(aliceReceived).to.be.gte(totalRequestedAssets - minTolerance);
-      const netVsRequestDiff = aliceReceived >= totalRequestedAssets
-        ? aliceReceived - totalRequestedAssets
-        : totalRequestedAssets - aliceReceived;
+      const netVsRequestDiff =
+        aliceReceived >= totalRequestedAssets ? aliceReceived - totalRequestedAssets : totalRequestedAssets - aliceReceived;
       expect(netVsRequestDiff).to.be.lte(maxPositiveTolerance);
     });
 
@@ -948,8 +776,8 @@ describe("DStake Solver Mode Tests", function () {
 
       const vaults = [vault1Address, vault2Address];
       const sharesToWithdraw = [
-        vault1Balance / 5n,  // 20% of vault1 shares
-        vault2Balance / 10n  // 10% of vault2 shares
+        vault1Balance / 5n, // 20% of vault1 shares
+        vault2Balance / 10n, // 10% of vault2 shares
       ];
       // Calculate expected gross assets from vault previews
       const expectedGrossFromVault1 = await vault1.previewRedeem(sharesToWithdraw[0]);
@@ -966,13 +794,7 @@ describe("DStake Solver Mode Tests", function () {
       const sharesBefore = await dStakeToken.balanceOf(alice.address);
 
       // Execute solver withdrawal by shares
-      const tx = await dStakeToken.connect(alice).solverWithdrawShares(
-        vaults,
-        sharesToWithdraw,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawShares(vaults, sharesToWithdraw, maxShares, alice.address, alice.address);
 
       const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
@@ -996,9 +818,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(sharesBurned).to.equal(expectedShares);
 
       // Verify WithdrawalFee event was emitted
-      await expect(tx)
-        .to.emit(dStakeToken, "WithdrawalFee")
-        .withArgs(alice.address, alice.address, feesRetained);
+      await expect(tx).to.emit(dStakeToken, "WithdrawalFee").withArgs(alice.address, alice.address, feesRetained);
 
       // Critical assertion: The gross amount should match vault preview calculations
       // If fees were double-charged, grossWithdrawn would be significantly different
@@ -1032,13 +852,7 @@ describe("DStake Solver Mode Tests", function () {
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver withdrawal
-      await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        assets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address);
 
       const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
@@ -1060,7 +874,9 @@ describe("DStake Solver Mode Tests", function () {
       // This proves fees are not being double-charged in solver mode
       console.log(`Normal withdrawal fee rate: ${withdrawalFeeBps} bps`);
       console.log(`Solver withdrawal fee rate: ${solverFeeRate} bps`);
-      console.log(`Difference: ${solverFeeRate > withdrawalFeeBps ? solverFeeRate - withdrawalFeeBps : withdrawalFeeBps - solverFeeRate} bps`);
+      console.log(
+        `Difference: ${solverFeeRate > withdrawalFeeBps ? solverFeeRate - withdrawalFeeBps : withdrawalFeeBps - solverFeeRate} bps`
+      );
     });
 
     it("Should handle zero fee scenarios correctly in solver withdrawals", async function () {
@@ -1076,13 +892,7 @@ describe("DStake Solver Mode Tests", function () {
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver withdrawal with zero fees
-      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        assets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      const tx = await dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address);
 
       const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
@@ -1113,13 +923,7 @@ describe("DStake Solver Mode Tests", function () {
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
       // Execute solver withdrawal with maximum fees
-      await dStakeToken.connect(alice).solverWithdrawAssets(
-        vaults,
-        assets,
-        maxShares,
-        alice.address,
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address);
 
       const dStakeTokenBalanceAfter = await dStable.balanceOf(dStakeToken.target);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
@@ -1155,12 +959,7 @@ describe("DStake Solver Mode Tests", function () {
       const aliceTotalAssets = ethers.parseEther("2000");
 
       await dStable.connect(alice).approve(dStakeToken.target, aliceTotalAssets);
-      await dStakeToken.connect(alice).solverDepositAssets(
-        aliceVaults,
-        aliceAssets,
-        ethers.parseEther("1900"),
-        alice.address
-      );
+      await dStakeToken.connect(alice).solverDepositAssets(aliceVaults, aliceAssets, ethers.parseEther("1900"), alice.address);
 
       // Bob: Focus on vault2 and vault3
       const bobVaults = [vault2Address, vault3Address];
@@ -1168,12 +967,7 @@ describe("DStake Solver Mode Tests", function () {
       const bobTotalAssets = ethers.parseEther("1500");
 
       await dStable.connect(bob).approve(dStakeToken.target, bobTotalAssets);
-      await dStakeToken.connect(bob).solverDepositAssets(
-        bobVaults,
-        bobAssets,
-        ethers.parseEther("1400"),
-        bob.address
-      );
+      await dStakeToken.connect(bob).solverDepositAssets(bobVaults, bobAssets, ethers.parseEther("1400"), bob.address);
 
       // Charlie: All vaults with different distribution
       const charlieVaults = [vault1Address, vault2Address, vault3Address];
@@ -1181,12 +975,7 @@ describe("DStake Solver Mode Tests", function () {
       const charlieTotalAssets = ethers.parseEther("1000");
 
       await dStable.connect(charlie).approve(dStakeToken.target, charlieTotalAssets);
-      await dStakeToken.connect(charlie).solverDepositAssets(
-        charlieVaults,
-        charlieAssets,
-        ethers.parseEther("950"),
-        charlie.address
-      );
+      await dStakeToken.connect(charlie).solverDepositAssets(charlieVaults, charlieAssets, ethers.parseEther("950"), charlie.address);
 
       // Verify all users received appropriate shares
       const aliceShares = await dStakeToken.balanceOf(alice.address);
@@ -1210,23 +999,15 @@ describe("DStake Solver Mode Tests", function () {
 
       // Alice withdraws using shares
       const aliceWithdrawShares = [vault1Balance / 8n]; // 12.5% of vault1
-      await dStakeToken.connect(alice).solverWithdrawShares(
-        [vault1Address],
-        aliceWithdrawShares,
-        ethers.parseEther("300"),
-        alice.address,
-        alice.address
-      );
+      await dStakeToken
+        .connect(alice)
+        .solverWithdrawShares([vault1Address], aliceWithdrawShares, ethers.parseEther("300"), alice.address, alice.address);
 
       // Bob withdraws using assets
       const bobWithdrawAssets = [ethers.parseEther("200"), ethers.parseEther("150")];
-      await dStakeToken.connect(bob).solverWithdrawAssets(
-        [vault2Address, vault3Address],
-        bobWithdrawAssets,
-        ethers.parseEther("400"),
-        bob.address,
-        bob.address
-      );
+      await dStakeToken
+        .connect(bob)
+        .solverWithdrawAssets([vault2Address, vault3Address], bobWithdrawAssets, ethers.parseEther("400"), bob.address, bob.address);
 
       // Verify system integrity after mixed operations
       const finalTotalAssets = await dStakeToken.totalAssets();
@@ -1236,7 +1017,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(finalTotalShares).to.be.gt(0);
 
       // Verify share price remains reasonable
-      const finalSharePrice = finalTotalAssets * ethers.parseEther("1") / finalTotalShares;
+      const finalSharePrice = (finalTotalAssets * ethers.parseEther("1")) / finalTotalShares;
       expect(finalSharePrice).to.be.closeTo(ethers.parseEther("1"), ethers.parseEther("0.2"));
     });
   });
