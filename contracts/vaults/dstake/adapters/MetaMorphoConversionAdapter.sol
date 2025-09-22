@@ -305,7 +305,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
     if (token == address(0)) {
       // Withdraw ETH with gas limit to prevent reentrancy
       (bool success, ) = msg.sender.call{ value: amount, gas: 2300 }("");
-      require(success, "ETH transfer failed");
+      if (!success) revert VaultOperationFailed();
     } else {
       // Withdraw ERC20
       IERC20(token).safeTransfer(msg.sender, amount);

@@ -32,7 +32,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error ZeroInputDStableValue(address fromAsset, uint256 fromAmount);
   error AdapterAssetMismatch(address adapter, address expectedAsset, address actualAsset);
   error SlippageCheckFailed(address asset, uint256 actualAmount, uint256 requiredAmount);
-  error InconsistentState(string message);
+  error AdapterSharesMismatch(uint256 actualShares, uint256 reportedShares);
+  error ShareWithdrawalConversionFailed();
   error DepositConversionFailed(address vault, uint256 amount);
   error InvalidAmount();
   error InvalidVaultConfig();
@@ -46,6 +47,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error EmptyArrays();
   error ArrayLengthMismatch();
   error InvalidMaxRoutingAttempts(uint256 attempts);
+  error OnlySelfCallable();
+  error IndexOutOfBounds();
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -594,6 +597,13 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   // --- Vault Configuration ---
 
+  /**
+   * @notice Replaces all vault configs and enforces total target allocations sum to 100%.
+   * @dev This is the ONLY mutator that enforces the allocation-sum invariant on-chain.
+   *      Reverts with `TotalAllocationInvalid(total)` if the sum of all provided `targetBps`
+   *      is not exactly `BasisPointConstants.ONE_HUNDRED_PERCENT_BPS` (1,000,000 bps).
+   *      Use this after operational changes (add/remove/pause) to restore precise targets.
+   */
   function setVaultConfigs(VaultConfig[] calldata configs) external onlyRole(VAULT_MANAGER_ROLE) {
     uint256 totalTargetBps = 0;
     for (uint256 i = 0; i < configs.length; i++) {
@@ -609,32 +619,73 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
   }
 
+  /**
+   * @notice Adds a vault configuration without enforcing total target-sum normalization.
+   * @dev Does NOT validate that the sum of all targets equals 100%. This is intentional to
+   *      allow emergency/operational changes. When totals differ from 100% across the active set:
+   *      - Deposits/withdrawals still function; routing uses `targetBps` as-is (no normalization).
+   *      - Behavior may become biased or perpetually chasing targets. Prefer calling
+   *        `setVaultConfigs` afterward to restore a strict 100% total.
+   */
   function addVaultConfig(VaultConfig calldata config) external onlyRole(VAULT_MANAGER_ROLE) {
     _addVaultConfig(config);
   }
 
+  /**
+   * @notice Adds a vault configuration without enforcing total target-sum normalization.
+   * @dev See notes on the overload above. Intended for operational flexibility.
+   */
   function addVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
     _addVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
+  /**
+   * @notice Updates a vault configuration without enforcing total target-sum normalization.
+   * @dev Does NOT enforce that the new overall total equals 100%. Safe to use during
+   *      emergencies (e.g., temporarily setting a vault inactive). Consider following
+   *      up with `setVaultConfigs` to re-establish an exact 100% layout.
+   */
   function updateVaultConfig(VaultConfig calldata config) external onlyRole(VAULT_MANAGER_ROLE) {
     _updateVaultConfig(config);
   }
 
+  /**
+   * @notice Updates a vault configuration without enforcing total target-sum normalization.
+   * @dev See notes on the overload above. Targets are used as-is by the router.
+   */
   function updateVaultConfig(address vault, address adapter, uint256 targetBps, bool isActive) external onlyRole(VAULT_MANAGER_ROLE) {
     _updateVaultConfig(VaultConfig({ strategyVault: vault, adapter: adapter, targetBps: targetBps, isActive: isActive }));
   }
 
+  /**
+   * @notice Removes a vault configuration without rebalancing or normalizing targets.
+   * @dev Does NOT enforce that the remaining targets sum to 100%. Routing continues to
+   *      use the remaining `targetBps` values verbatim. For precise allocation behavior,
+   *      call `setVaultConfigs` after removals to rebalance back to 100%.
+   */
   function removeVault(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
     if (!vaultExists[vault]) revert VaultNotFound(vault);
     _removeVault(vault);
   }
 
+  /**
+   * @notice Alias for removing a vault configuration (no allocation-sum enforcement).
+   * @dev Identical behavior to `removeVault`. Totals may deviate from 100% after removal.
+   *      This is acceptable for emergency operations. Prefer re-normalizing with
+   *      `setVaultConfigs` when feasible.
+   */
   function removeVaultConfig(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
     if (!vaultExists[vault]) revert VaultNotFound(vault);
     _removeVault(vault);
   }
 
+  /**
+   * @notice Marks a vault inactive without altering its stored `targetBps`.
+   * @dev This does NOT change totals or perform normalization. The inactive vault is
+   *      excluded from routing decisions, and the active-set targets are used as-is.
+   *      After emergencies, call `setVaultConfigs` if you require active targets to
+   *      sum to exactly 100% again.
+   */
   function emergencyPauseVault(address vault) external onlyRole(PAUSER_ROLE) {
     if (!vaultExists[vault]) revert VaultNotFound(vault);
     uint256 index = vaultToIndex[vault];
@@ -689,10 +740,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return vaultConfigs.length;
   }
 
-  function isVaultHealthy(address vault) external view returns (bool healthy) {
-    return _isVaultHealthyForDeposits(vault);
-  }
-
   function isVaultHealthyForDeposits(address vault) external view returns (bool healthy) {
     return _isVaultHealthyForDeposits(vault);
   }
@@ -701,21 +748,28 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return _isVaultHealthyForWithdrawals(vault);
   }
 
-  function getActiveVaults() external view returns (address[] memory activeVaults) {
+  /**
+   * @notice Returns strategy vaults that are active and healthy for deposits.
+   * @dev Uses deposit health checks; does not guarantee suitability for withdrawals.
+   *      Prefer explicitness over the old generic name to avoid ambiguity.
+   */
+  function getActiveVaultsForDeposits() external view returns (address[] memory activeVaults) {
     (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.DEPOSIT);
   }
 
+  /**
+   * @notice Returns strategy vaults that are active and healthy for withdrawals.
+   * @dev Uses withdrawal health checks; does not guarantee suitability for deposits.
+   */
+  function getActiveVaultsForWithdrawals() external view returns (address[] memory activeVaults) {
+    (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
+  }
+
   function getVaultConfigByIndex(uint256 index) external view returns (VaultConfig memory config) {
-    require(index < vaultConfigs.length, "Index out of bounds");
+    if (index >= vaultConfigs.length) revert IndexOutOfBounds();
     return vaultConfigs[index];
   }
 
-  function validateTotalAllocations() external view returns (bool isValid, uint256 totalBps) {
-    for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      totalBps += vaultConfigs[i].targetBps;
-    }
-    isValid = (totalBps == BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
-  }
 
   // --- Internal Helpers ---
 
@@ -732,7 +786,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @param dStableAmount Amount to deposit
    */
   function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
-    require(msg.sender == address(this), "Only self-callable");
+    if (msg.sender != address(this)) revert OnlySelfCallable();
     // This is called by this contract only, for auto-routing retries
     _depositToVaultAtomically(vault, dStableAmount);
   }
@@ -749,7 +803,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @return withdrawn The actual gross dStable amount obtained (must be ≥ `dStableAmount`).
    */
   function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, bool allowSlippage) external returns (uint256 withdrawn) {
-    require(msg.sender == address(this), "Only self-callable");
+    if (msg.sender != address(this)) revert OnlySelfCallable();
     // This is called by this contract only, for auto-routing retries
     withdrawn = _withdrawFromVaultAtomically(vault, dStableAmount, allowSlippage);
   }
@@ -768,7 +822,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IERC20(dStable).forceApprove(config.adapter, dStableAmount);
     try adapter.depositIntoStrategy(dStableAmount) returns (address actualVault, uint256 reportedShares) {
       if (actualVault != vault) {
-        IERC20(dStable).forceApprove(config.adapter, 0);
         revert AdapterAssetMismatch(config.adapter, vault, actualVault);
       }
 
@@ -776,18 +829,15 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       uint256 actualShares = afterBal - beforeBal;
 
       if (actualShares < expectedShares) {
-        IERC20(dStable).forceApprove(config.adapter, 0);
         revert SlippageCheckFailed(vault, actualShares, expectedShares);
       }
 
       if (actualShares != reportedShares) {
-        IERC20(dStable).forceApprove(config.adapter, 0);
-        revert InconsistentState("Adapter mis-reported shares");
+        revert AdapterSharesMismatch(actualShares, reportedShares);
       }
 
       emit RouterDeposit(config.adapter, vault, msg.sender, actualShares, dStableAmount);
     } catch {
-      IERC20(dStable).forceApprove(config.adapter, 0);
       // Re-throw the error
       revert DepositConversionFailed(vault, dStableAmount);
     }
@@ -827,14 +877,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       IERC20(vault).forceApprove(adapter, 0);
       emit Withdrawn(vault, shares, receivedDStable, msg.sender, msg.sender);
     } catch {
-      IERC20(vault).forceApprove(adapter, 0);
-      // Return the shares to the collateral vault
-      IERC20(vault).safeTransfer(address(collateralVault), shares);
-      revert InconsistentState("Share withdrawal conversion failed");
+      // No cleanup needed before revert; state will roll back
+      revert ShareWithdrawalConversionFailed();
     }
   }
-
-  // Multi-vault planning helpers removed in favor of solver mode and simplified auto-routing
 
   function _withdrawFromVault(
     address vault,
@@ -881,8 +927,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       uint256 requiredAmount = allowSlippage ? minAcceptable : dStableAmount;
       if (receivedDStable < requiredAmount) {
         if (!allowSlippage) {
-          IERC20(vault).forceApprove(adapter, 0);
-          IERC20(vault).safeTransfer(address(collateralVault), strategyShareAmount);
+          // No cleanup needed before revert; state will roll back
           revert SlippageCheckFailed(vault, receivedDStable, requiredAmount);
         }
         // allowSlippage == true: accept the shortfall to avoid user-facing reverts

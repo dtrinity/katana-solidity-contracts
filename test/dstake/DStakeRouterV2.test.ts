@@ -84,6 +84,17 @@ describe("DStakeRouterV2", function () {
     adapter3Address = fixture.adapter3Address;
   });
 
+  // Helper to compute total targetBps across all vault configs
+  async function getTotalTargetBps(): Promise<bigint> {
+    const count = await router.getVaultCount();
+    let total = 0n;
+    for (let i = 0; i < Number(count); i++) {
+      const cfg = await router.getVaultConfigByIndex(i);
+      total += BigInt(cfg.targetBps);
+    }
+    return total;
+  }
+
   describe("Deployment and Configuration", function () {
     it("Should deploy with correct vault configurations", async function () {
       const vaultCount = await router.getVaultCount();
@@ -106,7 +117,7 @@ describe("DStakeRouterV2", function () {
     });
 
     it("Should have correct active vaults", async function () {
-      const activeVaults = await router.getActiveVaults();
+      const activeVaults = await router.getActiveVaultsForDeposits();
       expect(activeVaults).to.have.lengthOf(3);
       expect(activeVaults).to.include(vault1Address);
       expect(activeVaults).to.include(vault2Address);
@@ -565,7 +576,7 @@ describe("DStakeRouterV2", function () {
       const config = await router.getVaultConfig(vault1.target);
       expect(config.isActive).to.be.false;
 
-      const activeVaults = await router.getActiveVaults();
+      const activeVaults = await router.getActiveVaultsForDeposits();
       expect(activeVaults).to.not.include(vault1.target);
     });
 
@@ -655,7 +666,7 @@ describe("DStakeRouterV2", function () {
       const config = await router.getVaultConfig(vault1.target);
       expect(config.isActive).to.be.false;
 
-      const activeVaults = await router.getActiveVaults();
+      const activeVaults = await router.getActiveVaultsForDeposits();
       expect(activeVaults).to.not.include(vault1.target);
     });
   });
@@ -1895,10 +1906,8 @@ describe("DStakeRouterV2", function () {
     describe("Test 4: Allocation Total Validation", function () {
       it("Should return true when total allocations equal 1,000,000 bps", async function () {
         // Default configuration should be valid (50% + 30% + 20% = 100%)
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.true;
-        expect(totalBps).to.equal(1000000); // 500000 + 300000 + 200000 = 1000000
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1000000n); // 500000 + 300000 + 200000 = 1000000
       });
 
       it("Should return false when total allocations don't equal 1,000,000 bps", async function () {
@@ -1906,10 +1915,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault1Address, adapter1Address, 600000, true); // Change to 60%
         // Now total = 600000 + 300000 + 200000 = 1,100,000 (110%)
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.false;
-        expect(totalBps).to.equal(1100000); // 600000 + 300000 + 200000 = 1100000
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1100000n); // 600000 + 300000 + 200000 = 1100000
       });
 
       it("Should handle edge case of zero allocations", async function () {
@@ -1918,10 +1925,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault2Address, adapter2Address, 0, true);
         await router.updateVaultConfig(vault3Address, adapter3Address, 0, true);
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.false;
-        expect(totalBps).to.equal(0);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(0n);
       });
 
       it("Should validate after vault removal", async function () {
@@ -1933,17 +1938,15 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault2Address, adapter2Address, 400000, true); // 40%
         // Total = 600000 + 400000 + 0 = 1,000,000
 
-        const [isValidBefore, totalBpsBefore] = await router.validateTotalAllocations();
-        expect(isValidBefore).to.be.true;
-        expect(totalBpsBefore).to.equal(1000000);
+        const totalBpsBefore = await getTotalTargetBps();
+        expect(totalBpsBefore).to.equal(1000000n);
 
         // Remove vault3
         await router.removeVaultConfig(vault3Address);
 
         // Should still be valid after removal
-        const [isValidAfter, totalBpsAfter] = await router.validateTotalAllocations();
-        expect(isValidAfter).to.be.true;
-        expect(totalBpsAfter).to.equal(1000000); // 600000 + 400000 = 1000000
+        const totalBpsAfter = await getTotalTargetBps();
+        expect(totalBpsAfter).to.equal(1000000n); // 600000 + 400000 = 1000000
       });
 
       it("Should work with maximum basis points", async function () {
@@ -1952,10 +1955,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault2Address, adapter2Address, 0, false);
         await router.updateVaultConfig(vault3Address, adapter3Address, 0, false);
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.true;
-        expect(totalBps).to.equal(1000000);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1000000n);
       });
 
       it("Should detect over-allocation beyond 100%", async function () {
@@ -1965,10 +1966,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault3Address, adapter3Address, 300000, true); // 30%
         // Total = 500000 + 400000 + 300000 = 1,200,000 (120%)
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.false;
-        expect(totalBps).to.equal(1200000);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1200000n);
       });
 
       it("Should detect under-allocation below 100%", async function () {
@@ -1978,10 +1977,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault3Address, adapter3Address, 100000, true); // 10%
         // Total = 300000 + 200000 + 100000 = 600,000 (60%)
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.false;
-        expect(totalBps).to.equal(600000);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(600000n);
       });
 
       it("Should handle precision edge cases", async function () {
@@ -1991,10 +1988,8 @@ describe("DStakeRouterV2", function () {
         await router.updateVaultConfig(vault3Address, adapter3Address, 333334, true); // 33.3334%
         // Total = 333333 + 333333 + 333334 = 1,000,000 (exactly 100%)
 
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-
-        expect(isValid).to.be.true;
-        expect(totalBps).to.equal(1000000);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1000000n);
       });
     });
 
@@ -2556,9 +2551,8 @@ describe("DStakeRouterV2", function () {
         }
 
         // 2. Validate total allocations
-        const [isValid, totalBps] = await router.validateTotalAllocations();
-        expect(isValid).to.be.true;
-        expect(totalBps).to.equal(1000000);
+        const totalBps = await getTotalTargetBps();
+        expect(totalBps).to.equal(1000000n);
 
         // 3. Test proportional deposit with underallocations
         const [vaultsBefore, allocationsBefore] = await router.getCurrentAllocations();

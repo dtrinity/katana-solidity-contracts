@@ -20,7 +20,8 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapterV2 {
   // --- Errors ---
   error ZeroAddress();
   error InvalidAmount();
-  error InconsistentState(string message);
+  error StaticATokenUnderlyingMismatch(address expected, address actual);
+  error IncorrectStrategyShare(address expected, address actual);
 
   // --- State ---
   address public immutable dStable; // The underlying dSTABLE asset (e.g., dUSD)
@@ -43,7 +44,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapterV2 {
 
     // Sanity check: Ensure the StaticATokenLM wrapper uses the correct underlying by casting to IERC4626
     if (IERC4626(_wrappedDLendToken).asset() != _dStable) {
-      revert InconsistentState("StaticATokenLM underlying mismatch");
+      revert StaticATokenUnderlyingMismatch(_dStable, IERC4626(_wrappedDLendToken).asset());
     }
   }
 
@@ -104,7 +105,7 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapterV2 {
     uint256 strategyShareAmount
   ) external view override returns (uint256 dStableValue) {
     if (_strategyShare != address(wrappedDLendToken)) {
-      revert InconsistentState("Incorrect strategy share address");
+      revert IncorrectStrategyShare(address(wrappedDLendToken), _strategyShare);
     }
     // previewRedeem takes shares (strategyShareAmount) and returns assets (dStableValue)
     return IERC4626(address(wrappedDLendToken)).previewRedeem(strategyShareAmount);

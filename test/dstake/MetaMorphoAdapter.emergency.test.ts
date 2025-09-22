@@ -31,26 +31,32 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
   describe("ETH Emergency Withdraw", function () {
     it("should fail when called by non-admin", async function () {
       const amount = ethers.parseEther("0.5");
-      
-      await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, amount))
-        .to.be.revertedWithCustomError(adapter, "AccessControlUnauthorizedAccount");
+
+      await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, amount)).to.be.revertedWithCustomError(
+        adapter,
+        "AccessControlUnauthorizedAccount"
+      );
     });
 
     it("should fail when insufficient ETH balance (adapter has no ETH)", async function () {
       const amount = ethers.parseEther("0.1");
-      
+
       // The adapter has no ETH, so this should fail
-      await expect(adapter.connect(admin).emergencyWithdraw(ethers.ZeroAddress, amount))
-        .to.be.revertedWith("ETH transfer failed");
+      await expect(adapter.connect(admin).emergencyWithdraw(ethers.ZeroAddress, amount)).to.be.revertedWithCustomError(
+        adapter,
+        "VaultOperationFailed"
+      );
     });
 
     it("should use gas-limited call (syntax validation)", async function () {
       // This test validates that the function compiles and has proper syntax
       // We can't test actual ETH transfer since the contract doesn't accept ETH
       // But we can verify the function exists and has proper access control
-      
-      await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, 0))
-        .to.be.revertedWithCustomError(adapter, "AccessControlUnauthorizedAccount");
+
+      await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, 0)).to.be.revertedWithCustomError(
+        adapter,
+        "AccessControlUnauthorizedAccount"
+      );
     });
   });
 
@@ -63,23 +69,23 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
     it("should withdraw ERC20 tokens successfully", async function () {
       const amount = ethers.parseEther("50");
       const balanceBefore = await testToken.balanceOf(admin.address);
-      
+
       const tx = await adapter.connect(admin).emergencyWithdraw(testToken.target, amount);
-      
+
       const balanceAfter = await testToken.balanceOf(admin.address);
       expect(balanceAfter - balanceBefore).to.equal(amount);
-      
+
       // Check event was emitted
-      await expect(tx)
-        .to.emit(adapter, "EmergencyWithdraw")
-        .withArgs(testToken.target, amount);
+      await expect(tx).to.emit(adapter, "EmergencyWithdraw").withArgs(testToken.target, amount);
     });
 
     it("should fail when called by non-admin", async function () {
       const amount = ethers.parseEther("50");
-      
-      await expect(adapter.connect(user).emergencyWithdraw(testToken.target, amount))
-        .to.be.revertedWithCustomError(adapter, "AccessControlUnauthorizedAccount");
+
+      await expect(adapter.connect(user).emergencyWithdraw(testToken.target, amount)).to.be.revertedWithCustomError(
+        adapter,
+        "AccessControlUnauthorizedAccount"
+      );
     });
   });
 
@@ -88,7 +94,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
       // This test verifies the fix is applied by checking the bytecode contains gas limit
       const factory = await ethers.getContractFactory("MetaMorphoConversionAdapter");
       const bytecode = factory.bytecode;
-      
+
       // The gas limit should be present in the compiled bytecode
       // This is a basic check to ensure the fix was applied
       expect(bytecode).to.include.string; // Basic compilation check
