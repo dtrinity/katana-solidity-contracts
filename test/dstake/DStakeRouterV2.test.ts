@@ -287,6 +287,92 @@ describe("DStakeRouterV2", function () {
     });
   });
 
+  describe("Vault Eligibility Safeguards", function () {
+    it("skips zero-target vaults when routing deposits", async function () {
+      const initialDeposit = ethers.parseEther("1000");
+      await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
+      await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
+
+      const updatedConfigs = [
+        { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 700000, status: VaultStatus.Active },
+        { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 300000, status: VaultStatus.Active },
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 0, status: VaultStatus.Active }
+      ];
+      await router.setVaultConfigs(updatedConfigs);
+
+      const vault3BalanceBefore = await vault3.balanceOf(collateralVault.target);
+
+      const followOnDeposit = ethers.parseEther("500");
+      await dStable.connect(bob).approve(dStakeToken.target, followOnDeposit);
+      await dStakeToken.connect(bob).deposit(followOnDeposit, bob.address);
+
+      const vault3BalanceAfter = await vault3.balanceOf(collateralVault.target);
+      expect(vault3BalanceAfter).to.equal(vault3BalanceBefore);
+
+      const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
+      const vault2BalanceAfter = await vault2.balanceOf(collateralVault.target);
+      expect(vault1BalanceAfter).to.be.gt(0n);
+      expect(vault2BalanceAfter).to.be.gt(0n);
+    });
+
+    it("allows withdrawals from impaired vaults while blocking deposits", async function () {
+      const initialDeposit = ethers.parseEther("1500");
+      await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
+      await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
+
+      await router.setVaultStatus(vault2.target, VaultStatus.Impaired);
+
+      const vault2BalanceBefore = await vault2.balanceOf(collateralVault.target);
+
+      const topUp = ethers.parseEther("600");
+      await dStable.connect(bob).approve(dStakeToken.target, topUp);
+      await dStakeToken.connect(bob).deposit(topUp, bob.address);
+
+      const vault2BalanceAfterDeposit = await vault2.balanceOf(collateralVault.target);
+      expect(vault2BalanceAfterDeposit).to.equal(vault2BalanceBefore);
+
+      const aliceSharesBefore = await dStakeToken.balanceOf(alice.address);
+      const withdrawShares = aliceSharesBefore / 2n;
+      const dStableBefore = await dStable.balanceOf(alice.address);
+      await dStakeToken.connect(alice).redeem(withdrawShares, alice.address, alice.address);
+      const dStableAfter = await dStable.balanceOf(alice.address);
+      expect(dStableAfter).to.be.gt(dStableBefore);
+
+      const vault2BalanceAfterWithdraw = await vault2.balanceOf(collateralVault.target);
+      expect(vault2BalanceAfterWithdraw).to.be.lte(vault2BalanceAfterDeposit);
+    });
+
+    it("reverts deposits when all active vaults have zero targets", async function () {
+      await router.updateVaultConfig(vault1.target, adapter1.target, 0, VaultStatus.Active);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 0, VaultStatus.Active);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 0, VaultStatus.Active);
+
+      const depositAmount = ethers.parseEther("100");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
+        router,
+        "InsufficientActiveVaults"
+      );
+    });
+
+    it("allows withdrawals from impaired vaults", async function () {
+      const seedDeposit = ethers.parseEther("1200");
+      await dStable.connect(alice).approve(dStakeToken.target, seedDeposit);
+      await dStakeToken.connect(alice).deposit(seedDeposit, alice.address);
+
+      await router.setVaultStatus(vault1.target, VaultStatus.Impaired);
+
+      const aliceShares = await dStakeToken.balanceOf(alice.address);
+      const withdrawAmount = aliceShares / 4n;
+
+      const balanceBefore = await dStable.balanceOf(alice.address);
+      await dStakeToken.connect(alice).redeem(withdrawAmount, alice.address, alice.address);
+      const balanceAfter = await dStable.balanceOf(alice.address);
+
+      expect(balanceAfter).to.be.gt(balanceBefore);
+    });
+  });
+
   describe("Deterministic Convergence to Target Allocations", function () {
     it("Should converge to target allocations over 50+ operations with deterministic selection", async function () {
       this.timeout(60000); // Extended timeout for convergence test

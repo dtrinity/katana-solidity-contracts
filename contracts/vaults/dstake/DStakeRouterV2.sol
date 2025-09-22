@@ -848,7 +848,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
     VaultConfig memory config = _getVaultConfig(vault);
-    if (config.status != VaultStatus.Active) revert VaultNotActive(vault);
+    if (!_isVaultStatusEligible(config.status, OperationType.DEPOSIT)) {
+      revert VaultNotActive(vault);
+    }
 
     IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(config.adapter);
 
@@ -925,7 +927,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     bool allowSlippage
   ) internal returns (uint256 receivedDStable, uint256 strategyShareAmount, address adapter) {
     VaultConfig memory config = _getVaultConfig(vault);
-    if (config.status != VaultStatus.Active) revert VaultNotActive(vault);
+    if (!_isVaultStatusEligible(config.status, OperationType.WITHDRAWAL)) {
+      revert VaultNotActive(vault);
+    }
     adapter = config.adapter;
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
@@ -984,9 +988,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   ) internal view returns (address[] memory activeVaults, uint256[] memory currentAllocations, uint256[] memory targetAllocations) {
     uint256 activeCount = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      if (vaultConfigs[i].status == VaultStatus.Active && _isVaultHealthyForOperation(vaultConfigs[i].strategyVault, operationType)) {
-        activeCount++;
-      }
+      VaultConfig memory config = vaultConfigs[i];
+      if (!_isVaultEligibleForOperation(config, operationType)) continue;
+      if (!_isVaultHealthyForOperation(config.strategyVault, operationType)) continue;
+      activeCount++;
     }
 
     if (activeCount == 0) return (new address[](0), new uint256[](0), new uint256[](0));
@@ -998,16 +1003,37 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 activeIndex = 0;
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       VaultConfig memory config = vaultConfigs[i];
-      if (config.status == VaultStatus.Active && _isVaultHealthyForOperation(config.strategyVault, operationType)) {
-        activeVaults[activeIndex] = config.strategyVault;
-        balances[activeIndex] = _getVaultBalance(config.strategyVault);
-        targetAllocations[activeIndex] = config.targetBps;
-        activeIndex++;
-      }
+      if (!_isVaultEligibleForOperation(config, operationType)) continue;
+      if (!_isVaultHealthyForOperation(config.strategyVault, operationType)) continue;
+
+      activeVaults[activeIndex] = config.strategyVault;
+      balances[activeIndex] = _getVaultBalance(config.strategyVault);
+      targetAllocations[activeIndex] = config.targetBps;
+      activeIndex++;
     }
 
     (currentAllocations, ) = AllocationCalculator.calculateCurrentAllocations(balances);
     return (activeVaults, currentAllocations, targetAllocations);
+  }
+
+  function _isVaultEligibleForOperation(VaultConfig memory config, OperationType operationType) internal pure returns (bool) {
+    if (!_isVaultStatusEligible(config.status, operationType)) {
+      return false;
+    }
+
+    if (operationType == OperationType.DEPOSIT && config.targetBps == 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  function _isVaultStatusEligible(VaultStatus status, OperationType operationType) internal pure returns (bool) {
+    if (operationType == OperationType.DEPOSIT) {
+      return status == VaultStatus.Active;
+    }
+
+    return status == VaultStatus.Active || status == VaultStatus.Impaired;
   }
 
   function _getAllVaultsAndAllocations()

@@ -195,7 +195,13 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     if (ratio == 0) {
       revert SettlementRatioDisabled();
     }
-    return super.previewMint(shares);
+
+    uint256 rawAssets = super.previewMint(shares);
+    if (ratio == SETTLEMENT_RATIO_SCALE || rawAssets == 0) {
+      return rawAssets;
+    }
+
+    return Math.mulDiv(rawAssets, SETTLEMENT_RATIO_SCALE, ratio, Math.Rounding.Ceil);
   }
 
   /**

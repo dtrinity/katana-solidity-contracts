@@ -17,6 +17,7 @@ describe("DStakeTokenV2 settlement ratio", function () {
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
+  let charlie: SignerWithAddress;
 
   interface FixtureResult {
     dStakeToken: DStakeTokenV2;
@@ -24,11 +25,12 @@ describe("DStakeTokenV2 settlement ratio", function () {
     owner: SignerWithAddress;
     alice: SignerWithAddress;
     bob: SignerWithAddress;
+    charlie: SignerWithAddress;
   }
 
   beforeEach(async function () {
     const fixture = await setupFixture();
-    ({ dStakeToken, dStable, owner, alice, bob } = fixture as unknown as FixtureResult);
+    ({ dStakeToken, dStable, owner, alice, bob, charlie } = fixture as unknown as FixtureResult);
   });
 
   it("defaults to 100% and emits on update", async function () {
@@ -91,6 +93,66 @@ describe("DStakeTokenV2 settlement ratio", function () {
 
     const shareValueAfter = await dStakeToken.convertToAssets(ONE);
     expect(shareValueAfter).to.be.closeTo(expectedShareValue, tolerance);
+  });
+
+  it("charges minting the same as depositing under a haircut", async function () {
+    const initialDeposit = ethers.parseEther("100");
+    await dStable.connect(alice).approve(dStakeToken, initialDeposit);
+    await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
+
+    const haircut = ethers.parseUnits("0.8", 18);
+    await dStakeToken.connect(owner).setSettlementRatio(haircut);
+
+    const bobDeposit = ethers.parseEther("10");
+    await dStable.connect(bob).approve(dStakeToken, bobDeposit);
+    await dStakeToken.connect(bob).deposit(bobDeposit, bob.address);
+
+    const bobShares = await dStakeToken.balanceOf(bob.address);
+    expect(bobShares).to.equal(bobDeposit);
+
+    const mintQuote = await dStakeToken.previewMint(bobShares);
+    const tolerance = 1n;
+    expect(mintQuote).to.be.closeTo(bobDeposit, tolerance);
+
+    await dStable.connect(charlie).approve(dStakeToken, mintQuote);
+    const charlieBalanceBefore = await dStable.balanceOf(charlie.address);
+    await dStakeToken.connect(charlie).mint(bobShares, charlie.address);
+    const charlieBalanceAfter = await dStable.balanceOf(charlie.address);
+
+    const spent = charlieBalanceBefore - charlieBalanceAfter;
+    expect(spent).to.be.closeTo(bobDeposit, tolerance);
+    expect(await dStakeToken.balanceOf(charlie.address)).to.equal(bobShares);
+  });
+
+  it("blocks mint previews and minting when ratio is zero", async function () {
+    await dStakeToken.connect(owner).setSettlementRatio(0n);
+
+    const shares = ethers.parseEther("1");
+    await dStable.connect(bob).approve(dStakeToken, shares);
+
+    await expect(dStakeToken.previewMint(shares)).to.be.revertedWithCustomError(dStakeToken, "SettlementRatioDisabled");
+    await expect(dStakeToken.connect(bob).mint(shares, bob.address)).to.be.revertedWithCustomError(
+      dStakeToken,
+      "SettlementRatioDisabled"
+    );
+  });
+
+  it("keeps previewMint aligned with previewDeposit under fractional supply", async function () {
+    // Seed supply with uneven asset/share ratio to force rounding
+    const seedAssets = ethers.parseUnits("123.456789", 18);
+    await dStable.connect(alice).approve(dStakeToken, seedAssets);
+    await dStakeToken.connect(alice).deposit(seedAssets, alice.address);
+
+    const haircut = ethers.parseUnits("0.7654321", 18);
+    await dStakeToken.connect(owner).setSettlementRatio(haircut);
+
+    const mintShares = ethers.parseUnits("3.141592", 18);
+    const depositAmount = await dStakeToken.previewDeposit(mintShares);
+    const mintAmount = await dStakeToken.previewMint(mintShares);
+
+    const tolerance = 1n;
+    const delta = mintAmount > depositAmount ? mintAmount - depositAmount : depositAmount - mintAmount;
+    expect(delta).to.be.lte(tolerance);
   });
 
   it("rejects settlement ratios above 100%", async function () {
