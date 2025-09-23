@@ -35,6 +35,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error AdapterSharesMismatch(uint256 actualShares, uint256 reportedShares);
   error ShareWithdrawalConversionFailed();
   error DepositConversionFailed(address vault, uint256 amount);
+  error SolverShareDepositShortfall(address vault, uint256 expectedShares, uint256 actualShares);
   error InvalidAmount();
   error InvalidVaultConfig();
   error VaultNotActive(address vault);
@@ -49,6 +50,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error InvalidMaxRoutingAttempts(uint256 attempts);
   error OnlySelfCallable();
   error IndexOutOfBounds();
+  error InsufficientRetryGas(uint256 gasLeft, uint256 requiredGas);
+  error InvalidRetryGasConfig();
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -69,6 +72,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   mapping(address => address) private _strategyShareToAdapter;
   address public defaultDepositStrategyShare;
+
+  // --- Retry Gas Controls ---
+  uint256 public retryCompletionReserve;
+  uint256 public retryMinCallGas;
+  uint256 public retryOverheadBuffer;
 
   struct ExchangeLocals {
     address fromAdapterAddress;
@@ -131,6 +139,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
   event MaxRoutingAttemptsUpdated(uint256 oldCount, uint256 newCount);
+  event RetryGasConfigUpdated(uint256 minCallGas, uint256 completionReserve, uint256 overheadBuffer);
 
   constructor(address _dStakeToken, address _collateralVault) {
     if (_dStakeToken == address(0) || _collateralVault == address(0)) {
@@ -150,6 +159,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     _grantRole(VAULT_MANAGER_ROLE, msg.sender);
     _grantRole(PAUSER_ROLE, msg.sender);
     _grantRole(DSTAKE_TOKEN_ROLE, _dStakeToken);
+
+    // initialise retry gas defaults
+    retryCompletionReserve = 50_000;
+    retryMinCallGas = 150_000;
+    retryOverheadBuffer = 5_000;
   }
 
   // --- Core Router Functions ---
@@ -184,6 +198,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     // This maintains balance across vaults according to target allocations
     for (uint256 i = 0; i < sortedVaults.length; i++) {
       address targetVault = sortedVaults[i];
+      uint256 callGas = _computeRetryCallGas(sortedVaults.length - i);
 
       /**
        * @dev External self-call with try/catch to isolate adapter failures and allow fallback.
@@ -198,7 +213,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
        *   increases call depth; it does not prevent call-depth overflow.
        * - Behavior: on any failure, continue to the next vault.
        */
-      try this._depositToVaultWithRetry(targetVault, dStableAmount) {
+      try this._depositToVaultWithRetry{ gas: callGas }(targetVault, dStableAmount) returns (uint256) {
         // Success - emit event and return
         address[] memory vaultArray = new address[](1);
         uint256[] memory amountArray = new uint256[](1);
@@ -251,7 +266,9 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
        * Mirrors the deposit path semantics regarding gas, exceptions, and call depth. The
        * entrypoint is nonReentrant; the called wrapper is self-callable only.
        */
-      try this._withdrawFromVaultWithRetry(targetVault, dStableAmount, false) returns (uint256 withdrawnAmount) {
+      uint256 callGas = _computeRetryCallGas(sortedVaults.length - i);
+
+      try this._withdrawFromVaultWithRetry{ gas: callGas }(targetVault, dStableAmount, false) returns (uint256 withdrawnAmount) {
         IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
 
         address[] memory vaultArray = new address[](1);
@@ -329,13 +346,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
 
     // Execute deposits through adapters to get exact shares
-    uint256[] memory sharesReceived = new uint256[](vaults.length);
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
         // Use adapter to deposit the required assets
         // Adapter will handle the conversion and ensure we get the shares
-        _depositToVaultAtomically(vaults[i], assetAmounts[i]);
-        sharesReceived[i] = shares[i]; // We deposited the amount needed for these shares
+        uint256 mintedShares = _depositToVaultAtomically(vaults[i], assetAmounts[i]);
+        if (mintedShares < shares[i]) {
+          revert SolverShareDepositShortfall(vaults[i], shares[i], mintedShares);
+        }
       }
     }
 
@@ -430,10 +448,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IDStableConversionAdapterV2 toAdapter = IDStableConversionAdapterV2(toAdapterAddress);
 
     uint256 dStableAmountEquivalent = fromAdapter.previewWithdrawFromStrategy(fromShareAmount);
+    if (dStableAmountEquivalent <= dustTolerance) {
+      return;
+    }
     collateralVault.transferStrategyShares(fromStrategyShare, fromShareAmount, address(this));
 
     IERC20(fromStrategyShare).forceApprove(fromAdapterAddress, fromShareAmount);
     uint256 receivedDStable = fromAdapter.withdrawFromStrategy(fromShareAmount);
+    IERC20(fromStrategyShare).forceApprove(fromAdapterAddress, 0);
 
     IERC20(dStable).forceApprove(toAdapterAddress, receivedDStable);
     (address actualToStrategyShare, uint256 resultingToShareAmount) = toAdapter.depositIntoStrategy(receivedDStable);
@@ -443,12 +465,13 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (resultingToShareAmount < minToShareAmount) {
       revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
+    IERC20(dStable).forceApprove(toAdapterAddress, 0);
 
     {
       uint256 previewValue = toAdapter.previewWithdrawFromStrategy(resultingToShareAmount);
-      uint256 minRequired = dStableAmountEquivalent - dustTolerance;
-      if (previewValue < minRequired) {
-        revert SlippageCheckFailed(dStable, previewValue, minRequired);
+      uint256 dustAdjusted = dStableAmountEquivalent > dustTolerance ? dStableAmountEquivalent - dustTolerance : 0;
+      if (previewValue < dustAdjusted) {
+        revert SlippageCheckFailed(dStable, previewValue, dustAdjusted);
       }
     }
 
@@ -495,6 +518,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     IERC20(fromStrategyShare).safeTransferFrom(msg.sender, address(this), fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, fromShareAmount);
     uint256 receivedDStable = locals.fromAdapter.withdrawFromStrategy(fromShareAmount);
+    IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, 0);
 
     IERC20(dStable).forceApprove(locals.toAdapterAddress, receivedDStable);
     (address actualToStrategyShare, uint256 resultingToShareAmount) = locals.toAdapter.depositIntoStrategy(receivedDStable);
@@ -509,6 +533,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     // Only transfer shares to operator after actual conversion is complete and validated
     collateralVault.transferStrategyShares(toStrategyShare, resultingToShareAmount, msg.sender);
+
+    IERC20(dStable).forceApprove(locals.toAdapterAddress, 0);
 
     emit StrategySharesExchanged(
       fromStrategyShare,
@@ -804,12 +830,50 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
   }
 
+  function setRetryGasConfig(uint256 minCallGas, uint256 completionReserve, uint256 overheadBuffer) external onlyRole(CONFIG_MANAGER_ROLE) {
+    if (minCallGas == 0) revert InvalidRetryGasConfig();
+    retryMinCallGas = minCallGas;
+    retryCompletionReserve = completionReserve;
+    retryOverheadBuffer = overheadBuffer;
+    emit RetryGasConfigUpdated(minCallGas, completionReserve, overheadBuffer);
+  }
+
   function getVaultConfigByIndex(uint256 index) external view returns (VaultConfig memory config) {
     if (index >= vaultConfigs.length) revert IndexOutOfBounds();
     return vaultConfigs[index];
   }
 
   // --- Internal Helpers ---
+
+  function _computeRetryCallGas(uint256 attemptsRemaining) private view returns (uint256 callGas) {
+    if (attemptsRemaining == 0) {
+      return gasleft();
+    }
+
+    uint256 rawGasLeft = gasleft();
+    if (rawGasLeft <= retryOverheadBuffer) {
+      revert InsufficientRetryGas(rawGasLeft, retryOverheadBuffer + 1);
+    }
+
+    uint256 gasLeft = rawGasLeft - retryOverheadBuffer;
+    uint256 required = (attemptsRemaining * retryMinCallGas) + retryCompletionReserve;
+    if (gasLeft <= required) {
+      revert InsufficientRetryGas(rawGasLeft, required + retryOverheadBuffer);
+    }
+
+    if (attemptsRemaining == 1) {
+      callGas = gasLeft - retryCompletionReserve;
+    } else {
+      uint256 available = gasLeft - retryCompletionReserve;
+      uint256 perAttempt = available / attemptsRemaining;
+      if (perAttempt <= retryMinCallGas) {
+        revert InsufficientRetryGas(rawGasLeft, required + retryOverheadBuffer);
+      }
+      callGas = perAttempt;
+    }
+
+    return callGas;
+  }
 
   /**
    * @notice External wrapper for internal deposit logic used in retry mechanism
@@ -823,10 +887,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
    * @param vault Target vault for deposit
    * @param dStableAmount Amount to deposit
    */
-  function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external {
+  function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external returns (uint256 actualShares) {
     if (msg.sender != address(this)) revert OnlySelfCallable();
     // This is called by this contract only, for auto-routing retries
-    _depositToVaultAtomically(vault, dStableAmount);
+    actualShares = _depositToVaultAtomically(vault, dStableAmount);
   }
 
   /**
@@ -846,7 +910,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     withdrawn = _withdrawFromVaultAtomically(vault, dStableAmount, allowSlippage);
   }
 
-  function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal {
+  function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal returns (uint256 actualShares) {
     VaultConfig memory config = _getVaultConfig(vault);
     if (!_isVaultStatusEligible(config.status, OperationType.DEPOSIT)) {
       revert VaultNotActive(vault);
@@ -866,7 +930,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       }
 
       uint256 afterBal = IERC20(vault).balanceOf(address(collateralVault));
-      uint256 actualShares = afterBal - beforeBal;
+      actualShares = afterBal - beforeBal;
 
       if (actualShares < expectedShares) {
         revert SlippageCheckFailed(vault, actualShares, expectedShares);
@@ -883,6 +947,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     IERC20(dStable).forceApprove(config.adapter, 0);
+    return actualShares;
   }
 
   function _withdrawFromVaultAtomically(
@@ -1194,7 +1259,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     delete _strategyShareToAdapter[strategyShare];
 
-    try collateralVault.removeSupportedStrategyShare(strategyShare) {} catch {}
+    // Preserve valuation coverage when collateral is still held by keeping the share registered.
+    if (IERC20(strategyShare).balanceOf(address(collateralVault)) == 0) {
+      try collateralVault.removeSupportedStrategyShare(strategyShare) {} catch {}
+    }
 
     emit AdapterRemoved(strategyShare, adapterAddress);
     return true;

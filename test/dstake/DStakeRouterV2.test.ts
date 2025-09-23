@@ -287,6 +287,143 @@ describe("DStakeRouterV2", function () {
     });
   });
 
+  describe("Retry gas reserves and valuation", function () {
+    it("preserves gas for fallback vaults when a candidate adapter burns gas", async function () {
+      const gasBombFactory = await ethers.getContractFactory("MockGasGuzzlingAdapter");
+      const gasBombAdapter = await gasBombFactory.deploy(
+        await dStable.getAddress(),
+        collateralVault.target,
+        vault1Address,
+        1_000
+      );
+      await gasBombAdapter.waitForDeployment();
+
+      await router.connect(owner).updateVaultConfig({
+        strategyVault: vault1Address,
+        adapter: await gasBombAdapter.getAddress(),
+        targetBps: 500000,
+        status: VaultStatus.Active
+      });
+
+      const depositAmount = ethers.parseEther("100");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+
+      const beforeBalances = [
+        await vault1.balanceOf(collateralVault.target),
+        await vault2.balanceOf(collateralVault.target),
+        await vault3.balanceOf(collateralVault.target)
+      ];
+
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.not.be.reverted;
+
+      const afterBalances = [
+        await vault1.balanceOf(collateralVault.target),
+        await vault2.balanceOf(collateralVault.target),
+        await vault3.balanceOf(collateralVault.target)
+      ];
+
+      expect(afterBalances[0]).to.equal(beforeBalances[0]);
+      const fallbackFilled = afterBalances[1] > beforeBalances[1] || afterBalances[2] > beforeBalances[2];
+      expect(fallbackFilled).to.equal(true);
+    });
+
+    it("clamps dust tolerance during share rebalances", async function () {
+      const depositAmount = ethers.parseEther("1");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      await router.connect(owner).setDustTolerance(ethers.parseEther("1000"));
+
+      const fromBalanceBefore = await vault1.balanceOf(collateralVault.target);
+      const toBalanceBefore = await vault2.balanceOf(collateralVault.target);
+      expect(fromBalanceBefore).to.be.gt(0n);
+
+      await expect(
+        router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesByShares(vault1Address, vault2Address, 1n, 0n)
+      ).to.not.be.reverted;
+
+      const fromBalanceAfter = await vault1.balanceOf(collateralVault.target);
+      expect(fromBalanceAfter).to.equal(fromBalanceBefore);
+      const toBalanceAfter = await vault2.balanceOf(collateralVault.target);
+      expect(toBalanceAfter).to.equal(toBalanceBefore);
+    });
+
+    it("keeps totalAssets stable when removing an adapter with live balances", async function () {
+      const depositAmount = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const totalAssetsBefore = await dStakeToken.totalAssets();
+      const vault1Balance = await vault1.balanceOf(collateralVault.target);
+      expect(vault1Balance).to.be.gt(0n);
+
+      await router.connect(owner).removeAdapter(vault1Address);
+      expect(await router.strategyShareToAdapter(vault1Address)).to.equal(ethers.ZeroAddress);
+
+      const totalAssetsAfter = await dStakeToken.totalAssets();
+      expect(totalAssetsAfter).to.equal(totalAssetsBefore);
+
+      const collateralValue = await collateralVault.totalValueInDStable();
+      expect(collateralValue).to.equal(totalAssetsAfter);
+    });
+  });
+
+  describe("Allowance hygiene", function () {
+    it("clears allowances after internal share rebalances", async function () {
+      const depositAmount = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const routerAddress = await router.getAddress();
+      const fromBalance = await vault1.balanceOf(collateralVault.target);
+      expect(fromBalance).to.be.gt(0n);
+
+      const movement = fromBalance > 1n ? fromBalance / 2n : 1n;
+
+      await expect(
+        router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n)
+      ).to.not.be.reverted;
+
+      const shareAllowance = await vault1.allowance(routerAddress, adapter1Address);
+      const assetAllowance = await dStable.allowance(routerAddress, adapter2Address);
+
+      expect(shareAllowance).to.equal(0n);
+      expect(assetAllowance).to.equal(0n);
+    });
+
+    it("clears allowances after external-liquidity rebalances", async function () {
+      const routerAddress = await router.getAddress();
+
+      const externalDeposit = ethers.parseEther("50");
+      await dStable.connect(owner).mint(collateralExchanger.address, externalDeposit);
+      await dStable.connect(collateralExchanger).approve(vault1Address, externalDeposit);
+      await vault1.setYieldRate(0);
+      await vault2.setYieldRate(0);
+      await vault1.connect(collateralExchanger).deposit(externalDeposit, collateralExchanger.address);
+
+      const shareBalance = await vault1.balanceOf(collateralExchanger.address);
+      expect(shareBalance).to.be.gt(0n);
+
+      await vault1.connect(collateralExchanger).approve(await router.getAddress(), shareBalance);
+
+      await expect(
+        router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, shareBalance, 0n)
+      ).to.not.be.reverted;
+
+      const shareAllowance = await vault1.allowance(routerAddress, adapter1Address);
+      const assetAllowance = await dStable.allowance(routerAddress, adapter2Address);
+
+      expect(shareAllowance).to.equal(0n);
+      expect(assetAllowance).to.equal(0n);
+    });
+  });
+
   describe("Vault Eligibility Safeguards", function () {
     it("skips zero-target vaults when routing deposits", async function () {
       const initialDeposit = ethers.parseEther("1000");
@@ -750,6 +887,30 @@ describe("DStakeRouterV2", function () {
 
       const activeVaults = await router.getActiveVaultsForDeposits();
       expect(activeVaults).to.not.include(vault1.target);
+    });
+
+    it("allows config manager to update retry gas config", async function () {
+      await expect(router.connect(owner).setRetryGasConfig(200_000n, 60_000n, 10_000n))
+        .to.emit(router, "RetryGasConfigUpdated")
+        .withArgs(200_000n, 60_000n, 10_000n);
+
+      expect(await router.retryMinCallGas()).to.equal(200_000n);
+      expect(await router.retryCompletionReserve()).to.equal(60_000n);
+      expect(await router.retryOverheadBuffer()).to.equal(10_000n);
+    });
+
+    it("rejects retry gas config with zero min call gas", async function () {
+      await expect(router.connect(owner).setRetryGasConfig(0, 50_000n, 5_000n)).to.be.revertedWithCustomError(
+        router,
+        "InvalidRetryGasConfig"
+      );
+    });
+
+    it("restricts retry gas config updates to config manager role", async function () {
+      await expect(router.connect(alice).setRetryGasConfig(220_000n, 70_000n, 15_000n)).to.be.revertedWithCustomError(
+        router,
+        "AccessControlUnauthorizedAccount"
+      );
     });
 
     it("Should allow vault manager to mark vault impaired", async function () {

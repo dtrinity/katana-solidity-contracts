@@ -124,6 +124,21 @@ describe("DStakeTokenV2 settlement ratio", function () {
     expect(await dStakeToken.balanceOf(charlie.address)).to.equal(bobShares);
   });
 
+  it("aligns convertToShares with previewDeposit under a haircut", async function () {
+    const seedDeposit = ethers.parseEther("50");
+    await dStable.connect(alice).approve(dStakeToken, seedDeposit);
+    await dStakeToken.connect(alice).deposit(seedDeposit, alice.address);
+
+    const haircut = ethers.parseUnits("0.6", 18);
+    await dStakeToken.connect(owner).setSettlementRatio(haircut);
+
+    const probeAssets = ethers.parseEther("10");
+    const convertQuote = await dStakeToken.convertToShares(probeAssets);
+    const previewQuote = await dStakeToken.previewDeposit(probeAssets);
+
+    expect(convertQuote).to.equal(previewQuote);
+  });
+
   it("blocks mint previews and minting when ratio is zero", async function () {
     await dStakeToken.connect(owner).setSettlementRatio(0n);
 

@@ -47,6 +47,15 @@ describe("DStake Solver Mode Tests", function () {
 
   const setupDStakeSolverMode = createDStakeRouterV2Fixture(config);
 
+  async function bootstrapHighSharePrice(donation: bigint) {
+    const initialDeposit = ethers.parseEther("1");
+    await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
+    await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
+
+    await dStable.connect(owner).mint(owner.address, donation);
+    await dStable.connect(owner).transfer(dStakeToken.target, donation);
+  }
+
   beforeEach(async function () {
     const fixture = await setupDStakeSolverMode();
     owner = fixture.owner;
@@ -160,6 +169,20 @@ describe("DStake Solver Mode Tests", function () {
         "ZeroShares"
       );
     });
+
+    it("reverts when previewDeposit mints zero shares due to inflated NAV", async function () {
+      const donation = ethers.parseUnits("1000000", 18);
+      await bootstrapHighSharePrice(donation);
+
+      expect(await dStakeToken.previewDeposit(1n)).to.equal(0n);
+
+      const tinyDeposit = 1n;
+      await dStable.connect(bob).approve(dStakeToken.target, tinyDeposit);
+
+      await expect(
+        dStakeToken.connect(bob).solverDepositAssets([vault1Address], [tinyDeposit], 0n, bob.address)
+      ).to.be.revertedWithCustomError(dStakeToken, "ZeroShares");
+    });
   });
 
   describe("Solver Mode: solverDepositShares", function () {
@@ -213,6 +236,43 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault1.balanceOf(collateralVault.target)).to.be.gt(0);
       expect(await vault2.balanceOf(collateralVault.target)).to.equal(0);
       expect(await vault3.balanceOf(collateralVault.target)).to.be.gt(0);
+    });
+
+    it("reverts when adapter mints fewer shares than requested", async function () {
+      // Configure a 5% deposit fee so the vault mints fewer shares than requested
+      await vault1.setFees(500, 0);
+      // Loosen adapter slippage guard to tolerate the shortfall
+      await adapter1.setMaxSlippage(200_000); // 20%
+
+      const requestedShares = ethers.parseEther("100");
+      const expectedAssets = await vault1.previewMint(requestedShares);
+      const depositFee = (expectedAssets * 500n) / 10_000n;
+      const assetsAfterFee = expectedAssets - depositFee;
+      const expectedMintedShares = await vault1.previewDeposit(assetsAfterFee);
+
+      await dStable.connect(alice).approve(dStakeToken.target, expectedAssets);
+
+      await expect(
+        dStakeToken.connect(alice).solverDepositShares([vault1Address], [requestedShares], 0, alice.address)
+      )
+        .to.be.revertedWithCustomError(router, "SolverShareDepositShortfall")
+        .withArgs(vault1Address, requestedShares, expectedMintedShares);
+    });
+
+    it("reverts when previewDeposit mints zero shares", async function () {
+      const donation = ethers.parseUnits("1000000", 18);
+      await bootstrapHighSharePrice(donation);
+
+      const requestedShares = 1n;
+      const requiredAssets = await vault1.previewMint(requestedShares);
+      expect(requiredAssets).to.be.gt(0n);
+      expect(await dStakeToken.previewDeposit(requiredAssets)).to.equal(0n);
+
+      await dStable.connect(bob).approve(dStakeToken.target, requiredAssets);
+
+      await expect(
+        dStakeToken.connect(bob).solverDepositShares([vault1Address], [requestedShares], 0n, bob.address)
+      ).to.be.revertedWithCustomError(dStakeToken, "ZeroShares");
     });
   });
 

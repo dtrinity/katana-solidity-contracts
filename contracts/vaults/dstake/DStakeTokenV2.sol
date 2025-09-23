@@ -178,6 +178,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     return Math.mulDiv(baseAssets, ratio, SETTLEMENT_RATIO_SCALE, rounding);
   }
 
+  function convertToShares(uint256 assets) public view virtual override returns (uint256) {
+    return previewDeposit(assets);
+  }
+
   function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
     // Because `_convertToShares` divides by the settlement ratio, a plain call would mint
     // extra shares and depress the post-haircut share price. Rescaling here preserves the
