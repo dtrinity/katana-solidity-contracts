@@ -1,5 +1,11 @@
 > **Use this tracker to keep reviews efficient:** Log fresh findings under **Open**, migrate them to **Resolved** once the fix lands (include pointers to patches/tests), and park accepted risks in **Acknowledged (Won't Fix)** with rationale so auditors know not to re-raise them.
 
+### Logging checklist for auditors
+- Skim all existing entries before adding a new one to avoid duplicates.
+- Capture severity, affected component (file + scope), and a succinct impact description.
+- Reference code with `file.sol:line` anchors so maintainers can jump straight to the context.
+- Leave remediation ideas out for now—we're focused on discovery during this pass.
+
 # dSTAKE v2 Audit Tracker
 
 Updates capture the most recent review cycle. Items are grouped by current status so we can focus the next pass efficiently.
@@ -49,9 +55,15 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Fix**: `setSettlementRatio` now rejects zero ratios, preventing governance from bricking conversions with a zero hair-cut while the runtime math still assumes a positive scale (`DStakeTokenV2.sol:764-772`).
 - **Tests**: Updated `test/dstake/SettlementRatio.test.ts` to assert the new revert and keep the rest of the suite intact.
 
+### 9. Single-vault withdrawal DoS
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`, `contracts/vaults/dstake/DStakeTokenV2.sol`
+- **Fix**: Rather than over-reporting liquidity that the deterministic router cannot satisfy, `DStakeRouterV2` now exposes `getMaxSingleVaultWithdraw`, and `DStakeTokenV2.maxWithdraw` clamps ERC4626 limits to that per-vault ceiling after fees (`DStakeRouterV2.sol:844-852`, `DStakeTokenV2.sol:274-288`, `IDStakeRouterV2.sol:76-78`). Integrators no longer observe withdraw amounts that would revert.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts:246-289` adds "clamps maxWithdraw to the largest single-vault capacity", verifying the reported limit matches the largest vault and that requests above it revert with `ERC4626ExceedsMaxWithdraw`.
+- **Residual risk**: The router still services a single vault per deterministic withdrawal; user exits above the cap must route through solver mode or wait for rebalancing. Tracking aggregate withdrawals across vaults remains future work.
+
 ## Open
-- Emit telemetry (event or counter) when retries consume the reserved gas multiple times to aid operations.
-- Explore non-ERC4626 valuation fallbacks (e.g., adapter-provided snapshots) to close the residual gap noted above.
+
+- None
 
 ## Acknowledged (Won't Fix)
 

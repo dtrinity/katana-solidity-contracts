@@ -274,7 +274,21 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
    */
   function maxWithdraw(address owner) public view virtual override returns (uint256) {
     uint256 grossAssets = convertToAssets(balanceOf(owner));
-    return _getNetAmountAfterFee(grossAssets);
+    uint256 netAssets = _getNetAmountAfterFee(grossAssets);
+
+    uint256 routerCapacity = 0;
+    if (address(router) != address(0)) {
+      try router.getMaxSingleVaultWithdraw() returns (uint256 capacity) {
+        routerCapacity = capacity;
+      } catch {}
+    }
+
+    if (routerCapacity == 0) {
+      return netAssets;
+    }
+
+    uint256 routerNetCapacity = _getNetAmountAfterFee(routerCapacity);
+    return routerNetCapacity < netAssets ? routerNetCapacity : netAssets;
   }
 
   /**

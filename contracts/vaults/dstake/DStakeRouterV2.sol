@@ -515,7 +515,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert SlippageCheckFailed(toStrategyShare, locals.calculatedToStrategyShareAmount, minToShareAmount);
     }
 
-    IERC20(fromStrategyShare).safeTransferFrom(msg.sender, address(this), fromShareAmount);
+    collateralVault.transferStrategyShares(fromStrategyShare, fromShareAmount, address(this));
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, fromShareAmount);
     uint256 receivedDStable = locals.fromAdapter.withdrawFromStrategy(fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, 0);
@@ -530,9 +530,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (resultingToShareAmount < minRequiredWithDust) {
       revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
-
-    // Only transfer shares to operator after actual conversion is complete and validated
-    collateralVault.transferStrategyShares(toStrategyShare, resultingToShareAmount, msg.sender);
 
     IERC20(dStable).forceApprove(locals.toAdapterAddress, 0);
 
@@ -841,6 +838,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   function getVaultConfigByIndex(uint256 index) external view returns (VaultConfig memory config) {
     if (index >= vaultConfigs.length) revert IndexOutOfBounds();
     return vaultConfigs[index];
+  }
+
+  function getMaxSingleVaultWithdraw() external view returns (uint256 maxAssets) {
+    for (uint256 i = 0; i < vaultConfigs.length; i++) {
+      VaultConfig memory config = vaultConfigs[i];
+      uint256 vaultBalance = _getVaultBalance(config.strategyVault);
+      if (vaultBalance > maxAssets) {
+        maxAssets = vaultBalance;
+      }
+    }
   }
 
   // --- Internal Helpers ---

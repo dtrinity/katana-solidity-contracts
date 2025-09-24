@@ -73,4 +73,6 @@ interface IDStakeRouterV2 {
     address[] calldata strategyVaults,
     uint256[] calldata strategyShares
   ) external returns (uint256 totalWithdrawn);
+
+  function getMaxSingleVaultWithdraw() external view returns (uint256 maxAssets);
 }

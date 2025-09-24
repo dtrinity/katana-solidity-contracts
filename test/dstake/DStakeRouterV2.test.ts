@@ -246,6 +246,45 @@ describe("DStakeRouterV2", function () {
       expect(dStableReceived).to.be.closeTo(depositAmount / 2n, ethers.parseEther("100"));
     });
 
+    it("clamps maxWithdraw to the largest single-vault capacity", async function () {
+      const deposits = [ethers.parseEther("1200"), ethers.parseEther("900"), ethers.parseEther("400")];
+      const totalDeposit = deposits.reduce((acc, value) => acc + value, 0n);
+
+      await dStable.connect(alice).approve(dStakeToken.target, totalDeposit);
+      for (const amount of deposits) {
+        await dStakeToken.connect(alice).deposit(amount, alice.address);
+      }
+
+      const collateralAddress = collateralVault.target;
+      const vaultShares = [
+        await vault1.balanceOf(collateralAddress),
+        await vault2.balanceOf(collateralAddress),
+        await vault3.balanceOf(collateralAddress)
+      ];
+
+      const vaultCapacities = await Promise.all(
+        [vault1, vault2, vault3].map(async (vault, index) => {
+          const shares = vaultShares[index];
+          if (shares === 0n) return 0n;
+          return await vault.previewRedeem(shares);
+        })
+      );
+
+      const largestVaultCapacity = vaultCapacities.reduce((max, value) => (value > max ? value : max), 0n);
+      expect(largestVaultCapacity).to.be.gt(0n);
+
+      const maxWithdraw = await dStakeToken.maxWithdraw(alice.address);
+      const feeBps = await dStakeToken.withdrawalFeeBps();
+      const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
+      const expectedNetCapacity = largestVaultCapacity - (largestVaultCapacity * BigInt(feeBps)) / ONE_HUNDRED_PERCENT_BPS;
+      expect(maxWithdraw).to.equal(expectedNetCapacity);
+
+      const overLimit = maxWithdraw + 1n;
+      await expect(
+        dStakeToken.connect(alice).withdraw(overLimit, alice.address, alice.address)
+      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+    });
+
     it("Should select exactly one vault per ERC4626 deposit", async function () {
       const depositAmount = ethers.parseEther("3000");
 
@@ -421,6 +460,43 @@ describe("DStakeRouterV2", function () {
 
       expect(shareAllowance).to.equal(0n);
       expect(assetAllowance).to.equal(0n);
+    });
+  });
+
+  describe("External liquidity rebalancing", function () {
+    it("migrates collateral balances when operator supplies liquidity", async function () {
+      const depositAmount = ethers.parseEther("1000");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      await vault1.setYieldRate(0);
+      await vault2.setYieldRate(0);
+
+      const fromBalanceBefore = await vault1.balanceOf(collateralVault.target);
+      const toBalanceBefore = await vault2.balanceOf(collateralVault.target);
+
+      expect(fromBalanceBefore).to.be.gt(0n);
+
+      const fromShareAmount = fromBalanceBefore / 4n;
+      expect(fromShareAmount).to.be.gt(0n);
+
+      const operatorSeed = ethers.parseEther("500");
+      await dStable.connect(owner).mint(collateralExchanger.address, operatorSeed);
+      await dStable.connect(collateralExchanger).approve(vault1Address, operatorSeed);
+      await vault1.connect(collateralExchanger).deposit(operatorSeed, collateralExchanger.address);
+
+      const operatorShares = await vault1.balanceOf(collateralExchanger.address);
+      expect(operatorShares).to.be.gte(fromShareAmount);
+
+      await router
+        .connect(collateralExchanger)
+        .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, fromShareAmount, 0n);
+
+      const fromBalanceAfter = await vault1.balanceOf(collateralVault.target);
+      const toBalanceAfter = await vault2.balanceOf(collateralVault.target);
+
+      expect(fromBalanceAfter).to.equal(fromBalanceBefore - fromShareAmount);
+      expect(toBalanceAfter).to.be.gt(toBalanceBefore);
     });
   });
 
