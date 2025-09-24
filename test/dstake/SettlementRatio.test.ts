@@ -139,16 +139,10 @@ describe("DStakeTokenV2 settlement ratio", function () {
     expect(convertQuote).to.equal(previewQuote);
   });
 
-  it("blocks mint previews and minting when ratio is zero", async function () {
-    await dStakeToken.connect(owner).setSettlementRatio(0n);
-
-    const shares = ethers.parseEther("1");
-    await dStable.connect(bob).approve(dStakeToken, shares);
-
-    await expect(dStakeToken.previewMint(shares)).to.be.revertedWithCustomError(dStakeToken, "SettlementRatioDisabled");
-    await expect(dStakeToken.connect(bob).mint(shares, bob.address)).to.be.revertedWithCustomError(
+  it("rejects settlement ratio of zero", async function () {
+    await expect(dStakeToken.connect(owner).setSettlementRatio(0n)).to.be.revertedWithCustomError(
       dStakeToken,
-      "SettlementRatioDisabled"
+      "InvalidSettlementRatio"
     );
   });
 
@@ -178,14 +172,4 @@ describe("DStakeTokenV2 settlement ratio", function () {
     );
   });
 
-  it("blocks new deposits when ratio is zero", async function () {
-    await dStakeToken.connect(owner).setSettlementRatio(0n);
-
-    const amount = ethers.parseEther("1");
-    await dStable.connect(bob).approve(dStakeToken, amount);
-    await expect(dStakeToken.connect(bob).deposit(amount, bob.address)).to.be.revertedWithCustomError(
-      dStakeToken,
-      "SettlementRatioDisabled"
-    );
-  });
 });

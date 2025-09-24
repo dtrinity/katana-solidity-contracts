@@ -762,7 +762,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
    * @param newRatio The new settlement ratio.
    */
   function setSettlementRatio(uint256 newRatio) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (newRatio > SETTLEMENT_RATIO_SCALE) {
+    if (newRatio == 0 || newRatio > SETTLEMENT_RATIO_SCALE) {
       revert InvalidSettlementRatio(newRatio);
     }
 

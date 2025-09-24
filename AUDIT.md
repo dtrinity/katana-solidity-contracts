@@ -1,3 +1,5 @@
+> **Use this tracker to keep reviews efficient:** Log fresh findings under **Open**, migrate them to **Resolved** once the fix lands (include pointers to patches/tests), and park accepted risks in **Acknowledged (Won't Fix)** with rationale so auditors know not to re-raise them.
+
 # dSTAKE v2 Audit Tracker
 
 Updates capture the most recent review cycle. Items are grouped by current status so we can focus the next pass efficiently.
@@ -37,9 +39,33 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds "clears allowances after internal share rebalances" and "clears allowances after external-liquidity rebalances" to assert share and dStable allowances return to zero once the operation completes.
 - **Residual risk**: Set `dustTolerance` conservatively; raising it materially increases the value an adapter can walk off with before slippage guards catch the drift.
 
-## Open Follow-Ups
+### 7. Exchange-asset rewards bypassed compounding float guard
+- **Component**: `contracts/vaults/rewards_claimable/RewardClaimable.sol`
+- **Fix**: `compoundRewards` now subtracts the caller's freshly supplied exchange asset before splitting rewards, so the subsequent `_processExchangeAssetDeposit` still has liquidity even when URD lists the exchange asset itself (`RewardClaimable.sol:163-216`).
+- **Tests**: `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` adds "should handle dStable rewards without consuming the compounding float" to exercise the regression scenario.
+
+### 8. Settlement ratio zero guard
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`
+- **Fix**: `setSettlementRatio` now rejects zero ratios, preventing governance from bricking conversions with a zero hair-cut while the runtime math still assumes a positive scale (`DStakeTokenV2.sol:764-772`).
+- **Tests**: Updated `test/dstake/SettlementRatio.test.ts` to assert the new revert and keep the rest of the suite intact.
+
+## Open
 - Emit telemetry (event or counter) when retries consume the reserved gas multiple times to aid operations.
 - Explore non-ERC4626 valuation fallbacks (e.g., adapter-provided snapshots) to close the residual gap noted above.
+
+## Acknowledged (Won't Fix)
+
+### 1. Residual allowance after WrappedDLend deposits
+- **Component**: `contracts/vaults/dstake/adapters/WrappedDLendConversionAdapter.sol:59-96`
+- **Issue**: `depositIntoStrategy` mints wrapper shares to the collateral vault but leaves the `dStable` allowance granted to the StaticAToken wrapper in place. If any dStable is later transferred into the adapter (operator mistake, griefing, or wrapper compromise), the wrapper can sweep those funds using the standing approval.
+- **Recommendation**: Mirror `MetaMorphoConversionAdapter` and clear the allowance (`forceApprove(..., 0)`) after a successful deposit.
+- **Decision**: Team accepts the residual approval risk for this deployment; documenting here to avoid re-reporting.
+
+### 2. Router deposit approval style
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:215-231`
+- **Issue**: `_deposit` relies on vanilla `approve` before delegating to the router. Non-standard ERC20s that require allowance resets could break deposits.
+- **Recommendation**: Switch to `forceApprove` with a zero clear once the router pulls funds, matching the rest of the codebase’s defensive approvals.
+- **Decision**: Considered low impact for dStable; no change planned.
 
 ---
 *Status: Identified high-severity issues are mitigated; follow-ups focus on observability and long-tail adapter support.*

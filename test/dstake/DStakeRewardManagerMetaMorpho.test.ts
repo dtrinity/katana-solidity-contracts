@@ -454,6 +454,41 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       expect(await rewardToken2.balanceOf(user.address)).to.equal(ethers.parseEther("47.5"));
     });
 
+    it("should handle dStable rewards without consuming the compounding float", async function () {
+      const rewardAmount = ethers.parseEther("100");
+
+      // Fund URD with dStable and stage a claim for the reward manager
+      await dStable.mint(urd.target, rewardAmount);
+      await urd.setPendingReward(rewardManager.target, dStable.target, rewardAmount);
+
+      const claimData = [
+        {
+          rewardToken: dStable.target,
+          claimableAmount: rewardAmount,
+          proof: [],
+        },
+      ];
+      await rewardManager.connect(manager).claimRewardsFromURD(claimData);
+
+      const compoundAmount = ethers.parseEther("50");
+      await dStable.connect(user).approve(rewardManager.target, compoundAmount);
+
+      const treasuryBalanceBefore = await dStable.balanceOf(treasury.address);
+      const userBalanceBefore = await dStable.balanceOf(user.address);
+      const vaultSharesBefore = await metaMorphoVault.balanceOf(collateralVault.target);
+
+      await rewardManager.connect(user).compoundRewards(compoundAmount, [dStable.target], user.address);
+
+      const fee = (rewardAmount * BigInt(INITIAL_TREASURY_FEE_BPS)) / 1_000_000n;
+      const netReward = rewardAmount - fee;
+
+      expect(await dStable.balanceOf(treasury.address) - treasuryBalanceBefore).to.equal(fee);
+      expect(await dStable.balanceOf(user.address)).to.equal(userBalanceBefore - compoundAmount + netReward);
+
+      const vaultSharesAfter = await metaMorphoVault.balanceOf(collateralVault.target);
+      expect(vaultSharesAfter).to.be.gt(vaultSharesBefore);
+    });
+
     it("should revert if compound amount below threshold", async function () {
       await dStable.connect(user).approve(rewardManager.target, ethers.parseEther("5"));
 
