@@ -90,11 +90,15 @@ describe("Fee Accounting Regression Test", function () {
     await dStable.mint(solver.address, ethers.parseEther("10000"));
 
     // Set router and collateral vault on DStakeTokenV2 (critical for deposit/withdraw to work)
-    if ((await dStakeToken.router()).toLowerCase() !== (await router.getAddress()).toLowerCase()) {
-      await dStakeToken.connect(owner).setRouter(await router.getAddress());
-    }
-    if ((await dStakeToken.collateralVault()).toLowerCase() !== (await collateralVault.getAddress()).toLowerCase()) {
-      await dStakeToken.connect(owner).setCollateralVault(await collateralVault.getAddress());
+    const targetRouter = (await router.getAddress()).toLowerCase();
+    const targetVault = (await collateralVault.getAddress()).toLowerCase();
+    const currentRouter = (await dStakeToken.router()).toLowerCase();
+    const currentVault = (await dStakeToken.collateralVault()).toLowerCase();
+
+    if (currentRouter !== targetRouter || currentVault !== targetVault) {
+      await dStakeToken
+        .connect(owner)
+        .migrateCore(await router.getAddress(), await collateralVault.getAddress());
     }
 
     // Ensure collateral vault has vault shares for withdrawals

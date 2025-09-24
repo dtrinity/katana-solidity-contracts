@@ -841,9 +841,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function getMaxSingleVaultWithdraw() external view returns (uint256 maxAssets) {
-    for (uint256 i = 0; i < vaultConfigs.length; i++) {
-      VaultConfig memory config = vaultConfigs[i];
-      uint256 vaultBalance = _getVaultBalance(config.strategyVault);
+    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
+
+    for (uint256 i = 0; i < activeVaults.length; i++) {
+      uint256 vaultBalance = _getVaultBalance(activeVaults[i]);
       if (vaultBalance > maxAssets) {
         maxAssets = vaultBalance;
       }

@@ -61,9 +61,25 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: `test/dstake/DStakeRouterV2.test.ts:246-289` adds "clamps maxWithdraw to the largest single-vault capacity", verifying the reported limit matches the largest vault and that requests above it revert with `ERC4626ExceedsMaxWithdraw`.
 - **Residual risk**: The router still services a single vault per deterministic withdrawal; user exits above the cap must route through solver mode or wait for rebalancing. Tracking aggregate withdrawals across vaults remains future work.
 
+### 10. Router zero-capacity maxWithdraw floor
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:277-294`
+- **Fix**: `maxWithdraw` now returns zero whenever the router reports no eligible liquidity or the call reverts, only falling back to the owner's balance while the router is unset. Outage scenarios therefore advertise the same "no capacity" limit the router enforces.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts:351-378` suspends every vault, confirms the reported limit drops to zero, blocks larger withdrawals, and still allows `withdraw(0)` probes.
+
+### 11. Zero-amount withdrawals honor ERC4626 semantics
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:333-344`
+- **Fix**: `_withdraw` now short-circuits zero-asset/share flows, burning nothing, emitting the ERC4626 `Withdraw` event with zero values, and skipping the router call so the downstream `InvalidAmount` check is never triggered.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts:374-378` exercises `withdraw(0)` while the router has no capacity, demonstrating it succeeds as a no-op instead of reverting.
+
 ## Open
 
-- None
+### 1. Collateral vault retargeting desync mints inflated shares
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:138-144`, `:755-760`; `contracts/vaults/dstake/DStakeRouterV2.sol:46-236`
+- **Description**: `setCollateralVault` swaps the ERC4626’s accounting source without coordinating the router, whose `collateralVault` pointer is immutable. During any migration window where the token points at a fresh/empty vault but deposits still route into the previous asset-bearing vault, `totalAssets()` collapses to ~0 while `totalSupply()` stays high. Deposits executed in that gap mint outsized shares because `_convertToShares` divides by `totalAssets() + 1`, yet the router continues to invest the real assets into the old vault.
+- **Impact**: An attacker can front-run governance during collateral vault rotations, deposit a dust amount, and mint an arbitrarily large share position. Once governance realigns the router (or otherwise restores accounting), those bonus shares map back to genuine collateral in the original vault, letting the attacker redeem far more dStable than they supplied, diluting or draining honest depositors.
+- **Notes**: As written, the issuance exploit is viable on every collateral-vault rotation unless governance can atomically coordinate router/token updates across modules or pause user entry/exit around migrations.
+
 
 ## Acknowledged (Won't Fix)
 

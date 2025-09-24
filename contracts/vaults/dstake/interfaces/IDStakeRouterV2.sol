@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import { IDStakeCollateralVaultV2 } from "./IDStakeCollateralVaultV2.sol";
+
 /**
  * @title IDStakeRouterV2 Interface
  * @notice Defines the external functions of the DStakeRouter required by the DStakeTokenV2
  *         for handling deposits and withdrawals.
  */
 interface IDStakeRouterV2 {
+  function collateralVault() external view returns (IDStakeCollateralVaultV2);
+
+  function dStakeToken() external view returns (address);
+
   /**
    * @notice Handles the conversion of deposited dStable asset into a chosen `strategyShare`
    *         and informs the collateral vault.

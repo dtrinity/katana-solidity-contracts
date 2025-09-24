@@ -92,16 +92,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // --- Configure DStakeTokenV2 ---
     const currentRouter = await dstakeToken.router();
-
-    if (currentRouter !== routerDeployment.address) {
-      console.log(`    ⚙️ Setting router for ${DStakeTokenV2DeploymentName} to ${routerDeployment.address}`);
-      await dstakeToken.connect(deployerSigner).setRouter(routerDeployment.address);
-    }
     const currentVault = await dstakeToken.collateralVault();
 
-    if (currentVault !== collateralVaultDeployment.address) {
-      console.log(`    ⚙️ Setting collateral vault for ${DStakeTokenV2DeploymentName} to ${collateralVaultDeployment.address}`);
-      await dstakeToken.connect(deployerSigner).setCollateralVault(collateralVaultDeployment.address);
+    if (currentRouter !== routerDeployment.address || currentVault !== collateralVaultDeployment.address) {
+      console.log(
+        `    ⚙️ Aligning router + collateral vault for ${DStakeTokenV2DeploymentName} to (${routerDeployment.address}, ${collateralVaultDeployment.address})`
+      );
+      await dstakeToken
+        .connect(deployerSigner)
+        .migrateCore(routerDeployment.address, collateralVaultDeployment.address);
     }
     const currentFee = await dstakeToken.withdrawalFeeBps();
 

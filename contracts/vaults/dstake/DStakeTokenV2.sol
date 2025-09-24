@@ -33,6 +33,8 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   error AutoWithdrawShortfall(uint256 expectedNet, uint256 actualNet);
   error InvalidSettlementRatio(uint256 newRatio);
   error SettlementRatioDisabled();
+  error RouterCollateralMismatch(address router, address expectedVault, address actualVault);
+  error RouterTokenMismatch(address router, address expectedToken, address actualToken);
 
   // --- State ---
   IDStakeCollateralVaultV2 public collateralVault;
@@ -276,19 +278,20 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     uint256 grossAssets = convertToAssets(balanceOf(owner));
     uint256 netAssets = _getNetAmountAfterFee(grossAssets);
 
-    uint256 routerCapacity = 0;
-    if (address(router) != address(0)) {
-      try router.getMaxSingleVaultWithdraw() returns (uint256 capacity) {
-        routerCapacity = capacity;
-      } catch {}
-    }
-
-    if (routerCapacity == 0) {
+    if (address(router) == address(0)) {
       return netAssets;
     }
 
-    uint256 routerNetCapacity = _getNetAmountAfterFee(routerCapacity);
-    return routerNetCapacity < netAssets ? routerNetCapacity : netAssets;
+    try router.getMaxSingleVaultWithdraw() returns (uint256 capacity) {
+      if (capacity == 0) {
+        return 0;
+      }
+
+      uint256 routerNetCapacity = _getNetAmountAfterFee(capacity);
+      return routerNetCapacity < netAssets ? routerNetCapacity : netAssets;
+    } catch {
+      return 0;
+    }
   }
 
   /**
@@ -329,6 +332,15 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   ) internal virtual override {
     if (caller != owner) {
       _spendAllowance(owner, caller, shares);
+    }
+
+    // Allow zero-amount withdrawals to succeed without touching the router so ERC4626 semantics hold.
+    if (assets == 0 || shares == 0) {
+      if (shares > 0) {
+        _burn(owner, shares);
+      }
+      emit Withdraw(caller, receiver, owner, 0, shares);
+      return;
     }
 
     if (address(router) == address(0) || address(collateralVault) == address(0)) {
@@ -739,25 +751,32 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
    * @dev Only callable by DEFAULT_ADMIN_ROLE.
    * @param _router The address of the new router contract.
    */
-  function setRouter(address _router) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (_router == address(0)) {
-      revert ZeroAddress();
-    }
-    router = IDStakeRouterV2(_router);
-    emit RouterSet(_router);
-  }
-
   /**
-   * @notice Sets the address of the DStakeCollateralVaultV2 contract.
-   * @dev Only callable by DEFAULT_ADMIN_ROLE.
-   * @param _collateralVault The address of the new collateral vault contract.
+   * @notice Atomically sets the router and collateral vault references.
+   * @dev Ensures the router is pre-configured to point at the provided collateral vault and this token.
+   * @param newRouter The address of the router contract to use.
+   * @param newCollateralVault The address of the collateral vault contract to use.
    */
-  function setCollateralVault(address _collateralVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (_collateralVault == address(0)) {
+  function migrateCore(address newRouter, address newCollateralVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (newRouter == address(0) || newCollateralVault == address(0)) {
       revert ZeroAddress();
     }
-    collateralVault = IDStakeCollateralVaultV2(_collateralVault);
-    emit CollateralVaultSet(_collateralVault);
+
+    IDStakeRouterV2 routerCandidate = IDStakeRouterV2(newRouter);
+    address routerCollateral = address(routerCandidate.collateralVault());
+    if (routerCollateral != newCollateralVault) {
+      revert RouterCollateralMismatch(newRouter, newCollateralVault, routerCollateral);
+    }
+
+    if (routerCandidate.dStakeToken() != address(this)) {
+      revert RouterTokenMismatch(newRouter, address(this), routerCandidate.dStakeToken());
+    }
+
+    router = routerCandidate;
+    collateralVault = IDStakeCollateralVaultV2(newCollateralVault);
+
+    emit RouterSet(newRouter);
+    emit CollateralVaultSet(newCollateralVault);
   }
 
   /**

@@ -264,22 +264,28 @@ export const createDStakeRouterV2Fixture = (
     }
 
     const DEFAULT_ADMIN_ROLE_TOKEN = await dStakeTokenContract.DEFAULT_ADMIN_ROLE();
-    if (await dStakeTokenContract.hasRole(DEFAULT_ADMIN_ROLE_TOKEN, ownerSigner.address)) {
-      if ((await dStakeTokenContract.router()) !== routerAddress) {
-        await dStakeTokenContract.setRouter(routerAddress);
-      }
-    } else {
-      const currentRouter = await dStakeTokenContract.router();
-      if (currentRouter === ethers.ZeroAddress) {
-        try {
-          await dStakeTokenContract.setRouter(routerAddress);
-        } catch {
-          // router may already be set by governance
-        }
-      } else if (currentRouter !== routerAddress) {
+    const desiredRouter = routerAddress;
+    const desiredVault = collateralVaultAddress!;
+    const currentRouter = await dStakeTokenContract.router();
+    const currentVault = await dStakeTokenContract.collateralVault();
+
+    const needsMigration = currentRouter !== desiredRouter || currentVault !== desiredVault;
+
+    if (needsMigration) {
+      if (await dStakeTokenContract.hasRole(DEFAULT_ADMIN_ROLE_TOKEN, ownerSigner.address)) {
+        await dStakeTokenContract.migrateCore(desiredRouter, desiredVault);
+      } else {
         const [, governanceSigner] = await ethers.getSigners();
         if (await dStakeTokenContract.hasRole(DEFAULT_ADMIN_ROLE_TOKEN, governanceSigner.address)) {
-          await dStakeTokenContract.connect(governanceSigner).setRouter(routerAddress);
+          await dStakeTokenContract
+            .connect(governanceSigner)
+            .migrateCore(desiredRouter, desiredVault);
+        } else {
+          try {
+            await dStakeTokenContract.migrateCore(desiredRouter, desiredVault);
+          } catch {
+            // Core wiring may already be configured elsewhere; ignore failures
+          }
         }
       }
     }

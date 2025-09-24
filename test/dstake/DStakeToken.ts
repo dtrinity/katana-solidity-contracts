@@ -175,53 +175,109 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         FEE_MANAGER_ROLE = await DStakeTokenV2.FEE_MANAGER_ROLE();
       });
 
-      describe("setCollateralVault", () => {
-        it("Should allow admin to set collateralVault", async () => {
+      describe("migrateCore", () => {
+        const deployNewCore = async () => {
+          const vaultFactory = await ethers.getContractFactory(
+            "DStakeCollateralVaultV2",
+            user1,
+          );
+          const deployedVault = await vaultFactory.deploy(
+            DStakeTokenV2Address,
+            await dStableToken.getAddress(),
+          );
+          await deployedVault.waitForDeployment();
+
+          const routerFactory = await ethers.getContractFactory(
+            "DStakeRouterV2",
+            user1,
+          );
+          const deployedRouter = await routerFactory.deploy(
+            DStakeTokenV2Address,
+            await deployedVault.getAddress(),
+          );
+          await deployedRouter.waitForDeployment();
+
+          return { deployedVault, deployedRouter };
+        };
+
+        it("Should allow admin to migrate router and collateral vault", async () => {
+          const { deployedVault, deployedRouter } = await deployNewCore();
+          const newVaultAddress = await deployedVault.getAddress();
+          const newRouterAddress = await deployedRouter.getAddress();
+
           await expect(
-            DStakeTokenV2.connect(user1).setCollateralVault(user1.address),
+            DStakeTokenV2.connect(user1).migrateCore(
+              newRouterAddress,
+              newVaultAddress,
+            ),
           )
-            .to.emit(DStakeTokenV2, "CollateralVaultSet")
-            .withArgs(user1.address);
-          expect(await DStakeTokenV2.collateralVault()).to.equal(user1.address);
-        });
-
-        it("Should revert if non-admin calls setCollateralVault", async () => {
-          await expect(
-            DStakeTokenV2.connect(deployer).setCollateralVault(user1.address),
-          ).to.be.revertedWithCustomError(
-            DStakeTokenV2,
-            "AccessControlUnauthorizedAccount",
-          );
-        });
-
-        it("Should revert if setting collateralVault to zero", async () => {
-          await expect(
-            DStakeTokenV2.connect(user1).setCollateralVault(ZeroAddress),
-          ).to.be.revertedWithCustomError(DStakeTokenV2, "ZeroAddress");
-        });
-      });
-
-      describe("setRouter", () => {
-        it("Should allow admin to set router", async () => {
-          await expect(DStakeTokenV2.connect(user1).setRouter(user1.address))
             .to.emit(DStakeTokenV2, "RouterSet")
-            .withArgs(user1.address);
-          expect(await DStakeTokenV2.router()).to.equal(user1.address);
+            .withArgs(newRouterAddress)
+            .and.to.emit(DStakeTokenV2, "CollateralVaultSet")
+            .withArgs(newVaultAddress);
+
+          expect(await DStakeTokenV2.router()).to.equal(newRouterAddress);
+          expect(await DStakeTokenV2.collateralVault()).to.equal(newVaultAddress);
         });
 
-        it("Should revert if non-admin calls setRouter", async () => {
+        it("Should revert if non-admin calls migrateCore", async () => {
           await expect(
-            DStakeTokenV2.connect(deployer).setRouter(user1.address),
+            DStakeTokenV2.connect(deployer).migrateCore(
+              routerAddress,
+              collateralVaultAddress,
+            ),
           ).to.be.revertedWithCustomError(
             DStakeTokenV2,
             "AccessControlUnauthorizedAccount",
           );
         });
 
-        it("Should revert if setting router to zero", async () => {
+        it("Should revert if any address is zero", async () => {
           await expect(
-            DStakeTokenV2.connect(user1).setRouter(ZeroAddress),
+            DStakeTokenV2.connect(user1).migrateCore(
+              ZeroAddress,
+              collateralVaultAddress,
+            ),
           ).to.be.revertedWithCustomError(DStakeTokenV2, "ZeroAddress");
+
+          await expect(
+            DStakeTokenV2.connect(user1).migrateCore(routerAddress, ZeroAddress),
+          ).to.be.revertedWithCustomError(DStakeTokenV2, "ZeroAddress");
+        });
+
+        it("Should revert when router collateral vault does not match", async () => {
+          const { deployedRouter } = await deployNewCore();
+          await expect(
+            DStakeTokenV2.connect(user1).migrateCore(
+              await deployedRouter.getAddress(),
+              collateralVaultAddress,
+            ),
+          ).to.be.revertedWithCustomError(
+            DStakeTokenV2,
+            "RouterCollateralMismatch",
+          );
+        });
+
+        it("Should revert when router is configured for a different token", async () => {
+          const routerFactory = await ethers.getContractFactory(
+            "DStakeRouterV2",
+            user1,
+          );
+          const mismatchedRouter = await routerFactory.deploy(
+            user1.address,
+            collateralVaultAddress,
+          );
+          await mismatchedRouter.waitForDeployment();
+
+          await expect(
+            DStakeTokenV2.connect(user1).migrateCore(
+              await mismatchedRouter.getAddress(),
+              collateralVaultAddress,
+            ),
+          ).to.be.revertedWithCustomError(
+            DStakeTokenV2,
+            "RouterTokenMismatch",
+          );
         });
       });
 
@@ -490,6 +546,22 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
       it("maxRedeem returns share balance", async () => {
         expect(await DStakeTokenV2.maxRedeem(user1.address)).to.equal(shares);
+      });
+
+      it("allows zero-amount withdraw probes", async () => {
+        await expect(
+          DStakeTokenV2.connect(user1).withdraw(0, user1.address, user1.address),
+        )
+          .to.emit(DStakeTokenV2, "Withdraw")
+          .withArgs(user1.address, user1.address, user1.address, 0, 0);
+      });
+
+      it("allows zero-share redeem probes", async () => {
+        await expect(
+          DStakeTokenV2.connect(user1).redeem(0, user1.address, user1.address),
+        )
+          .to.emit(DStakeTokenV2, "Withdraw")
+          .withArgs(user1.address, user1.address, user1.address, 0, 0);
       });
 
       it("should withdraw assets and burn shares", async () => {

@@ -285,6 +285,99 @@ describe("DStakeRouterV2", function () {
       ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
     });
 
+    it("excludes suspended vaults when computing max withdraw capacity", async function () {
+      const targetBps = [500000, 300000, 200000];
+      const vaultTargets = [vault1.target, vault2.target, vault3.target];
+      const adapterTargets = [adapter1.target, adapter2.target, adapter3.target];
+      const deposits = [
+        { index: 0, amount: ethers.parseEther("1500") },
+        { index: 1, amount: ethers.parseEther("2500") },
+        { index: 2, amount: ethers.parseEther("1000") }
+      ];
+
+      const totalDeposit = deposits.reduce((acc, plan) => acc + plan.amount, 0n);
+      await dStable.connect(alice).approve(dStakeToken.target, totalDeposit);
+
+      for (const plan of deposits) {
+        const statuses = [VaultStatus.Suspended, VaultStatus.Suspended, VaultStatus.Suspended];
+        statuses[plan.index] = VaultStatus.Active;
+        for (let i = 0; i < statuses.length; i++) {
+          await router.updateVaultConfig(vaultTargets[i], adapterTargets[i], targetBps[i], statuses[i]);
+        }
+        await dStakeToken.connect(alice).deposit(plan.amount, alice.address);
+      }
+
+      for (let i = 0; i < vaultTargets.length; i++) {
+        await router.updateVaultConfig(vaultTargets[i], adapterTargets[i], targetBps[i], VaultStatus.Active);
+      }
+
+      const collateralAddress = collateralVault.target;
+      const vaults = [vault1, vault2, vault3];
+      const capacities: bigint[] = [];
+      for (const vault of vaults) {
+        const shares = await vault.balanceOf(collateralAddress);
+        capacities.push(shares === 0n ? 0n : await vault.previewRedeem(shares));
+      }
+
+      const { maxValue: largestCapacity, maxIndex: largestIndex } = capacities.reduce(
+        (acc, value, index) => (value > acc.maxValue ? { maxValue: value, maxIndex: index } : acc),
+        { maxValue: 0n, maxIndex: 0 }
+      );
+
+      expect(await router.getMaxSingleVaultWithdraw()).to.equal(largestCapacity);
+
+      await router.updateVaultConfig(
+        vaultTargets[largestIndex],
+        adapterTargets[largestIndex],
+        targetBps[largestIndex],
+        VaultStatus.Suspended
+      );
+
+      const expectedRemainingCapacity = capacities.reduce((max, value, index) => {
+        if (index === largestIndex) return max;
+        return value > max ? value : max;
+      }, 0n);
+
+      const routerCapacity = await router.getMaxSingleVaultWithdraw();
+      expect(routerCapacity).to.equal(expectedRemainingCapacity);
+
+      const feeBps = BigInt(await dStakeToken.withdrawalFeeBps());
+      const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
+      const expectedNet = expectedRemainingCapacity - (expectedRemainingCapacity * feeBps) / ONE_HUNDRED_PERCENT_BPS;
+      const maxWithdrawNet = await dStakeToken.maxWithdraw(alice.address);
+      expect(maxWithdrawNet).to.equal(expectedNet);
+    });
+
+    it("returns zero withdraw capacity when every vault is ineligible", async function () {
+      const targetBps = [500000, 300000, 200000];
+      const vaultTargets = [vault1.target, vault2.target, vault3.target];
+      const adapterTargets = [adapter1.target, adapter2.target, adapter3.target];
+
+      const depositAmount = ethers.parseEther("1000");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      expect(await router.getMaxSingleVaultWithdraw()).to.be.gt(0n);
+      expect(await dStakeToken.maxWithdraw(alice.address)).to.be.gt(0n);
+
+      for (let i = 0; i < vaultTargets.length; i++) {
+        await router.updateVaultConfig(vaultTargets[i], adapterTargets[i], targetBps[i], VaultStatus.Suspended);
+      }
+
+      expect(await router.getMaxSingleVaultWithdraw()).to.equal(0n);
+      expect(await dStakeToken.maxWithdraw(alice.address)).to.equal(0n);
+
+      await expect(
+        dStakeToken.connect(alice).withdraw(1n, alice.address, alice.address)
+      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+
+      await expect(
+        dStakeToken.connect(alice).withdraw(0, alice.address, alice.address)
+      )
+        .to.emit(dStakeToken, "Withdraw")
+        .withArgs(alice.address, alice.address, alice.address, 0, 0);
+    });
+
     it("Should select exactly one vault per ERC4626 deposit", async function () {
       const depositAmount = ethers.parseEther("3000");
 
@@ -436,6 +529,9 @@ describe("DStakeRouterV2", function () {
 
     it("clears allowances after external-liquidity rebalances", async function () {
       const routerAddress = await router.getAddress();
+      const bootstrapDeposit = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, bootstrapDeposit);
+      await dStakeToken.connect(alice).deposit(bootstrapDeposit, alice.address);
 
       const externalDeposit = ethers.parseEther("50");
       await dStable.connect(owner).mint(collateralExchanger.address, externalDeposit);
