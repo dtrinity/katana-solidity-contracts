@@ -30,7 +30,7 @@ async function calculateExpectedDstableAmount(
   dstableDecimals: number,
   oracleAggregator: OracleAggregator,
   collateralAddress: string,
-  dstableAddress: string
+  dstableAddress: string,
 ): Promise<bigint> {
   const collateralPrice = await oracleAggregator.getAssetPrice(collateralAddress);
   const dstablePrice = await oracleAggregator.getAssetPrice(dstableAddress);
@@ -51,7 +51,7 @@ async function calculateExpectedDstableFromBase(
   dstableSymbol: string,
   dstableDecimals: number,
   oracleAggregator: OracleAggregator,
-  dstableAddress: string
+  dstableAddress: string,
 ): Promise<bigint> {
   const dstablePrice = await oracleAggregator.getAssetPrice(dstableAddress);
   return (baseValue * 10n ** BigInt(dstableDecimals)) / dstablePrice;
@@ -86,7 +86,7 @@ dstableConfigs.forEach((config) => {
       collateralVaultContract = await hre.ethers.getContractAt(
         "CollateralHolderVault",
         collateralVaultAddress,
-        await hre.ethers.getSigner(deployer)
+        await hre.ethers.getSigner(deployer),
       );
 
       const amoManagerAddress = (await hre.deployments.get(config.amoManagerId)).address;
@@ -97,7 +97,7 @@ dstableConfigs.forEach((config) => {
       oracleAggregatorContract = await hre.ethers.getContractAt(
         "OracleAggregator",
         oracleAggregatorAddress,
-        await hre.ethers.getSigner(deployer)
+        await hre.ethers.getSigner(deployer),
       );
 
       // Get dStable token
@@ -130,7 +130,7 @@ dstableConfigs.forEach((config) => {
         collateralVaultAddress,
         dstableInfo.address,
         oracleAggregatorAddress,
-        amoManagerAddress
+        amoManagerAddress,
       )) as unknown as IssuerV2;
       await issuerV2.waitForDeployment();
 
@@ -138,7 +138,7 @@ dstableConfigs.forEach((config) => {
       const stableWithRoles = await hre.ethers.getContractAt(
         "ERC20StablecoinUpgradeable",
         dstableInfo.address,
-        await hre.ethers.getSigner(deployer)
+        await hre.ethers.getSigner(deployer),
       );
       const MINTER_ROLE = await (stableWithRoles as any).MINTER_ROLE();
       await (stableWithRoles as any).grantRole(MINTER_ROLE, await issuerV2.getAddress());
@@ -161,7 +161,7 @@ dstableConfigs.forEach((config) => {
             dstableInfo.decimals,
             oracleAggregatorContract,
             collateralInfo.address,
-            dstableInfo.address
+            dstableInfo.address,
           );
 
           const minDStable = expectedDstableAmount;
@@ -179,7 +179,7 @@ dstableConfigs.forEach((config) => {
           assert.equal(
             vaultBalanceAfter - vaultBalanceBefore,
             collateralAmount,
-            "Collateral vault balance did not increase by the expected amount"
+            "Collateral vault balance did not increase by the expected amount",
           );
 
           const dstableReceived = userDstableBalanceAfter - userDstableBalanceBefore;
@@ -187,7 +187,7 @@ dstableConfigs.forEach((config) => {
           assert.equal(
             dstableReceived,
             expectedDstableAmount,
-            `User did not receive the expected amount of dStable. Expected ${expectedDstableAmount}, received ${dstableReceived}`
+            `User did not receive the expected amount of dStable. Expected ${expectedDstableAmount}, received ${dstableReceived}`,
           );
         });
 
@@ -223,7 +223,7 @@ dstableConfigs.forEach((config) => {
           dstableInfo.decimals,
           oracleAggregatorContract,
           collateralInfo.address,
-          dstableInfo.address
+          dstableInfo.address,
         );
 
         await collateralContract.connect(await hre.ethers.getSigner(user1)).approve(await issuerV2.getAddress(), collateralAmount);
@@ -252,7 +252,7 @@ dstableConfigs.forEach((config) => {
           config.symbol,
           dstableInfo.decimals,
           oracleAggregatorContract,
-          dstableInfo.address
+          dstableInfo.address,
         );
 
         const actualDstableAmount = await issuerV2.baseValueToDstableAmount(baseValue);
@@ -314,7 +314,7 @@ dstableConfigs.forEach((config) => {
         await issuerV2.pauseMinting();
 
         await expect(
-          issuerV2.connect(await hre.ethers.getSigner(user1)).issue(collateralAmount, collateralInfo.address, 0)
+          issuerV2.connect(await hre.ethers.getSigner(user1)).issue(collateralAmount, collateralInfo.address, 0),
         ).to.be.revertedWithCustomError(issuerV2, "EnforcedPause");
 
         await expect(issuerV2.issueUsingExcessCollateral(user2, 1n)).to.be.revertedWithCustomError(issuerV2, "EnforcedPause");
@@ -366,7 +366,7 @@ dstableConfigs.forEach((config) => {
           dstableInfo.decimals,
           oracleAggregatorContract,
           collateralInfo.address,
-          dstableInfo.address
+          dstableInfo.address,
         );
 
         const initialCirculatingDstable = await issuerV2.circulatingDstable();

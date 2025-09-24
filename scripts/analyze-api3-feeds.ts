@@ -8,7 +8,7 @@ const hre = require("hardhat") as HardhatRuntimeEnvironment;
 // API3 Proxy interface for reading price data
 const API3_PROXY_ABI = [
   "function read() external view returns (int224 value, uint32 timestamp)",
-  "function description() external view returns (string memory)"
+  "function description() external view returns (string memory)",
 ];
 
 interface FeedInfo {
@@ -67,8 +67,7 @@ async function getFeedInfo(proxyAddress: string): Promise<{
       // Check if price is stale (older than 25 hours for API3)
       const now = Math.floor(Date.now() / 1000);
       const staleThreshold = 25 * 60 * 60; // 25 hours in seconds
-      isStale = (now - timestamp) > staleThreshold;
-
+      isStale = now - timestamp > staleThreshold;
     } catch (e) {
       console.log(`Warning: Could not read price from ${proxyAddress}:`, e);
     }
@@ -86,7 +85,10 @@ async function getFeedInfo(proxyAddress: string): Promise<{
 /**
  * Determine scaling requirements
  */
-function analyzeScaling(actualDecimals: number, expectedDecimals: number): {
+function analyzeScaling(
+  actualDecimals: number,
+  expectedDecimals: number,
+): {
   scalingNeeded: "none" | "upscale" | "downscale";
   scalingFactor: number;
 } {
@@ -152,7 +154,7 @@ async function extractAPI3Feeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo.rawPrice,
         priceTimestamp: feedInfo.timestamp,
         isStale: feedInfo.isStale,
-        ...scaling
+        ...scaling,
       });
     }
 
@@ -176,7 +178,7 @@ async function extractAPI3Feeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo.rawPrice,
         priceTimestamp: feedInfo.timestamp,
         isStale: feedInfo.isStale,
-        ...scaling
+        ...scaling,
       });
     }
 
@@ -202,10 +204,10 @@ async function extractAPI3Feeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo1.rawPrice,
         priceTimestamp: feedInfo1.timestamp,
         isStale: feedInfo1.isStale,
-        ...scaling1
+        ...scaling1,
       });
 
-      // Proxy 2 - typically intermediary/base pair  
+      // Proxy 2 - typically intermediary/base pair
       const feedInfo2 = await getFeedInfo(compositeConfig.proxy2);
       const scaling2 = analyzeScaling(feedInfo2.decimals, expectedDecimals);
 
@@ -223,7 +225,7 @@ async function extractAPI3Feeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo2.rawPrice,
         priceTimestamp: feedInfo2.timestamp,
         isStale: feedInfo2.isStale,
-        ...scaling2
+        ...scaling2,
       });
     }
   }
@@ -248,15 +250,15 @@ function printAnalysis(feeds: FeedInfo[]) {
   }
 
   // Group by scaling requirements
-  const noScaling = feeds.filter(f => f.scalingNeeded === "none");
-  const upscaling = feeds.filter(f => f.scalingNeeded === "upscale");
-  const downscaling = feeds.filter(f => f.scalingNeeded === "downscale");
+  const noScaling = feeds.filter((f) => f.scalingNeeded === "none");
+  const upscaling = feeds.filter((f) => f.scalingNeeded === "upscale");
+  const downscaling = feeds.filter((f) => f.scalingNeeded === "downscale");
 
   console.log(`\n✅ FEEDS REQUIRING NO SCALING (${noScaling.length}):`);
   if (noScaling.length === 0) {
     console.log("  None");
   } else {
-    noScaling.forEach(feed => {
+    noScaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 
@@ -277,7 +279,7 @@ function printAnalysis(feeds: FeedInfo[]) {
   if (upscaling.length === 0) {
     console.log("  None");
   } else {
-    upscaling.forEach(feed => {
+    upscaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 
@@ -298,7 +300,7 @@ function printAnalysis(feeds: FeedInfo[]) {
   if (downscaling.length === 0) {
     console.log("  None");
   } else {
-    downscaling.forEach(feed => {
+    downscaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 

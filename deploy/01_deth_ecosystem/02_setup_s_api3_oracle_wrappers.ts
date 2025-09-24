@@ -21,7 +21,7 @@ async function performOracleSanityChecks(
   wrapper: any,
   feeds: Record<string, any>,
   baseCurrencyUnit: bigint,
-  wrapperName: string
+  wrapperName: string,
 ): Promise<void> {
   for (const [assetAddress] of Object.entries(feeds)) {
     try {
@@ -30,10 +30,10 @@ async function performOracleSanityChecks(
 
       if (normalizedPrice < 0.9 || normalizedPrice > 2) {
         console.error(
-          `Sanity check failed for asset ${assetAddress} in ${wrapperName}: Normalized price ${normalizedPrice} is outside the range [0.9, 2]`
+          `Sanity check failed for asset ${assetAddress} in ${wrapperName}: Normalized price ${normalizedPrice} is outside the range [0.9, 2]`,
         );
         throw new Error(
-          `Sanity check failed for asset ${assetAddress} in ${wrapperName}: Normalized price ${normalizedPrice} is outside the range [0.9, 2]`
+          `Sanity check failed for asset ${assetAddress} in ${wrapperName}: Normalized price ${normalizedPrice} is outside the range [0.9, 2]`,
         );
       } else {
         console.log(`Sanity check passed for asset ${assetAddress} in ${wrapperName}: Normalized price is ${normalizedPrice}`);
@@ -87,7 +87,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
 
   const api3WrapperWithThresholding = await hre.ethers.getContractAt(
     "API3WrapperWithThresholding",
-    api3WrapperWithThresholdingDeployment.address
+    api3WrapperWithThresholdingDeployment.address,
   );
 
   // Set proxies and thresholds for feeds with thresholding
@@ -119,7 +119,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
 
   const api3CompositeWrapper = await hre.ethers.getContractAt(
     "API3CompositeWrapperWithThresholding",
-    api3CompositeWrapperDeployment.address
+    api3CompositeWrapperDeployment.address,
   );
 
   // Add composite feeds
@@ -141,7 +141,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment): Pr
       typedFeedConfig.lowerThresholdInBase1,
       typedFeedConfig.fixedPriceInBase1,
       typedFeedConfig.lowerThresholdInBase2,
-      typedFeedConfig.fixedPriceInBase2
+      typedFeedConfig.fixedPriceInBase2,
     );
     console.log(`Set composite API3 feed for asset ${assetAddress}`);
   }

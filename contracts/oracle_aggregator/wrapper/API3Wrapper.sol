@@ -25,27 +25,27 @@ import "../interface/api3/BaseAPI3Wrapper.sol";
  * @dev Implementation of IAPI3Wrapper for standard API3 oracles
  */
 contract API3Wrapper is BaseAPI3Wrapper {
-  mapping(address => IProxy) public assetToProxy;
+    mapping(address => IProxy) public assetToProxy;
 
-  error ProxyNotSet(address asset);
+    error ProxyNotSet(address asset);
 
-  constructor(address baseCurrency, uint256 _baseCurrencyUnit) BaseAPI3Wrapper(baseCurrency, _baseCurrencyUnit) {}
+    constructor(address baseCurrency, uint256 _baseCurrencyUnit) BaseAPI3Wrapper(baseCurrency, _baseCurrencyUnit) {}
 
-  function getPriceInfo(address asset) public view virtual override returns (uint256 price, bool isAlive) {
-    IProxy api3Proxy = assetToProxy[asset];
-    if (address(api3Proxy) == address(0)) {
-      revert ProxyNotSet(asset);
+    function getPriceInfo(address asset) public view virtual override returns (uint256 price, bool isAlive) {
+        IProxy api3Proxy = assetToProxy[asset];
+        if (address(api3Proxy) == address(0)) {
+            revert ProxyNotSet(asset);
+        }
+
+        (int224 value, uint32 timestamp) = api3Proxy.read();
+        price = value > 0 ? uint256(uint224(value)) : 0;
+
+        isAlive = price > 0 && timestamp + API3_HEARTBEAT + heartbeatStaleTimeLimit > block.timestamp;
+
+        price = _convertToBaseCurrencyUnit(price);
     }
 
-    (int224 value, uint32 timestamp) = api3Proxy.read();
-    price = value > 0 ? uint256(uint224(value)) : 0;
-
-    isAlive = price > 0 && timestamp + API3_HEARTBEAT + heartbeatStaleTimeLimit > block.timestamp;
-
-    price = _convertToBaseCurrencyUnit(price);
-  }
-
-  function setProxy(address asset, address proxy) external onlyRole(ORACLE_MANAGER_ROLE) {
-    assetToProxy[asset] = IProxy(proxy);
-  }
+    function setProxy(address asset, address proxy) external onlyRole(ORACLE_MANAGER_ROLE) {
+        assetToProxy[asset] = IProxy(proxy);
+    }
 }

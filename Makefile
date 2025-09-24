@@ -1,6 +1,10 @@
 # Make 'help' the default target
 .DEFAULT_GOAL := help
 
+
+# shared targets live here; define project-specific targets after this line
+include .shared/Makefile
+
 help: ## Show this help menu
 	@echo "Usage:"
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'

@@ -49,7 +49,7 @@ async function extractAPI3FeedsSummary(): Promise<FeedSummary[]> {
         feedAddress: proxyAddress,
         feedType: "Plain",
         pairDescription: `${assetSymbol}/${baseCurrency}`,
-        baseCurrency
+        baseCurrency,
       });
     }
 
@@ -62,7 +62,7 @@ async function extractAPI3FeedsSummary(): Promise<FeedSummary[]> {
         feedAddress: wrapperConfig.proxy,
         feedType: "Thresholding",
         pairDescription: `${assetSymbol}/${baseCurrency}`,
-        baseCurrency
+        baseCurrency,
       });
     }
 
@@ -76,7 +76,7 @@ async function extractAPI3FeedsSummary(): Promise<FeedSummary[]> {
         feedAddress: compositeConfig.proxy1,
         feedType: "Composite-1",
         pairDescription: `${assetSymbol}/frxUSD`,
-        baseCurrency
+        baseCurrency,
       });
 
       feeds.push({
@@ -85,7 +85,7 @@ async function extractAPI3FeedsSummary(): Promise<FeedSummary[]> {
         feedAddress: compositeConfig.proxy2,
         feedType: "Composite-2",
         pairDescription: `frxUSD/${baseCurrency}`,
-        baseCurrency
+        baseCurrency,
       });
     }
   }
@@ -119,21 +119,15 @@ function printFeedsTable(feeds: FeedSummary[]) {
 
   // Print separator
   let separator = "|";
-  widths.forEach(w => {
+  widths.forEach((w) => {
     separator += "-".repeat(w + 2) + "|";
   });
   console.log(separator);
 
   // Print rows
-  feeds.forEach(feed => {
+  feeds.forEach((feed) => {
     let row = "|";
-    const values = [
-      feed.asset,
-      feed.pairDescription,
-      feed.feedType,
-      feed.feedAddress,
-      feed.assetAddress
-    ];
+    const values = [feed.asset, feed.pairDescription, feed.feedType, feed.feedAddress, feed.assetAddress];
 
     values.forEach((val, i) => {
       row += ` ${val.padEnd(widths[i])} |`;
@@ -146,11 +140,11 @@ function printFeedsTable(feeds: FeedSummary[]) {
   console.log("=".repeat(120));
 
   // Group by base currency
-  const usdFeeds = feeds.filter(f => f.baseCurrency === "USD");
-  const ethFeeds = feeds.filter(f => f.baseCurrency === "ETH");
+  const usdFeeds = feeds.filter((f) => f.baseCurrency === "USD");
+  const ethFeeds = feeds.filter((f) => f.baseCurrency === "ETH");
 
   console.log(`\n📈 USD Oracle Aggregator: ${usdFeeds.length} feeds`);
-  usdFeeds.forEach(feed => {
+  usdFeeds.forEach((feed) => {
     console.log(`   • ${feed.asset} (${feed.feedType}): ${feed.feedAddress}`);
   });
 
@@ -158,7 +152,7 @@ function printFeedsTable(feeds: FeedSummary[]) {
   if (ethFeeds.length === 0) {
     console.log("   • No API3 feeds configured");
   } else {
-    ethFeeds.forEach(feed => {
+    ethFeeds.forEach((feed) => {
       console.log(`   • ${feed.asset} (${feed.feedType}): ${feed.feedAddress}`);
     });
   }
@@ -179,7 +173,6 @@ async function main() {
     console.log("   • Oracle Aggregator expects 18 decimals");
     console.log("   • No decimal conversion needed for current feeds");
     console.log("   • Composite feeds multiply two prices: proxy1 × proxy2");
-
   } catch (error) {
     console.error("❌ Error listing feeds:", error);
     process.exit(1);

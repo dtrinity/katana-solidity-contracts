@@ -83,7 +83,7 @@ async function fetchDStakeComponents(
     ethers: HardhatRuntimeEnvironment["ethers"];
     globalHre: HardhatRuntimeEnvironment; // For getTokenContractForSymbol
   },
-  config: DStakeFixtureConfig
+  config: DStakeFixtureConfig,
 ) {
   const { deployments, getNamedAccounts, ethers, globalHre } = hreElements;
   const { deployer } = await getNamedAccounts();
@@ -95,7 +95,7 @@ async function fetchDStakeComponents(
 
   const collateralVault = await ethers.getContractAt(
     "DStakeCollateralVault",
-    (await deployments.get(config.collateralVaultContractId)).address
+    (await deployments.get(config.collateralVaultContractId)).address,
   );
 
   const router = await ethers.getContractAt("DStakeRouterDLend", (await deployments.get(config.routerContractId)).address);
@@ -155,7 +155,7 @@ export async function executeSetupDLendRewards(
   rewardTokenSymbol: string,
   rewardAmount: BigNumberish,
   emissionPerSecondSetting?: BigNumberish, // Optional, with default below
-  distributionDuration: number = 3600
+  distributionDuration: number = 3600,
 ) {
   const { deployments, ethers, getNamedAccounts, globalHre } = hreElements;
 
@@ -185,7 +185,7 @@ export async function executeSetupDLendRewards(
   const { contract: rewardToken, tokenInfo: rewardTokenInfo } = await getTokenContractForSymbol(
     globalHre,
     signer.address,
-    rewardTokenSymbol
+    rewardTokenSymbol,
   );
 
   // Get EmissionManager and RewardsController instances
@@ -262,7 +262,7 @@ export const createDStakeFixture = (config: DStakeFixtureConfig) => {
         ethers: hreFixtureEnv.ethers,
         globalHre: hreFixtureEnv,
       },
-      config
+      config,
     );
   });
 };
@@ -272,7 +272,7 @@ export const setupDLendRewardsFixture = (
   rewardTokenSymbol: string,
   rewardAmount: BigNumberish,
   emissionPerSecond?: BigNumberish,
-  distributionDuration: number = 3600
+  distributionDuration: number = 3600,
 ) =>
   deployments.createFixture(async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
     // Execute DStake rewards setup, which includes its own deployments.fixture(allDeploymentTags)
@@ -288,7 +288,7 @@ export const setupDLendRewardsFixture = (
       rewardTokenSymbol,
       rewardAmount,
       emissionPerSecond,
-      distributionDuration
+      distributionDuration,
     );
   });
 
@@ -297,7 +297,7 @@ export const SDUSDRewardsFixture = setupDLendRewardsFixture(
   SDUSD_CONFIG,
   "sfrxUSD",
   ethers.parseUnits("100", 6), // total reward amount
-  ethers.parseUnits("1", 6) // emission per second (1 token/sec in 6-decimals)
+  ethers.parseUnits("1", 6), // emission per second (1 token/sec in 6-decimals)
 );
 
 // Pre-bound SDS rewards fixture for table-driven tests

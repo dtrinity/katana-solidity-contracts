@@ -50,7 +50,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
       if (!adapterConfig.vaultAsset || adapterConfig.vaultAsset === ethers.ZeroAddress) {
         console.log(
-          `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing vaultAsset for adapter ${adapterConfig.adapterContract} (likely due to dlend infrastructure not being deployed)`
+          `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing vaultAsset for adapter ${adapterConfig.adapterContract} (likely due to dlend infrastructure not being deployed)`,
         );
         hasInvalidAdapter = true;
         break;
@@ -59,7 +59,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       // dLendConversionAdapter requires dLendAddressesProvider
       if (adapterConfig.adapterContract === "dLendConversionAdapter" && !dLendAddressesProviderAddress) {
         console.log(
-          `⚠️  Skipping dSTAKE instance ${instanceKey}: dLend PoolAddressesProvider not found for ${adapterConfig.adapterContract}`
+          `⚠️  Skipping dSTAKE instance ${instanceKey}: dLend PoolAddressesProvider not found for ${adapterConfig.adapterContract}`,
         );
         hasInvalidAdapter = true;
         break;
