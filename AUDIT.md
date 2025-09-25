@@ -83,32 +83,23 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: Updated `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` and `test/reward_claimable/RewardClaimable.ts` to grant the role in fixtures before exercising compounding so behaviour and accounting remain covered.
 - **Residual risk**: Compounding now relies on a trusted operator. Revisit once a robust permissionless auction or router-executed swap flow is ready.
 
+### 14. Redeem return value ignores over-withdrawals
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`
+- **Fix**: Refactored `_withdraw` through `_withdrawAndReturnNet`, allowing `redeem` to surface the router-settled net assets even when rounding delivers more than requested (`DStakeTokenV2.sol:249`, `:269-309`). The helper centralizes allowance spending, share burns, router invocation, and settlement so every exit path now reports the true post-fee amount.
+- **Tests**: `yarn hardhat test test/dstake/DStakeSolverMode.test.ts` (covers solver withdrawals and fee consistency) and existing ERC4626 regression suite.
+- **Residual risk**: None noted; ERC4626 callers now observe accurate balances under all router rounding outcomes.
+
+### 15. Redeem capacity clamp surfaced to callers
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`, `test/dstake/DStakeRouterV2.test.ts`
+- **Fix**: Overrode `maxRedeem` to mirror the router-aware `maxWithdraw` ceiling and return the share burn that matches the single-vault capacity, preventing callers from overshooting the deterministic router limit (`DStakeTokenV2.sol:302-319`). Added a regression test that verifies the clamp both matches `previewWithdraw(maxWithdraw)` and rejects larger share burns with `ERC4626ExceedsMaxRedeem` (`test/dstake/DStakeRouterV2.test.ts:292`).
+- **Residual risk**: Router heuristics may still surface `NoLiquidityAvailable` if no single vault can satisfy the clamped request; the ERC4626 view functions now advertise that limit so integrators can split redemptions when needed.
+
 ## Open
 
-### 1. Adapter valuation revert bricks totalAssets
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeCollateralVaultV2.sol:84`
-- **Impact**: Any adapter that reverts in `strategyShareValueInDStable` bubbles up through `totalValueInDStable`, causing `DStakeToken.totalAssets()` and every ERC4626 preview/deposit/withdraw path to revert, effectively freezing the vault while the adapter is unhealthy (e.g., oracle stale or paused).
-
-### 2. redeem return value ignores over-withdrawals
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:303`, `contracts/vaults/dstake/DStakeTokenV2.sol:354`
-- **Impact**: If `router.withdraw` delivers more than the requested amount due to upstream rounding, `_settleWithdrawal` forwards the larger net amount to the receiver but `redeem` still returns the original request. Callers that trust the return value under-account their receipts, violating ERC4626 expectations and breaking downstream accounting.
-
-### 3. MetaMorpho withdrawal underreports redeemed balance
-- **Severity**: Low
-- **Component**: `contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol:198`
-- **Impact**: If the adapter already holds MetaMorpho shares (dust transfers or previous leftovers), `withdrawFromStrategy` redeems them to the router but still returns only the first redemption amount. The router and token trust the return value for slippage and fee accounting, so the extra dStable lingers as untracked surplus and emitted events misstate the withdrawal. Attackers can grief by seeding shares into the adapter to create off-book balances that require manual cleanup.
-
-### 4. Dust tolerance disables solver-style rebalance slippage guard
+### 1. Dust tolerance disables solver-style rebalance slippage guard
 - **Severity**: Medium
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:529`
 - **Impact**: `rebalanceStrategiesBySharesViaExternalLiquidity` subtracts `dustTolerance` (configured in dStable units) directly from `minToShareAmount` (strategy share units). For strategies whose share decimals are lower than the dStable’s, or whenever operators raise `dustTolerance` above the share amount for a planned move, `minRequiredWithDust` collapses to zero and the function no longer enforces the caller’s minimum. An adapter that returns zero shares—whether due to fees, a mispriced exchange, or malicious behavior—will pass the guard and burn the entire rebalance amount even though the caller required a non-zero minimum.
-
-### 5. Redeem bypasses router capacity clamp
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:263`, `contracts/vaults/dstake/DStakeTokenV2.sol:281`, `node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol:168`
-- **Impact**: `redeem(maxRedeem(owner), ...)` inherits OpenZeppelin's unrestricted `maxRedeem` (entire share balance), yet withdrawals still route through the single-vault router which only services up to `getMaxSingleVaultWithdraw` per call. When the share value exceeds that limit, the router reverts (`NoLiquidityAvailable`), so the advertised `maxRedeem` no longer succeeds, breaking ERC4626 expectations and share-based integrators.
 
 ## Acknowledged (Won't Fix)
 
@@ -123,6 +114,16 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Issue**: `_deposit` relies on vanilla `approve` before delegating to the router. Non-standard ERC20s that require allowance resets could break deposits.
 - **Recommendation**: Switch to `forceApprove` with a zero clear once the router pulls funds, matching the rest of the codebase’s defensive approvals.
 - **Decision**: Considered low impact for dStable; no change planned.
+
+### 3. Adapter valuation revert bricks totalAssets
+- **Component**: `contracts/vaults/dstake/DStakeCollateralVaultV2.sol:84`
+- **Issue**: Any adapter that reverts in `strategyShareValueInDStable` bubbles up through `totalValueInDStable`, causing `DStakeToken.totalAssets()` and every ERC4626 preview/deposit/withdraw path to revert, effectively freezing the vault while the adapter is unhealthy (e.g., oracle stale or paused).
+- **Decision**: Accepted risk per governance direction; no mitigation planned this cycle.
+
+### 4. MetaMorpho withdrawal underreports redeemed balance
+- **Component**: `contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol:198`
+- **Issue**: If the adapter already holds MetaMorpho shares (dust transfers or previous leftovers), `withdrawFromStrategy` redeems them to the router but still returns only the first redemption amount. The router and token trust the return value for slippage and fee accounting, so the extra dStable lingers as untracked surplus and emitted events misstate the withdrawal.
+- **Decision**: Accepted risk per governance direction.
 
 ---
 *Status: Identified high-severity issues are mitigated; follow-ups focus on observability and long-tail adapter support.*

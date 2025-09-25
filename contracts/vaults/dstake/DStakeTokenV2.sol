@@ -272,6 +272,25 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
   }
 
+  function maxRedeem(address owner) public view virtual override returns (uint256) {
+    uint256 shareBalance = balanceOf(owner);
+    if (shareBalance == 0) {
+      return 0;
+    }
+
+    if (address(router) == address(0)) {
+      return shareBalance;
+    }
+
+    uint256 maxNetAssets = maxWithdraw(owner);
+    if (maxNetAssets == 0) {
+      return 0;
+    }
+
+    uint256 sharesForMax = previewWithdraw(maxNetAssets);
+    return sharesForMax < shareBalance ? sharesForMax : shareBalance;
+  }
+
   /**
    * @dev Override to ensure the withdrawal fee is deducted only once.
    *      The `shares` parameter is converted to its equivalent gross asset value, then the

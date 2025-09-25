@@ -7,6 +7,7 @@ import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol"
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { IDStakeRouterV2 } from "./interfaces/IDStakeRouterV2.sol";
 import { IDStableConversionAdapterV2 } from "./interfaces/IDStableConversionAdapterV2.sol";
@@ -23,6 +24,7 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
   using AllocationCalculator for uint256[];
+  using Math for uint256;
 
   // --- Errors ---
   error ZeroAddress();
@@ -525,10 +527,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (actualToStrategyShare != toStrategyShare)
       revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
-    // Validate that actual conversion result meets minimum requirements (allowing for dust tolerance)
-    uint256 minRequiredWithDust = minToShareAmount > dustTolerance ? minToShareAmount - dustTolerance : 0;
-    if (resultingToShareAmount < minRequiredWithDust) {
-      revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
+    // Validate actual conversion result by measuring the share shortfall in dStable units and comparing to tolerance
+    if (resultingToShareAmount < minToShareAmount) {
+      uint256 shareShortfall = minToShareAmount - resultingToShareAmount;
+      uint256 shortfallValue = shareShortfall.mulDiv(
+        locals.dStableValueIn,
+        locals.calculatedToStrategyShareAmount,
+        Math.Rounding.Ceil
+      );
+
+      if (shortfallValue > dustTolerance) {
+        revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
+      }
     }
 
     IERC20(dStable).forceApprove(locals.toAdapterAddress, 0);
