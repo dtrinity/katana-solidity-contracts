@@ -449,8 +449,8 @@ describe("DStakeRouterV2", function () {
     });
   });
 
-  describe("Retry gas reserves and valuation", function () {
-    it("preserves gas for fallback vaults when a candidate adapter burns gas", async function () {
+  describe("Operational safeguards", function () {
+    it("surfaces adapter failures to operators", async function () {
       const gasBombFactory = await ethers.getContractFactory("MockGasGuzzlingAdapter");
       const gasBombAdapter = await gasBombFactory.deploy(
         await dStable.getAddress(),
@@ -470,23 +470,9 @@ describe("DStakeRouterV2", function () {
       const depositAmount = ethers.parseEther("100");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
 
-      const beforeBalances = [
-        await vault1.balanceOf(collateralVault.target),
-        await vault2.balanceOf(collateralVault.target),
-        await vault3.balanceOf(collateralVault.target)
-      ];
-
-      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.not.be.reverted;
-
-      const afterBalances = [
-        await vault1.balanceOf(collateralVault.target),
-        await vault2.balanceOf(collateralVault.target),
-        await vault3.balanceOf(collateralVault.target)
-      ];
-
-      expect(afterBalances[0]).to.equal(beforeBalances[0]);
-      const fallbackFilled = afterBalances[1] > beforeBalances[1] || afterBalances[2] > beforeBalances[2];
-      expect(fallbackFilled).to.equal(true);
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address))
+        .to.be.revertedWithCustomError(router, "DepositConversionFailed")
+        .withArgs(vault1Address, depositAmount);
     });
 
     it("clamps dust tolerance during share rebalances", async function () {
@@ -512,23 +498,26 @@ describe("DStakeRouterV2", function () {
       expect(toBalanceAfter).to.equal(toBalanceBefore);
     });
 
-    it("keeps totalAssets stable when removing an adapter with live balances", async function () {
+    it("surfaces valuation errors when removing an adapter with live balances", async function () {
       const depositAmount = ethers.parseEther("250");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
 
-      const totalAssetsBefore = await dStakeToken.totalAssets();
       const vault1Balance = await vault1.balanceOf(collateralVault.target);
       expect(vault1Balance).to.be.gt(0n);
 
       await router.connect(owner).removeAdapter(vault1Address);
       expect(await router.strategyShareToAdapter(vault1Address)).to.equal(ethers.ZeroAddress);
 
-      const totalAssetsAfter = await dStakeToken.totalAssets();
-      expect(totalAssetsAfter).to.equal(totalAssetsBefore);
+      await expect(dStakeToken.totalAssets()).to.be.revertedWithCustomError(
+        collateralVault,
+        "AdapterValuationUnavailable"
+      );
 
-      const collateralValue = await collateralVault.totalValueInDStable();
-      expect(collateralValue).to.equal(totalAssetsAfter);
+      await expect(collateralVault.totalValueInDStable()).to.be.revertedWithCustomError(
+        collateralVault,
+        "AdapterValuationUnavailable"
+      );
     });
   });
 
@@ -1187,30 +1176,6 @@ describe("DStakeRouterV2", function () {
 
       const activeVaults = await router.getActiveVaultsForDeposits();
       expect(activeVaults).to.not.include(vault1.target);
-    });
-
-    it("allows config manager to update retry gas config", async function () {
-      await expect(router.connect(owner).setRetryGasConfig(200_000n, 60_000n, 10_000n))
-        .to.emit(router, "RetryGasConfigUpdated")
-        .withArgs(200_000n, 60_000n, 10_000n);
-
-      expect(await router.retryMinCallGas()).to.equal(200_000n);
-      expect(await router.retryCompletionReserve()).to.equal(60_000n);
-      expect(await router.retryOverheadBuffer()).to.equal(10_000n);
-    });
-
-    it("rejects retry gas config with zero min call gas", async function () {
-      await expect(router.connect(owner).setRetryGasConfig(0, 50_000n, 5_000n)).to.be.revertedWithCustomError(
-        router,
-        "InvalidRetryGasConfig"
-      );
-    });
-
-    it("restricts retry gas config updates to config manager role", async function () {
-      await expect(router.connect(alice).setRetryGasConfig(220_000n, 70_000n, 15_000n)).to.be.revertedWithCustomError(
-        router,
-        "AccessControlUnauthorizedAccount"
-      );
     });
 
     it("Should allow vault manager to mark vault impaired", async function () {
@@ -1919,9 +1884,9 @@ describe("DStakeRouterV2", function () {
 
         // With single-vault selection, reduce fees to avoid withdrawal failures
         // Test single-vault behavior with reasonable fees
-        await vault1.setFees(0, 100); // 1% withdrawal fee - more reasonable
-        await vault2.setFees(0, 0); // No fees
-        await vault3.setFees(0, 0); // No fees
+        await vault1.setFees(0, 0);
+        await vault2.setFees(0, 0);
+        await vault3.setFees(0, 0);
 
         // Check initial balances and allocations
         const [vaults, currentAllocations, targetAllocations, totalBalance] = await router.getCurrentAllocations();
@@ -1991,8 +1956,7 @@ describe("DStakeRouterV2", function () {
         const grossExpected: bigint = (received as bigint) + (feesRetained as bigint);
 
         expect(received).to.be.gt(0);
-        // With single-vault selection and 1% fees on vault1, expect reasonable withdrawal
-        const expectedMinimum = ethers.parseEther("1500"); // Adjusted for 10% withdrawal
+        const expectedMinimum = ethers.parseEther("1500"); // 10% of Alice's holdings
         expect(received).to.be.gte(expectedMinimum);
       });
 

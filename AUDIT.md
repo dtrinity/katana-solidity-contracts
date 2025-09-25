@@ -12,12 +12,11 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ## Resolved
 
-### 1. Router retry gas exhaustion
+### 1. Router retry gas removal
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`
-- **Fix**: Added `_computeRetryCallGas` to meter the gas forwarded to each self-call retry, reserving a per-attempt stipend and completion buffer. Deposits and withdrawals now call the wrappers with `gas: callGas`, and revert early with `InsufficientRetryGas` if the caller supplies too little headroom (`DStakeRouterV2.sol:209`, `:259`, `:828`). Governance can tune the stipend via `setRetryGasConfig` without redeploying.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (gas-guzzling adapter fallback)
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts` now includes `"preserves gas for fallback vaults when a candidate adapter burns gas"` which deploys a gas-guzzling adapter and proves the router falls through to healthy vaults instead of exhausting gas.
-- **Residual risk**: The stipend is heuristic; pathological adapters could still burn through reserved gas across multiple retries. Future hardening could track abusive adapters and auto-quarantine after repeated failures.
+- **Fix**: Simplified deposit/withdraw routing to attempt a single deterministic vault and bubble up adapter failures, removing `_computeRetryCallGas`, the external retry wrappers, and the `setRetryGasConfig` governance knob. Eliminates the EIP-150 stipend gap while aligning with the "trusted adapters" operating assumption.
+- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (`"surfaces adapter failures to operators"`)
+- **Residual risk**: A misconfigured or failing adapter now reverts the user flow until operators mark it unhealthy or rotate configurations; solver flows remain the escape hatch for partial fills.
 
 ### 2. Dust-tolerance underflow in share rebalances
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`
@@ -26,18 +25,15 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds `"clamps dust tolerance during share rebalances"` to confirm the router skips micro-moves without reverting or mutating balances.
 - **Residual risk**: Operators should monitor dust tolerance so that repeated no-op calls do not mask larger mismatches. Consider emitting an explicit event when a rebalance is skipped due to dust.
 
-### 3. Adapter removal zeroes collateral valuation
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`, `contracts/vaults/dstake/DStakeCollateralVaultV2.sol`
-- **Fixes**:
-  - `_removeAdapter` now leaves the strategy share registered while collateral remains, preventing valuation gaps during quarantines (`DStakeRouterV2.sol:1199`).
-  - The collateral vault falls back to ERC4626 previews (`previewRedeem` / `convertToAssets`) when an adapter is absent, so `totalValueInDStable` still reflects orphaned positions (`DStakeCollateralVaultV2.sol:71-99`).
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (adapter removal valuation fallback)
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds `"keeps totalAssets stable when removing an adapter with live balances"`, verifying share price continuity through adapter removal.
-- **Residual risk**: Fallback valuation relies on the strategy share implementing ERC4626 previews. Non-ERC4626 strategies will still read as zero; future work could persist last-known prices or require bespoke valuers.
+### 3. Adapter removal valuation guard
+- **Component**: `contracts/vaults/dstake/DStakeCollateralVaultV2.sol`
+- **Fix**: Removing an adapter while balances remain now causes NAV queries to revert with `AdapterValuationUnavailable`, forcing operators to supply a replacement adapter or migrate collateral before continuing.
+- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (`"surfaces valuation errors when removing an adapter with live balances"`)
+- **Residual risk**: Token operations halt until governance restores a pricing path. Runbooks must call out the need to migrate or relist collateral before adapter removal.
 
 ### 4. Documentation alignment
 - **Component**: `contracts/vaults/dstake/Design.md`
-- **Update**: Router retry and fallback sections now describe the gas stipend approach and warn that retries are best-effort, resolving the prior drift.
+- **Update**: Router docs now call out the single-vault, fail-fast routing model and direct operators toward health toggles / solver flows for exceptions, replacing the old gas-stipend narrative.
 - **Tested**: ❌ Documentation-only change
 
 ### 5. Solver dust donation (reference)

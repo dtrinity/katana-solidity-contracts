@@ -8,7 +8,6 @@ import { IDStableConversionAdapterV2 } from "./interfaces/IDStableConversionAdap
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 // ---------------------------------------------------------------------------
 // Internal interface to query the router's public mapping without importing the
@@ -40,6 +39,7 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
   error NonZeroBalance(address asset);
   error CannotRescueRestrictedToken(address token);
   error ETHTransferFailed(address receiver, uint256 amount);
+  error AdapterValuationUnavailable(address strategyShare);
 
   // --- Events ---
   event TokenRescued(address indexed token, address indexed receiver, uint256 amount);
@@ -85,7 +85,8 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
         continue;
       }
 
-      totalValue += _fallbackValuation(strategyShare, balance);
+      // Force operators to supply a live adapter before valuing the position so NAV cannot silently drop to zero.
+      revert AdapterValuationUnavailable(strategyShare);
     }
     return totalValue;
   }
@@ -158,21 +159,6 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
 
   function _isSupported(address strategyShare) private view returns (bool) {
     return _supportedStrategyShares.contains(strategyShare);
-  }
-
-function _fallbackValuation(address strategyShare, uint256 balance) private view returns (uint256 value) {
-    // Attempt to use ERC4626 previews when the adapter has been removed (e.g. during quarantines).
-    // If the strategy share does not implement ERC4626 previews, gracefully return zero so callers
-    // can decide how to handle the orphaned position off-chain.
-    try IERC4626(strategyShare).previewRedeem(balance) returns (uint256 assets) {
-      return assets;
-    } catch {}
-
-    try IERC4626(strategyShare).convertToAssets(balance) returns (uint256 assets) {
-      return assets;
-    } catch {}
-
-    return 0;
   }
 
   // --- External Views ---

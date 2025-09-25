@@ -50,10 +50,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error EmptyArrays();
   error ArrayLengthMismatch();
   error InvalidMaxRoutingAttempts(uint256 attempts);
-  error OnlySelfCallable();
   error IndexOutOfBounds();
-  error InsufficientRetryGas(uint256 gasLeft, uint256 requiredGas);
-  error InvalidRetryGasConfig();
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -74,11 +71,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   mapping(address => address) private _strategyShareToAdapter;
   address public defaultDepositStrategyShare;
-
-  // --- Retry Gas Controls ---
-  uint256 public retryCompletionReserve;
-  uint256 public retryMinCallGas;
-  uint256 public retryOverheadBuffer;
 
   struct ExchangeLocals {
     address fromAdapterAddress;
@@ -141,8 +133,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
   event MaxRoutingAttemptsUpdated(uint256 oldCount, uint256 newCount);
-  event RetryGasConfigUpdated(uint256 minCallGas, uint256 completionReserve, uint256 overheadBuffer);
-
   constructor(address _dStakeToken, address _collateralVault) {
     if (_dStakeToken == address(0) || _collateralVault == address(0)) {
       revert ZeroAddress();
@@ -162,10 +152,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     _grantRole(PAUSER_ROLE, msg.sender);
     _grantRole(DSTAKE_TOKEN_ROLE, _dStakeToken);
 
-    // initialise retry gas defaults
-    retryCompletionReserve = 50_000;
-    retryMinCallGas = 150_000;
-    retryOverheadBuffer = 5_000;
   }
 
   // --- Core Router Functions ---
@@ -200,44 +186,15 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
 
-    // Try vaults in allocation-aware order until one succeeds
-    // This maintains balance across vaults according to target allocations
-    for (uint256 i = 0; i < sortedVaults.length; i++) {
-      address targetVault = sortedVaults[i];
-      uint256 callGas = _computeRetryCallGas(sortedVaults.length - i);
+    // Route the entire deposit to the first under-allocated vault; health checks gate eligibility
+    address targetVault = sortedVaults[0];
+    _depositToVaultAtomically(targetVault, dStableAmount);
 
-      /**
-       * @dev External self-call with try/catch to isolate adapter failures and allow fallback.
-       * Notes:
-       * - Reentrancy: the public entrypoint is nonReentrant; the called wrapper is self-callable only.
-       * - Gas: there is no explicit gas cap. Under EIP-150 the caller retains ~1/64 gas on callee
-       *   failure, which usually allows continuing, but a callee can still consume most gas and
-       *   jeopardize subsequent attempts.
-       * - Exceptions: try/catch captures callee-side failures (revert/panic/OOG/call failure). It
-       *   cannot catch if this function itself runs out of gas.
-       * - Call frames: the external self-call creates a new call frame (separate operand stack) but
-       *   increases call depth; it does not prevent call-depth overflow.
-       * - Behavior: on any failure, continue to the next vault.
-       */
-      try this._depositToVaultWithRetry{ gas: callGas }(targetVault, dStableAmount) returns (uint256) {
-        // Success - emit event and return
-        address[] memory vaultArray = new address[](1);
-        uint256[] memory amountArray = new uint256[](1);
-        vaultArray[0] = targetVault;
-        amountArray[0] = dStableAmount;
-        emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount);
-        return;
-      } catch {
-        // Continue to next vault on any error (transient or permanent)
-        // External call pattern allows graceful fallback without gas exhaustion
-        if (i == sortedVaults.length - 1) {
-          // All vaults failed, no liquidity available
-          revert NoLiquidityAvailable();
-        }
-      }
-    }
-
-    revert NoLiquidityAvailable();
+    address[] memory vaultArray = new address[](1);
+    uint256[] memory amountArray = new uint256[](1);
+    vaultArray[0] = targetVault;
+    amountArray[0] = dStableAmount;
+    emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount);
   }
 
   function withdraw(
@@ -263,38 +220,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       selectionCount
     );
 
-    // Try vaults in allocation-aware order until one succeeds
-    for (uint256 i = 0; i < sortedVaults.length; i++) {
-      address targetVault = sortedVaults[i];
+    // Withdraw entirely from the most over-allocated vault and bubble up failures
+    address targetVault = sortedVaults[0];
+    uint256 withdrawnAmount = _withdrawFromVaultAtomically(targetVault, dStableAmount, false);
+    IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
 
-      /**
-       * @dev External self-call with try/catch for withdrawals to enable fallback across vaults.
-       * Mirrors the deposit path semantics regarding gas, exceptions, and call depth. The
-       * entrypoint is nonReentrant; the called wrapper is self-callable only.
-       */
-      uint256 callGas = _computeRetryCallGas(sortedVaults.length - i);
+    address[] memory vaultArray = new address[](1);
+    uint256[] memory amountArray = new uint256[](1);
+    vaultArray[0] = targetVault;
+    amountArray[0] = withdrawnAmount;
 
-      try this._withdrawFromVaultWithRetry{ gas: callGas }(targetVault, dStableAmount, false) returns (uint256 withdrawnAmount) {
-        IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
-
-        address[] memory vaultArray = new address[](1);
-        uint256[] memory amountArray = new uint256[](1);
-        vaultArray[0] = targetVault;
-        amountArray[0] = withdrawnAmount;
-
-        emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount);
-        return withdrawnAmount;
-      } catch {
-        // Continue to next vault on any error (transient or permanent)
-        // External call pattern allows graceful fallback without gas exhaustion
-        if (i == sortedVaults.length - 1) {
-          // All vaults failed, no liquidity available
-          revert NoLiquidityAvailable();
-        }
-      }
-    }
-
-    revert NoLiquidityAvailable();
+    emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount);
+    return withdrawnAmount;
   }
 
   // --- Solver Mode Entrypoints ---
@@ -841,14 +778,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     (activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
   }
 
-  function setRetryGasConfig(uint256 minCallGas, uint256 completionReserve, uint256 overheadBuffer) external onlyRole(CONFIG_MANAGER_ROLE) {
-    if (minCallGas == 0) revert InvalidRetryGasConfig();
-    retryMinCallGas = minCallGas;
-    retryCompletionReserve = completionReserve;
-    retryOverheadBuffer = overheadBuffer;
-    emit RetryGasConfigUpdated(minCallGas, completionReserve, overheadBuffer);
-  }
-
   function getVaultConfigByIndex(uint256 index) external view returns (VaultConfig memory config) {
     if (index >= vaultConfigs.length) revert IndexOutOfBounds();
     return vaultConfigs[index];
@@ -866,71 +795,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   // --- Internal Helpers ---
-
-  function _computeRetryCallGas(uint256 attemptsRemaining) private view returns (uint256 callGas) {
-    if (attemptsRemaining == 0) {
-      return gasleft();
-    }
-
-    uint256 rawGasLeft = gasleft();
-    if (rawGasLeft <= retryOverheadBuffer) {
-      revert InsufficientRetryGas(rawGasLeft, retryOverheadBuffer + 1);
-    }
-
-    uint256 gasLeft = rawGasLeft - retryOverheadBuffer;
-    uint256 required = (attemptsRemaining * retryMinCallGas) + retryCompletionReserve;
-    if (gasLeft <= required) {
-      revert InsufficientRetryGas(rawGasLeft, required + retryOverheadBuffer);
-    }
-
-    if (attemptsRemaining == 1) {
-      callGas = gasLeft - retryCompletionReserve;
-    } else {
-      uint256 available = gasLeft - retryCompletionReserve;
-      uint256 perAttempt = available / attemptsRemaining;
-      if (perAttempt <= retryMinCallGas) {
-        revert InsufficientRetryGas(rawGasLeft, required + retryOverheadBuffer);
-      }
-      callGas = perAttempt;
-    }
-
-    return callGas;
-  }
-
-  /**
-   * @notice External wrapper for internal deposit logic used in retry mechanism
-   * @dev External self-call wrapper used solely by the router's auto-routing loop. Rationale:
-   *      - Enables try/catch around the adapter path to tolerate callee failures and fall back.
-   *      - No explicit gas cap is applied; under EIP-150 the caller retains ~1/64 gas on callee
-   *        failure, but a misbehaving callee can still consume most remaining gas.
-   *      - Creates a new call frame (separate operand stack) but increases call depth; it does not
-   *        prevent call-depth overflow. Internal state changes before the call still revert on failure.
-   *      - Guarded via `require(msg.sender == address(this))` so only the router can invoke it.
-   * @param vault Target vault for deposit
-   * @param dStableAmount Amount to deposit
-   */
-  function _depositToVaultWithRetry(address vault, uint256 dStableAmount) external returns (uint256 actualShares) {
-    if (msg.sender != address(this)) revert OnlySelfCallable();
-    // This is called by this contract only, for auto-routing retries
-    actualShares = _depositToVaultAtomically(vault, dStableAmount);
-  }
-
-  /**
-   * @notice External wrapper for internal withdrawal logic used in retry mechanism.
-   * @dev External self-call wrapper for the withdrawal retry path. Semantics mirror the deposit
-   *      wrapper:
-   *      - try/catch allows fallback on callee failures; no hard gas isolation (EIP-150 applies).
-   *      - New call frame but increased call depth; does not avoid call-depth overflow.
-   *      - Only callable by this contract via `require(msg.sender == address(this))`.
-   * @param vault Target vault for withdrawal.
-   * @param dStableAmount Gross dStable amount the router aims to obtain from the vault.
-   * @return withdrawn The actual gross dStable amount obtained (must be ≥ `dStableAmount`).
-   */
-  function _withdrawFromVaultWithRetry(address vault, uint256 dStableAmount, bool allowSlippage) external returns (uint256 withdrawn) {
-    if (msg.sender != address(this)) revert OnlySelfCallable();
-    // This is called by this contract only, for auto-routing retries
-    withdrawn = _withdrawFromVaultAtomically(vault, dStableAmount, allowSlippage);
-  }
 
   function _depositToVaultAtomically(address vault, uint256 dStableAmount) internal returns (uint256 actualShares) {
     VaultConfig memory config = _getVaultConfig(vault);

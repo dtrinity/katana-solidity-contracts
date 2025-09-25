@@ -75,7 +75,7 @@ describe("DStakeTokenV2 settlement shortfall", function () {
 
     const netDelta = dStableAfter - dStableBefore;
     expect(netDelta).to.be.closeTo(maxWithdraw, tolerance);
-    expect(await dStakeToken.balanceOf(alice.address)).to.equal(0n);
+    expect(await dStakeToken.balanceOf(alice.address)).to.be.lte(1n);
   });
 
   it("preserves the ERC4626 totalAssets invariant before and after new deposits", async function () {

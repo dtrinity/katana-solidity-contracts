@@ -15,6 +15,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   - Holds ERC20 "strategy shares" (e.g., ERC4626 wrapper shares from upstream strategies) and exposes `totalValueInDStable()`.
   - Maintains a registry of supported strategy shares; adapters can be rotated without migrating balances.
   - Allows governance to delist strategy shares even if dust remains (avoids griefing vector).
+  - Refuses to value a strategy share without a live adapter; NAV queries revert so governance must restore pricing or pause deposits before removal.
   - Grants `ROUTER_ROLE` to the active router so only the router can move collateral.
 
 - `DStakeRouterV2` – deterministic orchestrator (`contracts/vaults/dstake/DStakeRouterV2.sol`)
@@ -35,13 +36,13 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User deposit / mint**
   1. dSTABLE moves into `DStakeTokenV2` via `deposit()`/`mint()`.
   2. The token approves the router and calls `router.deposit(amount)`.
-  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. Each retry is forwarded a metered gas stipend; failures leave enough headroom for subsequent vaults. If every candidate exhausts its allowance or reverts, the router surfaces `InsufficientRetryGas`/`NoLiquidityAvailable()` so operators can switch to solver mode.
+  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter reverts, the router bubbles up the failure so operators can investigate or mark the vault unhealthy before retrying.
   4. Shares are minted to the user according to totalAssets() (which includes any pending fee balance held by the token).
 
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
-  3. Router walks the ordered vault list and tries to satisfy the *entire* request from the most over-allocated strategy using strict slippage checks (no tolerance). Each attempt uses the same gas budgeting as deposits so a griefing vault cannot starve subsequent fallbacks. If all vaults either exhaust the reserve or revert, the router surfaces `InsufficientRetryGas`/`NoLiquidityAvailable()` and the withdrawal should be orchestrated through solver endpoints that can split across vaults.
+  3. Router withdraws the *entire* request from the most over-allocated strategy using strict slippage checks (no tolerance). Failures bubble up immediately; operators can flip vault health or rely on solver endpoints to orchestrate partial withdrawals across multiple vaults.
   4. Withdrawal fees remain temporarily inside `DStakeTokenV2` until reinvested.
 
 - **Solver flows**
@@ -58,10 +59,10 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 ### Router V2 Details
 
 - **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight strategy; auto withdrawals start with the most overweight strategy.
-- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault. The external self-call wrappers (`_depositToVaultWithRetry`, `_withdrawFromVaultWithRetry`) now meter the gas forwarded to each attempt, keeping a per-try reserve so a stalling adapter cannot strand the transaction. Fallback remains best-effort; repeated gas exhaustion will bubble `InsufficientRetryGas` and should trigger operator intervention. Operations that need to aggregate liquidity must call the solver entry points instead.
+- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault and bubble up adapter failures immediately. Operations that need multi-vault aggregation must call the solver entry points instead.
 - **Health checks & liveness** – Strategies must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy strategies are skipped automatically.
 - **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
-- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setRetryGasConfig`, `setMaxVaultCount`, surplus sweeping, and pause controls live on the router under dedicated roles.
+- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, surplus sweeping, and pause controls live on the router under dedicated roles.
 - **Collateral exchanges** – Exchanges validate adapter previews in both directions and enforce `dustTolerance` when comparing expected vs realised dSTABLE value, preventing silent degradation across strategies.
 - **Surplus handling** – Any router-held dSTABLE (typical after solver withdrawals before forwarding) can be swept back into the default strategy via `sweepSurplus()`, which emits `SurplusSwept` with the amount redeployed.
 
@@ -130,6 +131,10 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 4. **Rebalance exposure**
    - Use solver deposit/withdraw functions for one-off targeted moves without changing target allocations.
    - For structural changes, update vault configs or run `rebalanceStrategiesByValue` / `swapStrategySharesWithOperator` with conservative `min` values.
+
+5. **Offboard a strategy**
+   - Mark the vault impaired or suspended so auto-routing stops using it, then migrate positions via solver withdrawals or operator swaps.
+   - Only call `removeAdapter` once the collateral vault no longer holds the strategy shares; otherwise NAV queries revert with `AdapterValuationUnavailable` and block user flows until a replacement adapter is installed.
 
 ### Developer Map
 
