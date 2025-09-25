@@ -94,12 +94,15 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Fix**: Overrode `maxRedeem` to mirror the router-aware `maxWithdraw` ceiling and return the share burn that matches the single-vault capacity, preventing callers from overshooting the deterministic router limit (`DStakeTokenV2.sol:302-319`). Added a regression test that verifies the clamp both matches `previewWithdraw(maxWithdraw)` and rejects larger share burns with `ERC4626ExceedsMaxRedeem` (`test/dstake/DStakeRouterV2.test.ts:292`).
 - **Residual risk**: Router heuristics may still surface `NoLiquidityAvailable` if no single vault can satisfy the clamped request; the ERC4626 view functions now advertise that limit so integrators can split redemptions when needed.
 
+### 16. External-liquidity dust tolerance mismatched units
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:530`
+- **Fix**: External-liquidity rebalances now translate any share shortfall into its dStable-equivalent value via `mulDiv(..., Math.Rounding.Ceil)` and only waive slippage when that deficit stays within `dustTolerance`, keeping the caller’s `minToShareAmount` effective even with adapters that under-deliver (`DStakeRouterV2.sol:532-541`).
+- **Tests**: Added `"reverts when the output share shortfall exceeds dust tolerance value"` and `"allows execution when the share shortfall stays within dust tolerance value"` in `test/dstake/DStakeRouterV2.test.ts:627` and `:674`, leveraging a mock adapter to prove both the failure and success paths.
+- **Residual risk**: Trust still rests on adapter previews; governance should continue monitoring adapters for dishonest previews or unexpected fees.
+
 ## Open
 
-### 1. Dust tolerance disables solver-style rebalance slippage guard
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:529`
-- **Impact**: `rebalanceStrategiesBySharesViaExternalLiquidity` subtracts `dustTolerance` (configured in dStable units) directly from `minToShareAmount` (strategy share units). For strategies whose share decimals are lower than the dStable’s, or whenever operators raise `dustTolerance` above the share amount for a planned move, `minRequiredWithDust` collapses to zero and the function no longer enforces the caller’s minimum. An adapter that returns zero shares—whether due to fees, a mispriced exchange, or malicious behavior—will pass the guard and burn the entire rebalance amount even though the caller required a non-zero minimum.
+_None._
 
 ## Acknowledged (Won't Fix)
 
