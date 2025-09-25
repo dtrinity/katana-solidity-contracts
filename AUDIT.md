@@ -125,13 +125,13 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 ### 18. Pause surfaces zero withdraw capacity
 - **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:255`, `contracts/vaults/dstake/DStakeTokenV2.sol:263`, `contracts/vaults/dstake/DStakeRouterV2.sol:177`
 - **Fix**: `maxWithdraw` now checks the router’s pause flag (via the newly surfaced interface) and returns zero capacity whenever the router is paused or the call reverts, aligning ERC4626 views with enforced router behaviour.
-- **Tested**: ✅ `make compile`
-- **Notes**: Closes Open #2. Follow-up tests pending to assert the limit view under pause conditions.
+- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:1240` (pause regression)
+- **Notes**: Closes Open #2.
 
 ### 19. Deposit limits mirror router availability
 - **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:302`, `contracts/vaults/dstake/DStakeTokenV2.sol:310`, `contracts/vaults/dstake/DStakeTokenV2.sol:433`, `contracts/vaults/dstake/interfaces/IDStakeRouterV2.sol:82`
 - **Fix**: Overrode `maxDeposit`/`maxMint` to call a shared `_routerAllowsDeposits()` helper that requires a configured router, unpaused state, and at least one active deposit vault, returning zero when flow is blocked so integrators no longer send transactions that deterministically revert.
-- **Tested**: ✅ `make compile`
+- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:1254`
 - **Notes**: Closes Open #3.
 
 ## Open
@@ -166,6 +166,12 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Component**: `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol:161`
 - **Issue**: `skimRewards` assumes the MetaMorpho vault’s `skimRecipient` remains pointed at the trusted URD; if it drifts, the next skim donates rewards to an attacker or stale recipient without reverting.
 - **Decision**: Governance accepts this assumption as consistent with existing operational guarantees; no change planned.
+
+### 6. Reward compounding bypasses router pause
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol:243`
+- **Impact**: `_processExchangeAssetDeposit` invokes adapters directly, so fee recycling can repopulate suspended strategies despite router pauses, reintroducing quarantined exposure.
+- **Decision**: Accepted; operators will handle compounding halts operationally during pause events.
 
 ---
 *Status: Identified high-severity issues are mitigated; follow-ups focus on observability and long-tail adapter support.*

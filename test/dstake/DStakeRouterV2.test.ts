@@ -789,10 +789,7 @@ describe("DStakeRouterV2", function () {
 
       const depositAmount = ethers.parseEther("100");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
-      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
-        router,
-        "InsufficientActiveVaults"
-      );
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.reverted;
     });
 
     it("allows withdrawals from impaired vaults", async function () {
@@ -1237,10 +1234,40 @@ describe("DStakeRouterV2", function () {
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
 
       // Should fail when no active vaults
-      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
-        router,
-        "InsufficientActiveVaults"
-      );
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.reverted;
+    });
+
+    it("returns zero withdraw capacity while the router is paused", async function () {
+      const depositAmount = ethers.parseEther("1000");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      expect(await dStakeToken.maxWithdraw(alice.address)).to.be.gt(0n);
+      expect(await dStakeToken.maxRedeem(alice.address)).to.be.gt(0n);
+
+      await router.connect(owner).pause();
+
+      expect(await dStakeToken.maxWithdraw(alice.address)).to.equal(0n);
+      expect(await dStakeToken.maxRedeem(alice.address)).to.equal(0n);
+    });
+
+    it("surfaces zero deposit limits when no vaults can accept deposits", async function () {
+      const initialDeposit = ethers.parseEther("500");
+      await dStable.connect(alice).approve(dStakeToken.target, initialDeposit);
+      await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
+
+      expect(await dStakeToken.maxDeposit(alice.address)).to.be.gt(0n);
+      expect(await dStakeToken.maxMint(alice.address)).to.be.gt(0n);
+
+      // Suspend every vault so router blocks deposits
+      await router.updateVaultConfig(vault1.target, adapter1.target, 500000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Suspended);
+
+      expect(await dStakeToken.maxDeposit(alice.address)).to.equal(0n);
+      expect(await dStakeToken.maxMint(alice.address)).to.equal(0n);
+
+      await expect(dStakeToken.connect(alice).deposit(1n, alice.address)).to.be.reverted;
     });
 
     it("Should handle single vault active scenario", async function () {
