@@ -401,6 +401,15 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       await rewardManager.grantRole(REWARDS_MANAGER_ROLE, user.address);
     });
 
+    it("should revert when caller lacks rewards manager role", async function () {
+      await rewardManager.connect(owner).revokeRole(REWARDS_MANAGER_ROLE, user.address);
+      const compoundAmount = ethers.parseEther("50");
+
+      await expect(
+        rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address)
+      ).to.be.revertedWithCustomError(rewardManager, "AccessControlUnauthorizedAccount");
+    });
+
     it("should compound rewards with claimed tokens", async function () {
       const compoundAmount = ethers.parseEther("50");
 

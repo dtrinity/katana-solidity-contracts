@@ -446,9 +446,24 @@ describe("RewardClaimable", function () {
     });
   });
 
-    describe("compoundRewards", function () {
+  describe("compoundRewards", function () {
     beforeEach(async function () {
       await mockVault.grantRole(REWARDS_MANAGER_ROLE, await user.getAddress());
+    });
+
+    it("Should revert when caller lacks rewards manager role", async function () {
+      await mockVault.revokeRole(REWARDS_MANAGER_ROLE, await user.getAddress());
+      const amountToCompound = DEFAULT_EXCHANGE_THRESHOLD;
+
+      await expect(
+        mockVault
+          .connect(user)
+          .compoundRewards(
+            amountToCompound,
+            [await rewardToken1.getAddress()],
+            await user.getAddress(),
+          ),
+      ).to.be.revertedWithCustomError(mockVault, "AccessControlUnauthorizedAccount");
     });
 
     it("Compound with 10% treasury fee", async function () {

@@ -9,6 +9,8 @@ import { IDStakeCollateralVaultV2 } from "./IDStakeCollateralVaultV2.sol";
  *         for handling deposits and withdrawals.
  */
 interface IDStakeRouterV2 {
+  function paused() external view returns (bool);
+
   function collateralVault() external view returns (IDStakeCollateralVaultV2);
 
   function dStakeToken() external view returns (address);
@@ -79,6 +81,8 @@ interface IDStakeRouterV2 {
     address[] calldata strategyVaults,
     uint256[] calldata strategyShares
   ) external returns (uint256 totalWithdrawn);
+
+  function getActiveVaultsForDeposits() external view returns (address[] memory activeVaults);
 
   function getMaxSingleVaultWithdraw() external view returns (uint256 maxAssets);
 }

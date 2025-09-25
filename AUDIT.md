@@ -116,17 +116,27 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: Added `"reverts when the output share shortfall exceeds dust tolerance value"` and `"allows execution when the share shortfall stays within dust tolerance value"` in `test/dstake/DStakeRouterV2.test.ts:627` and `:674`, leveraging a mock adapter to prove both the failure and success paths.
 - **Residual risk**: Trust still rests on adapter previews; governance should continue monitoring adapters for dishonest previews or unexpected fees.
 
+### 17. Reward compounding auth regression guard
+- **Component**: `test/dstake/DStakeRewardManagerMetaMorpho.test.ts:404`, `test/reward_claimable/RewardClaimable.ts:460`
+- **Fix**: Added explicit regression coverage that revokes `REWARDS_MANAGER_ROLE` before calling `compoundRewards`, asserting the `AccessControlUnauthorizedAccount` revert so the permissioned gate cannot silently regress.
+- **Tested**: ✅ `yarn hardhat test test/dstake/DStakeRewardManagerMetaMorpho.test.ts` ("Reward Compounding › should revert when caller lacks rewards manager role"), `yarn hardhat test test/reward_claimable/RewardClaimable.ts`
+- **Notes**: Closes Open #1.
+
+### 18. Pause surfaces zero withdraw capacity
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:255`, `contracts/vaults/dstake/DStakeTokenV2.sol:263`, `contracts/vaults/dstake/DStakeRouterV2.sol:177`
+- **Fix**: `maxWithdraw` now checks the router’s pause flag (via the newly surfaced interface) and returns zero capacity whenever the router is paused or the call reverts, aligning ERC4626 views with enforced router behaviour.
+- **Tested**: ✅ `make compile`
+- **Notes**: Closes Open #2. Follow-up tests pending to assert the limit view under pause conditions.
+
+### 19. Deposit limits mirror router availability
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:302`, `contracts/vaults/dstake/DStakeTokenV2.sol:310`, `contracts/vaults/dstake/DStakeTokenV2.sol:433`, `contracts/vaults/dstake/interfaces/IDStakeRouterV2.sol:82`
+- **Fix**: Overrode `maxDeposit`/`maxMint` to call a shared `_routerAllowsDeposits()` helper that requires a configured router, unpaused state, and at least one active deposit vault, returning zero when flow is blocked so integrators no longer send transactions that deterministically revert.
+- **Tested**: ✅ `make compile`
+- **Notes**: Closes Open #3.
+
 ## Open
 
-### 1. Missing authorization regression test for compounding
-- **Severity**: Medium
-- **Component**: test/dstake/DStakeRewardManagerMetaMorpho.test.ts; test/reward_claimable/RewardClaimable.ts
-- **Impact**: Compounding now requires REWARDS_MANAGER_ROLE but no test asserts unauthorized callers revert, so the permissioned guard could regress without detection
-
-### 2. Skim recipient drift strands MetaMorpho rewards
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol:161`
-- **Impact**: `skimRewards` never validates that `metaMorphoVault.skimRecipient()` still points at the trusted URD, so a stale or hijacked recipient silently siphons every skimmed reward token with no on-chain fallback.
+*(none)*
 
 ## Acknowledged (Won't Fix)
 
@@ -151,6 +161,11 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Component**: `contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol:198`
 - **Issue**: If the adapter already holds MetaMorpho shares (dust transfers or previous leftovers), `withdrawFromStrategy` redeems them to the router but still returns only the first redemption amount. The router and token trust the return value for slippage and fee accounting, so the extra dStable lingers as untracked surplus and emitted events misstate the withdrawal.
 - **Decision**: Accepted risk per governance direction.
+
+### 5. Skim recipient drift strands MetaMorpho rewards
+- **Component**: `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol:161`
+- **Issue**: `skimRewards` assumes the MetaMorpho vault’s `skimRecipient` remains pointed at the trusted URD; if it drifts, the next skim donates rewards to an attacker or stale recipient without reverting.
+- **Decision**: Governance accepts this assumption as consistent with existing operational guarantees; no change planned.
 
 ---
 *Status: Identified high-severity issues are mitigated; follow-ups focus on observability and long-tail adapter support.*

@@ -174,6 +174,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return _strategyShareToAdapter[strategyShare];
   }
 
+  function paused() public view override(IDStakeRouterV2, Pausable) returns (bool) {
+    return Pausable.paused();
+  }
+
   function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
     if (dStableAmount == 0) revert InvalidAmount();
 

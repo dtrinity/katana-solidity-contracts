@@ -260,6 +260,14 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       return netAssets;
     }
 
+    try router.paused() returns (bool isPaused) {
+      if (isPaused) {
+        return 0;
+      }
+    } catch {
+      return 0;
+    }
+
     try router.getMaxSingleVaultWithdraw() returns (uint256 capacity) {
       if (capacity == 0) {
         return 0;
@@ -289,6 +297,22 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
     uint256 sharesForMax = previewWithdraw(maxNetAssets);
     return sharesForMax < shareBalance ? sharesForMax : shareBalance;
+  }
+
+  function maxDeposit(address receiver) public view virtual override returns (uint256) {
+    if (!_routerAllowsDeposits()) {
+      return 0;
+    }
+
+    return super.maxDeposit(receiver);
+  }
+
+  function maxMint(address receiver) public view virtual override returns (uint256) {
+    if (!_routerAllowsDeposits()) {
+      return 0;
+    }
+
+    return super.maxMint(receiver);
   }
 
   /**
@@ -404,6 +428,30 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
     uint256 grossAssets = super.previewRedeem(shares);
     return _getNetAmountAfterFee(grossAssets);
+  }
+
+  function _routerAllowsDeposits() internal view returns (bool) {
+    if (address(router) == address(0) || address(collateralVault) == address(0)) {
+      return false;
+    }
+
+    try router.paused() returns (bool routerPaused) {
+      if (routerPaused) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    try router.getActiveVaultsForDeposits() returns (address[] memory activeVaults) {
+      if (activeVaults.length == 0) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    return true;
   }
 
   // --- Solver-Facing Methods ---
