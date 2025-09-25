@@ -31,8 +31,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   error ERC4626ExceedsMaxRedeem(uint256 shares, uint256 maxShares);
   error InvalidIncentiveBps(uint256 incentiveBps, uint256 maxIncentiveBps);
   error AutoWithdrawShortfall(uint256 expectedNet, uint256 actualNet);
-  error InvalidSettlementRatio(uint256 newRatio);
-  error SettlementRatioDisabled();
+  error SettlementShortfallTooHigh(uint256 newShortfall, uint256 maxShortfall);
   error RouterCollateralMismatch(address router, address expectedVault, address actualVault);
   error RouterTokenMismatch(address router, address expectedToken, address actualToken);
 
@@ -40,16 +39,14 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   IDStakeCollateralVaultV2 public collateralVault;
   IDStakeRouterV2 public router;
 
-  uint256 private constant SETTLEMENT_RATIO_SCALE = 1e18;
-
-  uint256 public settlementRatio;
+  uint256 public settlementShortfall;
 
   uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
   uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS * 20; // 20% max incentive
   uint256 public reinvestIncentiveBps;
 
   // --- Events ---
-  event SettlementRatioUpdated(uint256 oldRatio, uint256 newRatio);
+  event SettlementShortfallUpdated(uint256 oldShortfall, uint256 newShortfall);
 
   // --- Initializer ---
   /// @custom:oz-upgrades-unsafe-allow constructor
@@ -77,7 +74,6 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     __ERC4626_init(_dStable);
     __AccessControl_init();
     _initializeWithdrawalFee(0);
-    settlementRatio = SETTLEMENT_RATIO_SCALE;
 
     if (address(_dStable) == address(0) || _initialAdmin == address(0) || _initialFeeManager == address(0)) {
       revert ZeroAddress();
@@ -138,46 +134,46 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
    * Please keep this in mind if `dustTolerance` is increased to a non-negligible value.
    */
   function totalAssets() public view virtual override returns (uint256) {
+    uint256 grossAssets = _grossTotalAssets();
+    if (grossAssets == 0) {
+      return 0;
+    }
+
+    uint256 shortfall = settlementShortfall;
+    return shortfall >= grossAssets ? 0 : grossAssets - shortfall;
+  }
+
+  function _grossTotalAssets() internal view returns (uint256) {
     if (address(collateralVault) == address(0)) {
       return 0;
     }
+
     // Include both vault holdings and any dStable balance in this contract (fees)
     return collateralVault.totalValueInDStable() + IERC20(asset()).balanceOf(address(this));
   }
 
-  function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual override returns (uint256) {
+  function grossTotalAssets() public view returns (uint256) {
+    return _grossTotalAssets();
+  }
+
+  function _convertToSharesUsingGross(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
     if (assets == 0) {
       return 0;
     }
 
-    uint256 ratio = settlementRatio;
-    if (ratio == 0) {
-      revert SettlementRatioDisabled();
-    }
-
-    // Keep the OpenZeppelin mapping as the canonical inverse of `_convertToAssets` so that
-    // withdrawals burn the same number of shares they would pre-haircut. The haircut is applied
-    // when turning shares back into assets, so the router still returns less underlying per share.
-    uint256 baseShares = super._convertToShares(assets, rounding);
-    if (ratio == SETTLEMENT_RATIO_SCALE || baseShares == 0) {
-      return baseShares;
-    }
-
-    return Math.mulDiv(baseShares, SETTLEMENT_RATIO_SCALE, ratio, rounding);
+    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
+    uint256 grossAssets = _grossTotalAssets();
+    return Math.mulDiv(assets, supply, grossAssets + 1, rounding);
   }
 
-  function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view virtual override returns (uint256) {
+  function _convertToAssetsUsingGross(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
     if (shares == 0) {
       return 0;
     }
 
-    uint256 baseAssets = super._convertToAssets(shares, rounding);
-    uint256 ratio = settlementRatio;
-    if (ratio == SETTLEMENT_RATIO_SCALE || baseAssets == 0) {
-      return baseAssets;
-    }
-
-    return Math.mulDiv(baseAssets, ratio, SETTLEMENT_RATIO_SCALE, rounding);
+    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
+    uint256 grossAssets = _grossTotalAssets();
+    return Math.mulDiv(shares, grossAssets + 1, supply, rounding);
   }
 
   function convertToShares(uint256 assets) public view virtual override returns (uint256) {
@@ -185,29 +181,11 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-    // Because `_convertToShares` divides by the settlement ratio, a plain call would mint
-    // extra shares and depress the post-haircut share price. Rescaling here preserves the
-    // pre-haircut mint amount while withdrawals remain ratio-aware via `_convertToAssets`.
-    uint256 rawShares = super.previewDeposit(assets);
-    uint256 ratio = settlementRatio;
-    if (ratio == SETTLEMENT_RATIO_SCALE || rawShares == 0) {
-      return rawShares;
-    }
-    return Math.mulDiv(rawShares, ratio, SETTLEMENT_RATIO_SCALE);
+    return _convertToSharesUsingGross(assets, Math.Rounding.Floor);
   }
 
   function previewMint(uint256 shares) public view virtual override returns (uint256) {
-    uint256 ratio = settlementRatio;
-    if (ratio == 0) {
-      revert SettlementRatioDisabled();
-    }
-
-    uint256 rawAssets = super.previewMint(shares);
-    if (ratio == SETTLEMENT_RATIO_SCALE || rawAssets == 0) {
-      return rawAssets;
-    }
-
-    return Math.mulDiv(rawAssets, SETTLEMENT_RATIO_SCALE, ratio, Math.Rounding.Ceil);
+    return _convertToAssetsUsingGross(shares, Math.Rounding.Ceil);
   }
 
   /**
@@ -309,10 +287,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     // Perform withdrawal using gross assets so that _withdraw computes the correct fee once
-    _withdraw(_msgSender(), receiver, owner, grossAssets, shares);
-
-    // Net assets the user effectively receives
-    assets = _getNetAmountAfterFee(grossAssets);
+    assets = _withdrawAndReturnNet(_msgSender(), receiver, owner, grossAssets, shares);
     return assets;
   }
 
@@ -330,6 +305,16 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     uint256 assets, // This is now the GROSS amount
     uint256 shares
   ) internal virtual override {
+    _withdrawAndReturnNet(caller, receiver, owner, assets, shares);
+  }
+
+  function _withdrawAndReturnNet(
+    address caller,
+    address receiver,
+    address owner,
+    uint256 assets,
+    uint256 shares
+  ) internal returns (uint256 netAmount) {
     if (caller != owner) {
       _spendAllowance(owner, caller, shares);
     }
@@ -340,7 +325,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
         _burn(owner, shares);
       }
       emit Withdraw(caller, receiver, owner, 0, shares);
-      return;
+      return 0;
     }
 
     if (address(router) == address(0) || address(collateralVault) == address(0)) {
@@ -353,7 +338,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     // Delegate conversion and vault update logic to router
     uint256 grossWithdrawn = router.withdraw(assets);
     uint256 minNetAmount = _getNetAmountAfterFee(assets);
-    _settleWithdrawal(caller, receiver, owner, shares, assets, grossWithdrawn, minNetAmount);
+    return _settleWithdrawal(caller, receiver, owner, shares, assets, grossWithdrawn, minNetAmount);
   }
 
   function _settleWithdrawal(
@@ -431,6 +416,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
     // Preview shares to be minted based on total assets
     shares = previewDeposit(totalAssetAmount);
+    if (shares == 0) {
+      revert ZeroShares();
+    }
     if (shares < minShares) {
       revert ERC4626ExceedsMaxWithdraw(shares, minShares); // Reusing error for slippage check
     }
@@ -491,6 +479,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
     // Preview dSTAKE shares to be minted based on total assets
     totalShares = previewDeposit(totalAssetAmount);
+    if (totalShares == 0) {
+      revert ZeroShares();
+    }
     if (totalShares < minShares) {
       revert ERC4626ExceedsMaxWithdraw(totalShares, minShares); // Reusing error for slippage check
     }
@@ -789,20 +780,21 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   /**
-   * @notice Sets the settlement ratio applied to all asset/share conversions.
-   * @dev Expressed in 1e18 scale where 1e18 == 100%. Values greater than 1e18 are rejected.
-   *      Setting to zero effectively disables new deposits and makes existing shares redeem to zero.
-   * @param newRatio The new settlement ratio.
+   * @notice Sets the outstanding settlement shortfall that should be netted from accounting.
+   * @dev Expressed in asset units. The shortfall cannot exceed the gross collateral backing held by the
+   *      collateral vault plus this token's balance; attempting to do so reverts to preserve ERC4626 maths.
+   * @param newShortfall The absolute amount of dStable that should be withheld from accounting.
    */
-  function setSettlementRatio(uint256 newRatio) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    if (newRatio == 0 || newRatio > SETTLEMENT_RATIO_SCALE) {
-      revert InvalidSettlementRatio(newRatio);
+  function setSettlementShortfall(uint256 newShortfall) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    uint256 grossAssets = _grossTotalAssets();
+    if (newShortfall > grossAssets) {
+      revert SettlementShortfallTooHigh(newShortfall, grossAssets);
     }
 
-    uint256 oldRatio = settlementRatio;
-    settlementRatio = newRatio;
+    uint256 oldShortfall = settlementShortfall;
+    settlementShortfall = newShortfall;
 
-    emit SettlementRatioUpdated(oldRatio, newRatio);
+    emit SettlementShortfallUpdated(oldShortfall, newShortfall);
   }
 
   /**

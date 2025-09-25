@@ -26,6 +26,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
   let router: DStakeRouterV2;
   let adapter: MetaMorphoConversionAdapter;
   let rewardManager: DStakeRewardManagerMetaMorpho;
+  let REWARDS_MANAGER_ROLE: string;
 
   // Note: This project uses a non-standard BPS representation where ONE_BPS = 100
   // So 100% = 1000000, 1% = 10000, 0.01% = 100
@@ -91,7 +92,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     );
 
     // Grant manager role
-    await rewardManager.grantRole(await rewardManager.REWARDS_MANAGER_ROLE(), manager.address);
+    REWARDS_MANAGER_ROLE = await rewardManager.REWARDS_MANAGER_ROLE();
+    await rewardManager.grantRole(REWARDS_MANAGER_ROLE, manager.address);
 
     // Setup: Mint tokens and set up initial state
     await dStable.mint(user.address, ethers.parseEther("10000"));
@@ -395,6 +397,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       // Setup vault for deposits
       await dStable.connect(user).approve(metaMorphoVault.target, ethers.MaxUint256);
       await metaMorphoVault.connect(user).deposit(ethers.parseEther("1000"), user.address);
+
+      await rewardManager.grantRole(REWARDS_MANAGER_ROLE, user.address);
     });
 
     it("should compound rewards with claimed tokens", async function () {
@@ -523,6 +527,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
       // Add some rewards to claim
       await rewardToken.mint(rewardManager.target, ethers.parseEther("100"));
+
+      await rewardManager.grantRole(REWARDS_MANAGER_ROLE, user.address);
     });
 
     it("should process exchange asset through adapter", async function () {
@@ -672,6 +678,10 @@ describe("DStakeRewardManagerMetaMorpho", function () {
   });
 
   describe("Edge Cases", function () {
+    beforeEach(async function () {
+      await rewardManager.grantRole(REWARDS_MANAGER_ROLE, user.address);
+    });
+
     it("should handle zero reward amounts", async function () {
       // No rewards available
       const compoundAmount = ethers.parseEther("50");

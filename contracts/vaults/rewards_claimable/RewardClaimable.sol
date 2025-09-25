@@ -159,8 +159,13 @@ abstract contract RewardClaimable is AccessControl, ReentrancyGuard {
    * @param amount The amount to compound
    * @param rewardTokens The reward tokens to claim
    * @param receiver The address to receive the compounded rewards
+   * @dev Temporarily restricted to REWARDS_MANAGER_ROLE while permissionless settlement is redesigned
    */
-  function compoundRewards(uint256 amount, address[] calldata rewardTokens, address receiver) public virtual nonReentrant {
+  function compoundRewards(
+    uint256 amount,
+    address[] calldata rewardTokens,
+    address receiver
+  ) public virtual nonReentrant onlyRole(REWARDS_MANAGER_ROLE) {
     if (amount < exchangeThreshold) {
       revert ExchangeAmountTooLow(amount, exchangeThreshold);
     }
