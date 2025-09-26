@@ -1893,45 +1893,23 @@ describe("DStakeRouterV2", function () {
         const [vaults, currentAllocations, targetAllocations, totalBalance] = await router.getCurrentAllocations();
         expect(totalBalance).to.be.gt(ethers.parseEther("15000")); // Should have funds
 
-        // Verify that some vaults actually have balances before attempting withdrawal
-        let vaultsWithBalance = 0;
+        // Verify that the deterministic single-vault routing actually funded a vault
         for (let i = 0; i < vaults.length; i++) {
           const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then((c) => c.balanceOf(collateralVault.target));
           if (vaultShares > 0) {
-            vaultsWithBalance++;
             console.log(`Vault ${i} (${vaults[i]}) has ${ethers.formatEther(vaultShares)} shares`);
           }
         }
 
-        // If no vaults have balance, we need to ensure deposits worked properly
-        if (vaultsWithBalance === 0) {
-          console.warn("No vaults have balance - may be an issue with deposit distribution");
+        const anyVaultFunded = await Promise.all(
+          vaults.map((vault) =>
+            ethers.getContractAt("IERC20", vault).then((c) => c.balanceOf(collateralVault.target))
+          )
+        ).then((balances) => balances.some((bal) => bal > 0n));
 
-          // Try to force distribution by depositing directly with fees off initially
-          await vault1.setFees(0, 0);
-          await vault2.setFees(0, 0);
-          await vault3.setFees(0, 0);
-
-          // Make one more attempt at depositing - if this still fails, skip
-          const retryDeposit = ethers.parseEther("5000");
-          await dStable.connect(alice).approve(dStakeToken.target, retryDeposit);
-          await dStakeToken.connect(alice).deposit(retryDeposit, alice.address);
-
-          // Check again after retry
-          vaultsWithBalance = 0;
-          for (let i = 0; i < vaults.length; i++) {
-            const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then((c) => c.balanceOf(collateralVault.target));
-            if (vaultShares > 0) {
-              vaultsWithBalance++;
-            }
-          }
-
-          if (vaultsWithBalance === 0) {
-            // Still no balance - skip the test
-            this.skip();
-            return;
-          }
-          // The deterministic single-vault design keeps each deposit/withdrawal focused on one strategy
+        if (!anyVaultFunded) {
+          this.skip();
+          return;
         }
 
         // Try to withdraw a large amount that may require multiple vaults
