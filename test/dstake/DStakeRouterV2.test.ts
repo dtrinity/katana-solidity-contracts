@@ -2562,58 +2562,54 @@ describe("DStakeRouterV2", function () {
         }
       });
 
-      it("Should handle adapter lookup failures gracefully", async function () {
-        // Test with vault that has no adapter
+      it("reverts when adapter is missing", async function () {
         const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
         const noAdapterVault = await MockMetaMorphoFactory.deploy(dStable.target, "No Adapter Vault", "NOADAP");
         await noAdapterVault.waitForDeployment();
 
-        const noAdapterVaultAddress = await noAdapterVault.getAddress();
-
-        // Don't add adapter for this vault
-
-        // Check that strategyShareToAdapter returns zero address
-        const noAdapter = await router.strategyShareToAdapter(noAdapterVaultAddress);
-        expect(noAdapter).to.equal(ethers.ZeroAddress);
-
-        // The balance calculation should return 0 when no adapter exists
-        // (internal function would handle this gracefully)
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(
+              await noAdapterVault.getAddress(),
+              vault1Address,
+              ethers.parseEther("1"),
+              0,
+            ),
+        )
+          .to.be.revertedWithCustomError(router, "VaultNotFound")
+          .withArgs(await noAdapterVault.getAddress());
       });
 
-      it("Should handle adapter conversion failures gracefully", async function () {
-        // Create scenario where adapter exists but conversion might fail
-        const [vaults] = await router.getCurrentAllocations();
-        const testVault = vaults[0];
-        const adapter = await router.strategyShareToAdapter(testVault);
+      it("surfaces adapter conversion errors", async function () {
+        const gasBombFactory = await ethers.getContractFactory("MockGasGuzzlingAdapter");
+        const gasBombAdapter = await gasBombFactory.deploy(
+          await dStable.getAddress(),
+          collateralVault.target,
+          vault1Address,
+          1_000,
+          64,
+        );
+        await gasBombAdapter.waitForDeployment();
 
-        const adapterContract = await ethers.getContractAt("MetaMorphoConversionAdapter", adapter);
+        await router.connect(owner).removeAdapter(vault1Address);
+        await router.connect(owner).addAdapter(vault1Address, await gasBombAdapter.getAddress());
 
-        // Test with excessive share amount that might cause overflow
-        const maxUint256 = ethers.MaxUint256;
-
-        // This should either work or revert gracefully
-        try {
-          const value = await adapterContract.strategyShareValueInDStable(testVault, maxUint256);
-          // If it works, value should be reasonable or max
-          expect(value).to.be.gte(0);
-        } catch (error) {
-          // If it fails, that's also acceptable - the internal function should catch this
-          expect(error).to.exist;
-        }
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(vault1Address, vault2Address, ethers.parseEther("1"), 0),
+        ).to.be.revertedWithCustomError(gasBombAdapter, "GasBomb");
       });
 
-      it("Should handle ERC20 balanceOf failures gracefully", async function () {
-        // Test with invalid vault address (should fail balanceOf call)
-        const invalidVault = ethers.ZeroAddress;
-
-        // This should not crash - internal function should handle gracefully
-        try {
-          const invalidContract = await ethers.getContractAt("IERC20", invalidVault);
-          await invalidContract.balanceOf(collateralVault.target);
-        } catch (error) {
-          // Expected to fail - internal function should catch this
-          expect(error).to.exist;
-        }
+      it("reverts when vault address is invalid", async function () {
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesByValue(vault1Address, ethers.ZeroAddress, ethers.parseEther("1"), 0),
+        )
+          .to.be.revertedWithCustomError(router, "VaultNotFound")
+          .withArgs(ethers.ZeroAddress);
       });
     });
 

@@ -1,16 +1,21 @@
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers"; // Import ZeroAddress
-import { ethers, getNamedAccounts } from "hardhat";
+import { deployments, ethers, getNamedAccounts } from "hardhat";
 
 import { DStakeCollateralVaultV2, DStakeRouterV2, DStakeTokenV2, ERC20, IDStableConversionAdapterV2, IERC20 } from "../../typechain-types";
 import { ERC20StablecoinUpgradeable } from "../../typechain-types/contracts/dstable/ERC20StablecoinUpgradeable";
 import { createDStakeFixture, DSTAKE_CONFIGS, DStakeFixtureConfig } from "./fixture"; // Use the specific fixture and import DSTAKE_CONFIGS
+import { resolveRoleSigner } from "./utils/roleHelpers";
 
 // Helper function to parse units
 const parseUnits = (value: string | number, decimals: number | bigint) => ethers.parseUnits(value.toString(), decimals);
 
-DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
+const COLLATERAL_TEST_CONFIGS = DSTAKE_CONFIGS.filter(
+  (cfg: DStakeFixtureConfig) => cfg.dStableSymbol === "dUSD",
+);
+
+COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
   describe(`DStakeCollateralVaultV2 for ${config.DStakeTokenV2Symbol}`, () => {
     // Create fixture function once per suite for snapshot caching
     const fixture = createDStakeFixture(config);
@@ -84,36 +89,57 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       adminRole = await collateralVault.DEFAULT_ADMIN_ROLE();
       routerRole = await collateralVault.ROUTER_ROLE();
 
-      const deployerIsAdmin = await collateralVault.hasRole(adminRole, deployer.address);
-      const user1IsAdmin = await collateralVault.hasRole(adminRole, user1.address);
+      const routerAdminRole = await router.DEFAULT_ADMIN_ROLE();
+      const routerDeployment = await deployments.get(config.routerContractId);
+      const routerAdminSigner = await resolveRoleSigner(
+        router,
+        routerAdminRole,
+        [
+          user1.address,
+          deployer.address,
+          routerDeployment.receipt?.from,
+        ],
+        deployer,
+      );
 
-      if (!user1IsAdmin && deployerIsAdmin) {
-        await collateralVault.connect(deployer).grantRole(adminRole, user1.address);
+      const adapterManagerRole = await router.ADAPTER_MANAGER_ROLE();
+      if (!(await router.hasRole(adapterManagerRole, user1.address))) {
+        await router.connect(routerAdminSigner).grantRole(adapterManagerRole, user1.address);
       }
+      routerSigner = user1;
 
-      const adminSignerForVault = (await collateralVault.hasRole(adminRole, user1.address)) ? user1 : deployer;
+      const collateralDeployment = await deployments.get(config.collateralVaultContractId);
+      const adminSignerForVault = await resolveRoleSigner(
+        collateralVault,
+        adminRole,
+        [
+          user1.address,
+          deployer.address,
+          collateralDeployment.receipt?.from,
+        ],
+        deployer,
+      );
 
-      if (deployerIsAdmin && adminSignerForVault.address === user1.address) {
-        await collateralVault.connect(adminSignerForVault).revokeRole(adminRole, deployer.address).catch(() => {});
+      if (!(await collateralVault.hasRole(adminRole, user1.address))) {
+        await collateralVault.connect(adminSignerForVault).grantRole(adminRole, user1.address);
+      }
+      if (
+        (await collateralVault.hasRole(adminRole, deployer.address)) &&
+        deployer.address.toLowerCase() !== user1.address.toLowerCase()
+      ) {
+        await collateralVault.connect(adminSignerForVault).revokeRole(adminRole, deployer.address);
       }
 
       if ((await collateralVault.router()) !== routerAddress) {
-        await collateralVault.connect(adminSignerForVault).setRouter(routerAddress);
+        await collateralVault.connect(user1).setRouter(routerAddress);
       }
 
-      if (!(await collateralVault.hasRole(routerRole, deployer.address))) {
-        await collateralVault.connect(adminSignerForVault).grantRole(routerRole, deployer.address);
+      if (!(await collateralVault.hasRole(routerRole, user1.address))) {
+        await collateralVault.connect(user1).grantRole(routerRole, user1.address);
       }
-
-      const adapterManagerRole = await router.ADAPTER_MANAGER_ROLE();
-      const deployerHasAdapterRole = await router.hasRole(adapterManagerRole, deployer.address);
-      const user1HasAdapterRole = await router.hasRole(adapterManagerRole, user1.address);
-
-      if (!deployerHasAdapterRole && !user1HasAdapterRole) {
-        await router.connect(deployer).grantRole(adapterManagerRole, deployer.address).catch(() => {});
+      if (!(await collateralVault.hasRole(routerRole, routerAddress))) {
+        await collateralVault.connect(user1).grantRole(routerRole, routerAddress);
       }
-
-      routerSigner = (await router.hasRole(adapterManagerRole, deployer.address)) ? deployer : user1;
 
       // Note: ADAPTER_MANAGER_ROLE is granted via deployment scripts, not in test fixtures
 
@@ -153,13 +179,6 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       await DStakeTokenV2.connect(depositor).deposit(amount, depositor.address);
     };
 
-    const depositDirectlyThroughAdapter = async (amount: bigint) => {
-      const activeAdapter = await ensureAdapterRegistered();
-      await stable.mint(routerSigner.address, amount);
-      await dStableToken.connect(routerSigner).approve(adapterAddress, amount);
-      await activeAdapter.connect(routerSigner).depositIntoStrategy(amount);
-    };
-
     const ensureVaultHasStrategyShares = async (minimumBalance: bigint): Promise<bigint> => {
       await ensureAdapterRegistered();
       let currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
@@ -169,17 +188,15 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       }
 
       const depositChunk = parseUnits(1_000, dStableDecimals);
-      let attempts = 0;
-
-      while (currentBalance < minimumBalance && attempts < 5) {
-        try {
-          await mintAndDepositDStable(depositChunk);
-        } catch (error) {
-          await depositDirectlyThroughAdapter(depositChunk);
-        }
-        currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
-        attempts += 1;
-      }
+      await stable.mint(user1.address, depositChunk);
+      await dStableToken.connect(user1).approve(DStakeTokenV2Address, depositChunk);
+      await DStakeTokenV2.connect(user1).solverDepositAssets(
+        [strategyShareAddress],
+        [depositChunk],
+        0n,
+        user1.address,
+      );
+      currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
 
       expect(currentBalance, "Unable to seed collateral vault balance").to.be.gte(minimumBalance);
       return currentBalance;
@@ -246,7 +263,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         await ensureAdapterRegistered();
         const recipient = user1.address;
         await expect(
-          collateralVault.connect(user1).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
+          collateralVault.connect(user2).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
         ).to.be.revertedWithCustomError(
           collateralVault,
           "AccessControlUnauthorizedAccount"

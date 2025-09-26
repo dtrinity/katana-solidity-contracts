@@ -12,6 +12,7 @@ import {
 } from "../../typechain-types";
 import { DStakeFixtureConfig, SDUSD_CONFIG } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
+import { resolveRoleSigner, ensureRoleGranted } from "./utils/roleHelpers";
 
 export const VaultStatus = {
   Active: 0,
@@ -200,22 +201,28 @@ export const createDStakeRouterV2Fixture = (
       }
     ];
 
-    const DEFAULT_ADMIN_ROLE = await routerContract.DEFAULT_ADMIN_ROLE();
+    const routerAdminRole = await routerContract.DEFAULT_ADMIN_ROLE();
+    const routerAdminSigner = await resolveRoleSigner(
+      routerContract,
+      routerAdminRole,
+      [
+        ownerSigner.address,
+        deployer,
+        routerDeployment.receipt?.from,
+      ],
+      ownerSigner,
+    );
+
+    await ensureRoleGranted(routerContract, routerAdminRole, ownerSigner, routerAdminSigner);
+
     const VAULT_MANAGER_ROLE = await routerContract.VAULT_MANAGER_ROLE();
     const ADAPTER_MANAGER_ROLE = await routerContract.ADAPTER_MANAGER_ROLE();
-    const routerContractAddress = await routerContract.getAddress();
+    await ensureRoleGranted(routerContract, VAULT_MANAGER_ROLE, ownerSigner, routerAdminSigner);
+    await ensureRoleGranted(routerContract, ADAPTER_MANAGER_ROLE, ownerSigner, routerAdminSigner);
 
-    if (!(await routerContract.hasRole(DEFAULT_ADMIN_ROLE, ownerSigner.address))) {
-      await routerContract.grantRole(DEFAULT_ADMIN_ROLE, ownerSigner.address);
-    }
-    if (!(await routerContract.hasRole(VAULT_MANAGER_ROLE, ownerSigner.address))) {
-      await routerContract.grantRole(VAULT_MANAGER_ROLE, ownerSigner.address);
-    }
-    if (!(await routerContract.hasRole(ADAPTER_MANAGER_ROLE, ownerSigner.address))) {
-      await routerContract.grantRole(ADAPTER_MANAGER_ROLE, ownerSigner.address);
-    }
+    const routerContractAddress = await routerContract.getAddress();
     if (!(await routerContract.hasRole(ADAPTER_MANAGER_ROLE, routerContractAddress))) {
-      await routerContract.grantRole(ADAPTER_MANAGER_ROLE, routerContractAddress);
+      await routerContract.connect(routerAdminSigner).grantRole(ADAPTER_MANAGER_ROLE, routerContractAddress);
     }
 
     const DSTAKE_TOKEN_ROLE = await routerContract.DSTAKE_TOKEN_ROLE();
@@ -226,44 +233,64 @@ export const createDStakeRouterV2Fixture = (
     const dStakeTokenContractAddress = await dStakeTokenContract.getAddress();
     const routerAddress = await routerContract.getAddress();
 
-    await routerContract.grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
-    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
-    await routerContract.grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
-    await routerContract.grantRole(PAUSER_ROLE, ownerSigner.address);
+    if (!(await routerContract.hasRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress))) {
+      await routerContract.connect(routerAdminSigner).grantRole(DSTAKE_TOKEN_ROLE, dStakeTokenContractAddress);
+    }
+    if (!(await routerContract.hasRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address))) {
+      await routerContract.connect(routerAdminSigner).grantRole(STRATEGY_REBALANCER_ROLE, collateralExchangerSigner.address);
+    }
+    if (!(await routerContract.hasRole(STRATEGY_REBALANCER_ROLE, routerAddress))) {
+      await routerContract.connect(routerAdminSigner).grantRole(STRATEGY_REBALANCER_ROLE, routerAddress);
+    }
+    await ensureRoleGranted(routerContract, PAUSER_ROLE, ownerSigner, routerAdminSigner);
 
     const DEFAULT_ADMIN_ROLE_VAULT = await collateralVaultContract.DEFAULT_ADMIN_ROLE();
-    if (await collateralVaultContract.hasRole(DEFAULT_ADMIN_ROLE_VAULT, ownerSigner.address)) {
-      await collateralVaultContract.setRouter(routerAddress);
-    } else {
-      const currentRouter = await collateralVaultContract.router();
-      if (currentRouter === ethers.ZeroAddress) {
-        try {
-          await collateralVaultContract.setRouter(routerAddress);
-        } catch {
-          // continue when router already configured elsewhere
-        }
-      } else if (currentRouter !== routerAddress) {
-        try {
-          await collateralVaultContract.grantRole(ROUTER_ROLE, routerAddress);
-        } catch {
-          const [, governanceSigner] = await ethers.getSigners();
-          if (await collateralVaultContract.hasRole(DEFAULT_ADMIN_ROLE_VAULT, governanceSigner.address)) {
-            await collateralVaultContract.connect(governanceSigner).setRouter(routerAddress);
-          }
-        }
-      }
+    const collateralAdminSigner = await resolveRoleSigner(
+      collateralVaultContract,
+      DEFAULT_ADMIN_ROLE_VAULT,
+      [
+        ownerSigner.address,
+        deployer,
+        collateralVaultDeployment.receipt?.from,
+      ],
+      ownerSigner,
+    );
+
+    await ensureRoleGranted(collateralVaultContract, DEFAULT_ADMIN_ROLE_VAULT, ownerSigner, collateralAdminSigner);
+
+    if ((await collateralVaultContract.router()).toLowerCase() !== routerAddress.toLowerCase()) {
+      await collateralVaultContract.connect(ownerSigner).setRouter(routerAddress);
+    }
+    if (!(await collateralVaultContract.hasRole(ROUTER_ROLE, routerAddress))) {
+      await collateralVaultContract.connect(ownerSigner).grantRole(ROUTER_ROLE, routerAddress);
     }
 
-    await routerContract.setVaultConfigs(vaultConfigs);
+    await routerContract.connect(ownerSigner).setVaultConfigs(vaultConfigs);
 
     let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     for (const configEntry of vaultConfigs) {
       if (!supportedAssets.includes(configEntry.strategyVault)) {
-        await routerContract.addAdapter(configEntry.strategyVault, configEntry.adapter);
+        await routerContract
+          .connect(ownerSigner)
+          .addAdapter(configEntry.strategyVault, configEntry.adapter);
+        supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
       }
     }
 
     const DEFAULT_ADMIN_ROLE_TOKEN = await dStakeTokenContract.DEFAULT_ADMIN_ROLE();
+    const tokenAdminSigner = await resolveRoleSigner(
+      dStakeTokenContract,
+      DEFAULT_ADMIN_ROLE_TOKEN,
+      [
+        ownerSigner.address,
+        deployer,
+        dStakeTokenDeployment.receipt?.from,
+      ],
+      ownerSigner,
+    );
+
+    await ensureRoleGranted(dStakeTokenContract, DEFAULT_ADMIN_ROLE_TOKEN, ownerSigner, tokenAdminSigner);
+
     const desiredRouter = routerAddress;
     const desiredVault = collateralVaultAddress!;
     const currentRouter = await dStakeTokenContract.router();
@@ -272,22 +299,9 @@ export const createDStakeRouterV2Fixture = (
     const needsMigration = currentRouter !== desiredRouter || currentVault !== desiredVault;
 
     if (needsMigration) {
-      if (await dStakeTokenContract.hasRole(DEFAULT_ADMIN_ROLE_TOKEN, ownerSigner.address)) {
-        await dStakeTokenContract.migrateCore(desiredRouter, desiredVault);
-      } else {
-        const [, governanceSigner] = await ethers.getSigners();
-        if (await dStakeTokenContract.hasRole(DEFAULT_ADMIN_ROLE_TOKEN, governanceSigner.address)) {
-          await dStakeTokenContract
-            .connect(governanceSigner)
-            .migrateCore(desiredRouter, desiredVault);
-        } else {
-          try {
-            await dStakeTokenContract.migrateCore(desiredRouter, desiredVault);
-          } catch {
-            // Core wiring may already be configured elsewhere; ignore failures
-          }
-        }
-      }
+      await dStakeTokenContract
+        .connect(ownerSigner)
+        .migrateCore(desiredRouter, desiredVault);
     }
 
     const initialBalance = ethers.parseEther("100000");

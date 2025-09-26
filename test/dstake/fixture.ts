@@ -4,6 +4,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { ERC20 } from "../../typechain-types";
 import { IERC20 } from "../../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
+import { resolveRoleSigner, ensureRoleGranted } from "./utils/roleHelpers";
 import {
   DETH_A_TOKEN_WRAPPER_ID,
   DUSD_A_TOKEN_WRAPPER_ID,
@@ -82,67 +83,131 @@ async function fetchDStakeComponents(
   config: DStakeFixtureConfig
 ) {
   const { deployments, getNamedAccounts, ethers, globalHre } = hreElements;
-  const { deployer } = await getNamedAccounts();
+  const namedAccounts = await getNamedAccounts();
+  const deployer = namedAccounts.deployer;
+  const governance = namedAccounts.governance;
   const deployerSigner = await ethers.getSigner(deployer);
 
   const { contract: dStableToken, tokenInfo: dStableInfo } = await getTokenContractForSymbol(globalHre, deployer, config.dStableSymbol);
 
-  const DStakeTokenV2 = await ethers.getContractAt("DStakeTokenV2", (await deployments.get(config.DStakeTokenV2ContractId)).address);
+  const dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
+  const collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
+  const routerDeployment = await deployments.get(config.routerContractId);
 
-  const collateralVault = await ethers.getContractAt(
-    "DStakeCollateralVaultV2",
-    (await deployments.get(config.collateralVaultContractId)).address
+  const DStakeTokenV2 = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
+  const collateralVault = await ethers.getContractAt("DStakeCollateralVaultV2", collateralVaultDeployment.address);
+  const router = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
+
+  const signers = await ethers.getSigners();
+  const testOwner = signers[0];
+
+  const routerAdminRole = await router.DEFAULT_ADMIN_ROLE();
+  const routerAdminSigner = await resolveRoleSigner(
+    router,
+    routerAdminRole,
+    [
+      testOwner.address,
+      deployerSigner.address,
+      governance,
+      routerDeployment.receipt?.from,
+    ],
+    deployerSigner,
   );
 
-  const router = await ethers.getContractAt("DStakeRouterV2", (await deployments.get(config.routerContractId)).address);
+  await ensureRoleGranted(router, routerAdminRole, routerAdminSigner, routerAdminSigner);
+  await ensureRoleGranted(router, routerAdminRole, testOwner, routerAdminSigner);
 
-  // Setup basic admin permissions for DStakeRouterV2
-  // Grant DEFAULT_ADMIN_ROLE to the first test signer (standard test owner)
-  const signers = await ethers.getSigners();
-  const testOwner = signers[0]; // Standard test owner address
-  const DEFAULT_ADMIN_ROLE = await router.DEFAULT_ADMIN_ROLE();
+  const configManagerRole = await router.CONFIG_MANAGER_ROLE();
+  const adapterManagerRole = await router.ADAPTER_MANAGER_ROLE();
+  const vaultManagerRole = await router.VAULT_MANAGER_ROLE();
 
-  try {
-    const ownerHasRole = await router.hasRole(DEFAULT_ADMIN_ROLE, testOwner.address);
-    if (!ownerHasRole) {
-      const deployerHasRole = await router.hasRole(DEFAULT_ADMIN_ROLE, deployer);
-      if (deployerHasRole) {
-        await router.connect(deployerSigner).grantRole(DEFAULT_ADMIN_ROLE, testOwner.address);
-      }
+  await ensureRoleGranted(router, configManagerRole, testOwner, routerAdminSigner);
+  await ensureRoleGranted(router, adapterManagerRole, testOwner, routerAdminSigner);
+  await ensureRoleGranted(router, vaultManagerRole, testOwner, routerAdminSigner);
+
+  let strategyShareAddress = await router.defaultDepositStrategyShare();
+  if (strategyShareAddress === ethers.ZeroAddress) {
+    const expectedDeploymentId =
+      config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID;
+    const wrapperDeployment = await deployments.getOrNull(expectedDeploymentId);
+    if (!wrapperDeployment) {
+      throw new Error(
+        `Router missing default deposit strategy share and expected deployment ${expectedDeploymentId} is not available`,
+      );
     }
-  } catch (error) {
-    // Ignore permission setup errors in testing
+    strategyShareAddress = wrapperDeployment.address;
+  }
+  const wrappedAToken = await ethers.getContractAt(
+    "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
+    strategyShareAddress,
+  );
+  const adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
+  if (adapterAddress === ethers.ZeroAddress) {
+    throw new Error(`Adapter missing for strategy share ${strategyShareAddress}`);
+  }
+  const adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
+
+  const collateralAdminRole = await collateralVault.DEFAULT_ADMIN_ROLE();
+  const collateralAdminSigner = await resolveRoleSigner(
+    collateralVault,
+    collateralAdminRole,
+    [
+      testOwner.address,
+      deployerSigner.address,
+      governance,
+      collateralVaultDeployment.receipt?.from,
+    ],
+    deployerSigner,
+  );
+
+  await ensureRoleGranted(collateralVault, collateralAdminRole, testOwner, collateralAdminSigner);
+
+  const routerRole = await collateralVault.ROUTER_ROLE();
+  const routerAddress = await router.getAddress();
+  if ((await collateralVault.router()).toLowerCase() !== routerAddress.toLowerCase()) {
+    await collateralVault.connect(testOwner).setRouter(routerAddress);
+  }
+  if (!(await collateralVault.hasRole(routerRole, routerAddress))) {
+    await collateralVault.connect(testOwner).grantRole(routerRole, routerAddress);
+  }
+  if (!(await collateralVault.hasRole(routerRole, testOwner.address))) {
+    await collateralVault.connect(testOwner).grantRole(routerRole, testOwner.address);
   }
 
-  let strategyShareAddress: string;
-  let adapterAddress: string;
-  let adapter;
-  let wrappedAToken;
+  const supportedShares = await collateralVault.getSupportedStrategyShares();
+  if (!supportedShares.includes(strategyShareAddress)) {
+    await collateralVault.connect(testOwner).addSupportedStrategyShare(strategyShareAddress);
+  }
 
+  let activeVaults: string[] = [];
   try {
-    const wrappedATokenDeployment = await deployments.get(
-      config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID
-    );
-    strategyShareAddress = wrappedATokenDeployment.address;
-    wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", strategyShareAddress);
-    adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
-    if (adapterAddress !== ethers.ZeroAddress) {
-      adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
+    activeVaults = await router.getActiveVaultsForDeposits();
+  } catch {
+    activeVaults = [];
+  }
+
+  if (activeVaults.length === 0) {
+    if (!(await router.hasRole(adapterManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(adapterManagerRole, testOwner.address);
+    }
+    if (!(await router.hasRole(configManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(configManagerRole, testOwner.address);
+    }
+    if (!(await router.hasRole(vaultManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(vaultManagerRole, testOwner.address);
+    }
+
+    if (!(await router.vaultExists(strategyShareAddress))) {
+      await router
+        .connect(testOwner)
+        .addVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
     } else {
-      adapter = null;
+      await router
+        .connect(testOwner)
+        .updateVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
     }
-  } catch (error) {
-    const mockAdapterFactory = await ethers.getContractFactory("MockAdapterPositiveSlippage");
-    const fallbackAdapter = await mockAdapterFactory.deploy(await dStableToken.getAddress(), await collateralVault.getAddress());
-    adapterAddress = await fallbackAdapter.getAddress();
-    strategyShareAddress = await fallbackAdapter.strategyShare();
-    wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", strategyShareAddress);
-    try {
-      await router.connect(deployerSigner).addAdapter(strategyShareAddress, adapterAddress);
-      adapter = fallbackAdapter;
-    } catch (addAdapterError) {
-      adapter = fallbackAdapter;
-    }
+
+    await router.connect(testOwner).setDefaultDepositStrategyShare(strategyShareAddress);
   }
 
   return {
