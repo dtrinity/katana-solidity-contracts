@@ -16,6 +16,32 @@ import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelect
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 
+interface IDStakeTokenV2Minimal {
+  function asset() external view returns (address);
+
+  function balanceOf(address account) external view returns (uint256);
+
+  function totalAssets() external view returns (uint256);
+
+  function previewDeposit(uint256 assets) external view returns (uint256);
+
+  function previewMint(uint256 shares) external view returns (uint256);
+
+  function previewWithdraw(uint256 assets) external view returns (uint256);
+
+  function previewRedeem(uint256 shares) external view returns (uint256);
+
+  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external;
+
+  function burnFromRouter(
+    address initiator,
+    address receiver,
+    address owner,
+    uint256 netAssets,
+    uint256 shares
+  ) external;
+}
+
 /**
  * @title DStakeRouterV2
  * @notice Provides deterministic routing for dSTAKE, pairing single-vault ERC4626 flows with solver-managed multi-vault operations.
@@ -49,6 +75,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error EmptyArrays();
   error ArrayLengthMismatch();
   error IndexOutOfBounds();
+  error WithdrawalShortfall(uint256 expectedNet, uint256 actualNet);
+  error ReceiverZero();
+  error DepositCapExceeded(uint256 cap, uint256 currentManaged, uint256 incomingAssets);
+  error SharesBelowMinimum(uint256 actualShares, uint256 minShares);
+  error SharesExceedMaxRedeem(uint256 requestedShares, uint256 maxShares);
+  error InvalidDepositCap(uint256 newCap, uint256 currentManaged);
+  error InvalidReinvestIncentive(uint256 incentiveBps, uint256 maxBps);
+  error SettlementShortfallTooHigh(uint256 shortfall, uint256 managedAssets);
+  error UnauthorizedConfigCaller();
+  error InvalidWithdrawalFee(uint256 feeBps, uint256 maxFeeBps);
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -65,9 +101,20 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   uint256 public dustTolerance = 1;
   uint256 public maxVaultCount = 10;
+  uint256 public depositCap; // 0 == unlimited
+  uint256 public settlementShortfall;
+  uint256 public reinvestIncentiveBps;
+  uint256 private _withdrawalFeeBps;
+
+  uint256 public constant MAX_REINVEST_INCENTIVE_BPS = BasisPointConstants.ONE_PERCENT_BPS * 20;
+  uint256 public constant MAX_WITHDRAWAL_FEE_BPS = BasisPointConstants.ONE_PERCENT_BPS;
 
   mapping(address => address) private _strategyShareToAdapter;
   address public defaultDepositStrategyShare;
+
+  function _token() internal view returns (IDStakeTokenV2Minimal) {
+    return IDStakeTokenV2Minimal(dStakeToken);
+  }
 
   struct ExchangeLocals {
     address fromAdapterAddress;
@@ -101,14 +148,21 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   mapping(address => bool) public vaultExists;
 
   // --- Events ---
-  event RouterDeposit(
-    address indexed adapter,
-    address indexed strategyShare,
-    address indexed dStakeToken,
-    uint256 strategyShareAmount,
-    uint256 dStableAmount
+  event RouterDepositRouted(
+    address indexed initiator,
+    address indexed receiver,
+    address indexed strategyVault,
+    uint256 assets,
+    uint256 shares
   );
-  event Withdrawn(address indexed strategyShare, uint256 strategyShareAmount, uint256 dStableAmount, address owner, address receiver);
+  event RouterWithdrawSettled(
+    address indexed initiator,
+    address indexed receiver,
+    address indexed strategyVault,
+    uint256 grossAssets,
+    uint256 netAssets,
+    uint256 fee
+  );
   event StrategySharesExchanged(
     address indexed fromStrategyShare,
     address indexed toStrategyShare,
@@ -124,6 +178,20 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event SurplusSwept(uint256 amount, address vaultAsset);
   event StrategyDepositRouted(address[] selectedVaults, uint256[] depositAmounts, uint256 totalDStableAmount);
   event StrategyWithdrawalRouted(address[] selectedVaults, uint256[] withdrawalAmounts, uint256 totalDStableAmount);
+  event RouterSolverDeposit(address indexed caller, address indexed receiver, uint256 totalAssets, uint256 sharesMinted);
+  event RouterSolverWithdraw(
+    address indexed caller,
+    address indexed receiver,
+    uint256 grossAssets,
+    uint256 netAssets,
+    uint256 fee,
+    uint256 sharesBurned
+  );
+  event RouterFeesReinvested(uint256 amountReinvested, uint256 incentivePaid, address indexed caller);
+  event SettlementShortfallUpdated(uint256 previousShortfall, uint256 newShortfall);
+  event DepositCapUpdated(uint256 previousCap, uint256 newCap);
+  event ReinvestIncentiveSet(uint256 newIncentiveBps);
+  event WithdrawalFeeSet(uint256 previousFeeBps, uint256 newFeeBps);
   event VaultConfigAdded(address indexed vault, address indexed adapter, uint256 targetBps, VaultStatus status);
   event VaultConfigUpdated(address indexed vault, address indexed adapter, uint256 targetBps, VaultStatus status);
   event VaultConfigRemoved(address indexed vault);
@@ -160,9 +228,147 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return Pausable.paused();
   }
 
-  function deposit(uint256 dStableAmount) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
-    if (dStableAmount == 0) revert InvalidAmount();
+  function totalManagedAssets() public view override returns (uint256) {
+    uint256 vaultValue = collateralVault.totalValueInDStable();
+    uint256 idle = IERC20(dStable).balanceOf(address(this));
+    return vaultValue + idle;
+  }
 
+  function currentShortfall() public view override returns (uint256) {
+    return settlementShortfall;
+  }
+
+  function withdrawalFeeBps() public view override returns (uint256) {
+    return _withdrawalFeeBps;
+  }
+
+  function maxWithdrawalFeeBps() public pure override returns (uint256) {
+    return MAX_WITHDRAWAL_FEE_BPS;
+  }
+
+  function maxDeposit(address) public view override returns (uint256) {
+    if (paused()) {
+      return 0;
+    }
+    if (!_hasActiveVaultFor(OperationType.DEPOSIT)) {
+      return 0;
+    }
+    if (depositCap == 0) {
+      return type(uint256).max;
+    }
+    uint256 managed = totalManagedAssets();
+    return depositCap > managed ? depositCap - managed : 0;
+  }
+
+  function maxMint(address) public view override returns (uint256) {
+    uint256 assetLimit = maxDeposit(address(0));
+    if (assetLimit == 0) {
+      return 0;
+    }
+    return _token().previewDeposit(assetLimit);
+  }
+
+  function maxWithdraw(address owner) public view override returns (uint256) {
+    if (paused()) {
+      return 0;
+    }
+    if (!_hasActiveVaultFor(OperationType.WITHDRAWAL)) {
+      return 0;
+    }
+
+    uint256 ownerShares = _token().balanceOf(owner);
+    if (ownerShares == 0) {
+      return 0;
+    }
+
+    uint256 netAssets = _token().previewRedeem(ownerShares);
+    if (netAssets == 0) {
+      return 0;
+    }
+
+    uint256 routerCapacityGross = _maxSingleVaultWithdraw();
+    if (routerCapacityGross == 0) {
+      return 0;
+    }
+
+    uint256 routerNetCapacity = _getNetAmount(routerCapacityGross);
+    return routerNetCapacity < netAssets ? routerNetCapacity : netAssets;
+  }
+
+  function maxRedeem(address owner) public view override returns (uint256) {
+    uint256 maxNetAssets = maxWithdraw(owner);
+    if (maxNetAssets == 0) {
+      return 0;
+    }
+    return _token().previewWithdraw(maxNetAssets);
+  }
+
+  function _hasActiveVaultFor(OperationType op) internal view returns (bool) {
+    (address[] memory activeVaults,,) = _getActiveVaultsAndAllocations(op);
+    return activeVaults.length > 0;
+  }
+
+  function _calculateFee(uint256 grossAmount) internal view returns (uint256) {
+    if (grossAmount == 0) {
+      return 0;
+    }
+    return Math.mulDiv(grossAmount, _withdrawalFeeBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+  }
+
+  function _enforceDepositCap(uint256 additionalAssets) internal view {
+    if (depositCap == 0) {
+      return;
+    }
+    uint256 managed = totalManagedAssets();
+    if (managed + additionalAssets > depositCap) {
+      revert DepositCapExceeded(depositCap, managed, additionalAssets);
+    }
+  }
+
+  function _getNetAmount(uint256 grossAmount) internal view returns (uint256) {
+    if (grossAmount == 0 || _withdrawalFeeBps == 0) {
+      return grossAmount;
+    }
+    uint256 fee = _calculateFee(grossAmount);
+    if (fee >= grossAmount) {
+      return 0;
+    }
+    return grossAmount - fee;
+  }
+
+  function _getGrossAmountForNet(uint256 netAmount) internal view returns (uint256) {
+    if (netAmount == 0) {
+      return 0;
+    }
+
+    if (_withdrawalFeeBps == 0) {
+      return netAmount;
+    }
+
+    uint256 grossAmount = Math.mulDiv(
+      netAmount,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
+      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - _withdrawalFeeBps,
+      Math.Rounding.Ceil
+    );
+
+    if (grossAmount > 0) {
+      uint256 alternativeNet = _getNetAmount(grossAmount - 1);
+      if (alternativeNet >= netAmount) {
+        grossAmount -= 1;
+      }
+    }
+
+    return grossAmount;
+  }
+
+  function _requireConfigOrToken(address account) internal view {
+    if (account != dStakeToken && !hasRole(CONFIG_MANAGER_ROLE, account)) {
+      revert UnauthorizedConfigCaller();
+    }
+  }
+
+  function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
     (
       address[] memory activeVaults,
       uint256[] memory currentAllocations,
@@ -171,7 +377,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    // Get vaults sorted by under-allocation (most under-allocated first) and take the leader
     (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopUnderallocated(
       activeVaults,
       currentAllocations,
@@ -179,24 +384,17 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       1
     );
 
-    IERC20(dStable).safeTransferFrom(msg.sender, address(this), dStableAmount);
-
-    // Route the entire deposit to the first under-allocated vault; health checks gate eligibility
-    address targetVault = sortedVaults[0];
-    _depositToVaultAtomically(targetVault, dStableAmount);
+    targetVault = sortedVaults[0];
+    _depositToVaultAtomically(targetVault, assets);
 
     address[] memory vaultArray = new address[](1);
     uint256[] memory amountArray = new uint256[](1);
     vaultArray[0] = targetVault;
-    amountArray[0] = dStableAmount;
-    emit StrategyDepositRouted(vaultArray, amountArray, dStableAmount);
+    amountArray[0] = assets;
+    emit StrategyDepositRouted(vaultArray, amountArray, assets);
   }
 
-  function withdraw(
-    uint256 dStableAmount
-  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
-    if (dStableAmount == 0) revert InvalidAmount();
-
+  function _selectVaultForWithdrawal() internal view returns (address targetVault) {
     (
       address[] memory activeVaults,
       uint256[] memory currentAllocations,
@@ -205,7 +403,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     if (activeVaults.length == 0) revert InsufficientActiveVaults();
 
-    // Get vaults sorted by over-allocation (most over-allocated first) and withdraw from the leader
     (address[] memory sortedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
       activeVaults,
       currentAllocations,
@@ -213,26 +410,74 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       1
     );
 
-    // Withdraw entirely from the most over-allocated vault and bubble up failures
-    address targetVault = sortedVaults[0];
-    uint256 withdrawnAmount = _withdrawFromVaultAtomically(targetVault, dStableAmount);
-    IERC20(dStable).safeTransfer(msg.sender, withdrawnAmount);
+    targetVault = sortedVaults[0];
+  }
+
+  function handleDeposit(
+    address initiator,
+    uint256 assets,
+    uint256 shares,
+    address receiver
+  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    if (receiver == address(0)) revert ReceiverZero();
+    if (assets == 0) revert InvalidAmount();
+
+    _enforceDepositCap(assets);
+
+    IERC20(dStable).safeTransferFrom(msg.sender, address(this), assets);
+    address targetVault = _depositToAutoVault(assets);
+    emit RouterDepositRouted(initiator, receiver, targetVault, assets, shares);
+  }
+
+  function handleWithdraw(
+    address initiator,
+    address receiver,
+    address /*owner*/,
+    uint256 grossAssets,
+    uint256 expectedNetAssets
+  )
+    external
+    override
+    onlyRole(DSTAKE_TOKEN_ROLE)
+    nonReentrant
+    whenNotPaused
+    returns (uint256 netAssets, uint256 fee)
+  {
+    if (receiver == address(0)) revert ReceiverZero();
+    if (grossAssets == 0) {
+      return (0, 0);
+    }
+
+    address targetVault = _selectVaultForWithdrawal();
+    uint256 grossWithdrawn = _withdrawFromVaultAtomically(targetVault, grossAssets);
+
+    fee = _calculateFee(grossWithdrawn);
+    netAssets = grossWithdrawn - fee;
+    if (netAssets < expectedNetAssets) {
+      revert WithdrawalShortfall(expectedNetAssets, netAssets);
+    }
+
+    IERC20(dStable).safeTransfer(receiver, netAssets);
 
     address[] memory vaultArray = new address[](1);
     uint256[] memory amountArray = new uint256[](1);
     vaultArray[0] = targetVault;
-    amountArray[0] = withdrawnAmount;
+    amountArray[0] = grossWithdrawn;
 
-    emit StrategyWithdrawalRouted(vaultArray, amountArray, withdrawnAmount);
-    return withdrawnAmount;
+    emit StrategyWithdrawalRouted(vaultArray, amountArray, grossWithdrawn);
+    emit RouterWithdrawSettled(initiator, receiver, targetVault, grossWithdrawn, netAssets, fee);
+    return (netAssets, fee);
   }
 
   // --- Solver Mode Entrypoints ---
 
   function solverDepositAssets(
     address[] calldata vaults,
-    uint256[] calldata assets
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    uint256[] calldata assets,
+    uint256 minShares,
+    address receiver
+  ) external override nonReentrant whenNotPaused returns (uint256 sharesMinted) {
+    if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
 
@@ -242,36 +487,47 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     if (totalAssets == 0) revert InvalidAmount();
+
+    _enforceDepositCap(totalAssets);
+
+    sharesMinted = _token().previewDeposit(totalAssets);
+    if (sharesMinted < minShares) {
+      revert SharesBelowMinimum(sharesMinted, minShares);
+    }
+
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
 
-    // Execute deposits atomically - any failure reverts the entire transaction
     for (uint256 i = 0; i < vaults.length; i++) {
       if (assets[i] > 0) {
         _depositToVaultAtomically(vaults[i], assets[i]);
       }
     }
 
+    _token().mintForRouter(msg.sender, receiver, totalAssets, sharesMinted);
+
     emit StrategyDepositRouted(vaults, assets, totalAssets);
+    emit RouterSolverDeposit(msg.sender, receiver, totalAssets, sharesMinted);
+    return sharesMinted;
   }
 
   function solverDepositShares(
     address[] calldata vaults,
-    uint256[] calldata shares
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused {
+    uint256[] calldata shares,
+    uint256 minShares,
+    address receiver
+  ) external override nonReentrant whenNotPaused returns (uint256 sharesMinted) {
+    if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != shares.length) revert ArrayLengthMismatch();
 
     uint256[] memory assetAmounts = new uint256[](vaults.length);
     uint256 totalAssets = 0;
 
-    // Validate vaults and calculate assets needed
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
-        // Validate vault is registered and active
         VaultConfig memory config = _getVaultConfig(vaults[i]);
         if (config.status != VaultStatus.Active) revert VaultNotActive(vaults[i]);
 
-        // Use previewMint to determine assets needed to mint the desired shares
         uint256 assetsNeeded = IERC4626(vaults[i]).previewMint(shares[i]);
         assetAmounts[i] = assetsNeeded;
         totalAssets += assetsNeeded;
@@ -279,13 +535,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     if (totalAssets == 0) revert InvalidAmount();
+
+    _enforceDepositCap(totalAssets);
+
+    sharesMinted = _token().previewDeposit(totalAssets);
+    if (sharesMinted < minShares) {
+      revert SharesBelowMinimum(sharesMinted, minShares);
+    }
+
     IERC20(dStable).safeTransferFrom(msg.sender, address(this), totalAssets);
 
-    // Execute deposits through adapters to get exact shares
     for (uint256 i = 0; i < vaults.length; i++) {
       if (shares[i] > 0) {
-        // Use adapter to deposit the required assets
-        // Adapter will handle the conversion and ensure we get the shares
         uint256 mintedShares = _depositToVaultAtomically(vaults[i], assetAmounts[i]);
         if (mintedShares < shares[i]) {
           revert SolverShareDepositShortfall(vaults[i], shares[i], mintedShares);
@@ -293,69 +554,225 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       }
     }
 
+    _token().mintForRouter(msg.sender, receiver, totalAssets, sharesMinted);
+
     emit StrategyDepositRouted(vaults, assetAmounts, totalAssets);
+    emit RouterSolverDeposit(msg.sender, receiver, totalAssets, sharesMinted);
+    return sharesMinted;
   }
 
   function solverWithdrawAssets(
     address[] calldata vaults,
-    uint256[] calldata assets
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
+    uint256[] calldata assets,
+    uint256 maxShares,
+    address receiver,
+    address owner
+  )
+    external
+    override
+    nonReentrant
+    whenNotPaused
+    returns (uint256 netAssets, uint256 fee, uint256 sharesBurned)
+  {
+    if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
 
-    uint256 totalAssets = 0;
+    uint256 totalNetAssets = 0;
+    uint256 totalGrossAssets = 0;
+    uint256[] memory grossRequests = new uint256[](assets.length);
+
     for (uint256 i = 0; i < assets.length; i++) {
-      totalAssets += assets[i];
-    }
-
-    if (totalAssets == 0) revert InvalidAmount();
-
-    // Execute withdrawals atomically, enforcing strict slippage checks
-    for (uint256 i = 0; i < vaults.length; i++) {
-      if (assets[i] > 0) {
-        totalWithdrawn += _withdrawFromVaultAtomically(vaults[i], assets[i]);
+      uint256 requestedNet = assets[i];
+      totalNetAssets += requestedNet;
+      if (requestedNet > 0) {
+        uint256 requestedGross = _getGrossAmountForNet(requestedNet);
+        grossRequests[i] = requestedGross;
+        totalGrossAssets += requestedGross;
       }
     }
 
-    IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
+    if (totalNetAssets == 0) revert InvalidAmount();
 
-    emit StrategyWithdrawalRouted(vaults, assets, totalWithdrawn);
-    return totalWithdrawn;
+    uint256 aggregatedGross = _getGrossAmountForNet(totalNetAssets);
+    if (aggregatedGross > totalGrossAssets) {
+      uint256 shortfall = aggregatedGross - totalGrossAssets;
+      for (uint256 i = assets.length; i > 0; i--) {
+        uint256 idx = i - 1;
+        if (grossRequests[idx] > 0) {
+          grossRequests[idx] += shortfall;
+          break;
+        }
+      }
+      totalGrossAssets = aggregatedGross;
+    }
+
+    sharesBurned = _token().previewWithdraw(totalNetAssets);
+    if (sharesBurned > maxShares) {
+      revert SharesExceedMaxRedeem(sharesBurned, maxShares);
+    }
+
+    uint256 grossWithdrawn = _executeGrossWithdrawals(vaults, grossRequests);
+
+    fee = _calculateFee(grossWithdrawn);
+    netAssets = grossWithdrawn - fee;
+
+    if (netAssets < totalNetAssets) {
+      revert WithdrawalShortfall(totalNetAssets, netAssets);
+    }
+
+    _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
+
+    IERC20(dStable).safeTransfer(receiver, netAssets);
+
+    emit StrategyWithdrawalRouted(vaults, grossRequests, grossWithdrawn);
+    emit RouterSolverWithdraw(msg.sender, receiver, grossWithdrawn, netAssets, fee, sharesBurned);
+    return (netAssets, fee, sharesBurned);
   }
 
   function solverWithdrawShares(
     address[] calldata vaults,
-    uint256[] calldata shares
-  ) external onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 totalWithdrawn) {
+    uint256[] calldata strategyShares,
+    uint256 maxShares,
+    address receiver,
+    address owner
+  )
+    external
+    override
+    nonReentrant
+    whenNotPaused
+    returns (uint256 netAssets, uint256 fee, uint256 sharesBurned)
+  {
+    if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
-    if (vaults.length != shares.length) revert ArrayLengthMismatch();
+    if (vaults.length != strategyShares.length) revert ArrayLengthMismatch();
 
-    uint256[] memory assetAmounts = new uint256[](vaults.length);
-    uint256 totalAssets = 0;
+    uint256[] memory grossAssetAmounts = new uint256[](vaults.length);
+    uint256 totalGrossAssets = 0;
 
-    // Convert shares to vault asset amounts
     for (uint256 i = 0; i < vaults.length; i++) {
-      if (shares[i] > 0) {
-        assetAmounts[i] = IERC4626(vaults[i]).previewRedeem(shares[i]);
-        totalAssets += assetAmounts[i];
+      uint256 shareAmount = strategyShares[i];
+      if (shareAmount > 0) {
+        uint256 assetAmount = IERC4626(vaults[i]).previewRedeem(shareAmount);
+        grossAssetAmounts[i] = assetAmount;
+        totalGrossAssets += assetAmount;
       }
     }
 
-    if (totalAssets == 0) revert InvalidAmount();
-    uint256 balanceBefore = IERC20(dStable).balanceOf(address(this));
+    if (totalGrossAssets == 0) revert InvalidAmount();
 
-    // Execute withdrawals atomically
-    for (uint256 i = 0; i < vaults.length; i++) {
-      if (shares[i] > 0) {
-        _withdrawSharesFromVaultAtomically(vaults[i], shares[i]);
-      }
+    uint256 totalNetAssets = _getNetAmount(totalGrossAssets);
+
+    sharesBurned = _token().previewWithdraw(totalNetAssets);
+    if (sharesBurned > maxShares) {
+      revert SharesExceedMaxRedeem(sharesBurned, maxShares);
     }
 
-    totalWithdrawn = IERC20(dStable).balanceOf(address(this)) - balanceBefore;
-    IERC20(dStable).safeTransfer(msg.sender, totalWithdrawn);
+    uint256 grossWithdrawn = _executeWithdrawShares(vaults, strategyShares);
 
-    emit StrategyWithdrawalRouted(vaults, assetAmounts, totalWithdrawn);
-    return totalWithdrawn;
+    fee = _calculateFee(grossWithdrawn);
+    netAssets = grossWithdrawn - fee;
+
+    if (netAssets < totalNetAssets) {
+      revert WithdrawalShortfall(totalNetAssets, netAssets);
+    }
+
+    _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
+
+    IERC20(dStable).safeTransfer(receiver, netAssets);
+
+    emit StrategyWithdrawalRouted(vaults, grossAssetAmounts, grossWithdrawn);
+    emit RouterSolverWithdraw(msg.sender, receiver, grossWithdrawn, netAssets, fee, sharesBurned);
+    return (netAssets, fee, sharesBurned);
+  }
+
+  function reinvestFees()
+    external
+    override
+    nonReentrant
+    whenNotPaused
+    returns (uint256 amountReinvested, uint256 incentivePaid)
+  {
+    uint256 balance = IERC20(dStable).balanceOf(address(this));
+    if (balance == 0) {
+      return (0, 0);
+    }
+
+    uint256 incentive = Math.mulDiv(balance, reinvestIncentiveBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+    if (incentive > 0) {
+      IERC20(dStable).safeTransfer(msg.sender, incentive);
+    }
+
+    amountReinvested = balance - incentive;
+    if (amountReinvested == 0) {
+      emit RouterFeesReinvested(0, incentive, msg.sender);
+      return (0, incentive);
+    }
+
+    _depositToAutoVault(amountReinvested);
+    emit RouterFeesReinvested(amountReinvested, incentive, msg.sender);
+    incentivePaid = incentive;
+    return (amountReinvested, incentivePaid);
+  }
+
+  function setReinvestIncentive(uint256 newIncentiveBps) external {
+    _requireConfigOrToken(_msgSender());
+    if (newIncentiveBps > MAX_REINVEST_INCENTIVE_BPS) {
+      revert InvalidReinvestIncentive(newIncentiveBps, MAX_REINVEST_INCENTIVE_BPS);
+    }
+    reinvestIncentiveBps = newIncentiveBps;
+    emit ReinvestIncentiveSet(newIncentiveBps);
+  }
+
+  function setWithdrawalFee(uint256 newFeeBps) external override {
+    _requireConfigOrToken(_msgSender());
+    if (newFeeBps > MAX_WITHDRAWAL_FEE_BPS) {
+      revert InvalidWithdrawalFee(newFeeBps, MAX_WITHDRAWAL_FEE_BPS);
+    }
+    uint256 previous = _withdrawalFeeBps;
+    if (previous == newFeeBps) {
+      return;
+    }
+    _withdrawalFeeBps = newFeeBps;
+    emit WithdrawalFeeSet(previous, newFeeBps);
+  }
+
+  function setDepositCap(uint256 newCap) external {
+    _requireConfigOrToken(_msgSender());
+    if (newCap != 0 && newCap < totalManagedAssets()) {
+      revert InvalidDepositCap(newCap, totalManagedAssets());
+    }
+    uint256 previous = depositCap;
+    depositCap = newCap;
+    emit DepositCapUpdated(previous, newCap);
+  }
+
+  function recordShortfall(uint256 delta) external {
+    _requireConfigOrToken(_msgSender());
+    if (delta == 0) {
+      return;
+    }
+    uint256 newShortfall = settlementShortfall + delta;
+    if (newShortfall > totalManagedAssets()) {
+      revert SettlementShortfallTooHigh(newShortfall, totalManagedAssets());
+    }
+    uint256 previous = settlementShortfall;
+    settlementShortfall = newShortfall;
+    emit SettlementShortfallUpdated(previous, newShortfall);
+  }
+
+  function clearShortfall(uint256 amount) external {
+    _requireConfigOrToken(_msgSender());
+    if (amount == 0) {
+      return;
+    }
+    uint256 previous = settlementShortfall;
+    if (amount >= previous) {
+      settlementShortfall = 0;
+    } else {
+      settlementShortfall = previous - amount;
+    }
+    emit SettlementShortfallUpdated(previous, settlementShortfall);
   }
 
   // --- Rebalance/Exchange Functions ---
@@ -766,7 +1183,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return vaultConfigs[index];
   }
 
-  function getMaxSingleVaultWithdraw() external view returns (uint256 maxAssets) {
+  function getMaxSingleVaultWithdraw() external view returns (uint256) {
+    return _maxSingleVaultWithdraw();
+  }
+
+  function _maxSingleVaultWithdraw() internal view returns (uint256 maxAssets) {
     (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
 
     for (uint256 i = 0; i < activeVaults.length; i++) {
@@ -809,8 +1230,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert AdapterSharesMismatch(actualShares, reportedShares);
     }
 
-    emit RouterDeposit(config.adapter, vault, msg.sender, actualShares, dStableAmount);
-
     IERC20(dStable).forceApprove(config.adapter, 0);
     return actualShares;
   }
@@ -843,11 +1262,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     IERC20(vault).forceApprove(adapter, 0);
-    emit Withdrawn(vault, strategyShareAmount, receivedDStable, msg.sender, msg.sender);
     return receivedDStable;
   }
 
-  function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal {
+  function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal returns (uint256 receivedDStable) {
     VaultConfig memory config = _getVaultConfig(vault);
 
     address adapter = config.adapter;
@@ -859,12 +1277,32 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     collateralVault.transferStrategyShares(vault, shares, address(this));
     IERC20(vault).forceApprove(adapter, shares);
 
-    try conversionAdapter.withdrawFromStrategy(shares) returns (uint256 receivedDStable) {
+    try conversionAdapter.withdrawFromStrategy(shares) returns (uint256 redeemed) {
+      receivedDStable = redeemed;
       IERC20(vault).forceApprove(adapter, 0);
-      emit Withdrawn(vault, shares, receivedDStable, msg.sender, msg.sender);
     } catch {
       // No cleanup needed before revert; state will roll back
       revert ShareWithdrawalConversionFailed();
+    }
+
+    return receivedDStable;
+  }
+
+  function _executeGrossWithdrawals(address[] calldata vaults, uint256[] memory grossRequests) internal returns (uint256 totalWithdrawn) {
+    for (uint256 i = 0; i < vaults.length; i++) {
+      uint256 grossRequest = grossRequests[i];
+      if (grossRequest > 0) {
+        totalWithdrawn += _withdrawFromVaultAtomically(vaults[i], grossRequest);
+      }
+    }
+  }
+
+  function _executeWithdrawShares(address[] calldata vaults, uint256[] calldata shareAmounts) internal returns (uint256 totalWithdrawn) {
+    for (uint256 i = 0; i < vaults.length; i++) {
+      uint256 shareAmount = shareAmounts[i];
+      if (shareAmount > 0) {
+        totalWithdrawn += _withdrawSharesFromVaultAtomically(vaults[i], shareAmount);
+      }
     }
   }
 

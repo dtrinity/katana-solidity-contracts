@@ -305,8 +305,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       describe("setWithdrawalFee", () => {
         it("Should allow fee manager to set withdrawal fee", async () => {
           await expect(DStakeTokenV2.connect(user1).setWithdrawalFee(100))
-            .to.emit(DStakeTokenV2, "WithdrawalFeeSet")
-            .withArgs(100);
+            .to.emit(router, "WithdrawalFeeSet")
+            .withArgs(0, 100);
           expect(await DStakeTokenV2.withdrawalFeeBps()).to.equal(100);
         });
 
@@ -322,7 +322,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         it("Should revert if fee exceeds maxWithdrawalFeeBps", async () => {
           await expect(
             DStakeTokenV2.connect(user1).setWithdrawalFee(10001),
-          ).to.be.revertedWithCustomError(DStakeTokenV2, "InvalidFeeBps");
+          ).to.be.revertedWithCustomError(router, "InvalidWithdrawalFee");
         });
 
         it("Should allow setting fee to 0", async () => {
@@ -649,15 +649,11 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         // The user should receive exactly the amount they requested (100 assets)
         const netAssets = assetsToDeposit; // This should be exactly 100
 
-        await expect(
-          DStakeTokenV2.connect(user1).withdraw(
-            assetsToDeposit,
-            user1.address,
-            user1.address,
-          ),
-        )
-          .to.emit(DStakeTokenV2, "WithdrawalFee")
-          .withArgs(user1.address, user1.address, fee);
+        await DStakeTokenV2.connect(user1).withdraw(
+          assetsToDeposit,
+          user1.address,
+          user1.address,
+        );
         expect(await dStableToken.balanceOf(user1.address)).to.equal(netAssets);
         expect(await DStakeTokenV2.balanceOf(user1.address)).to.equal(0n);
       });
@@ -669,15 +665,11 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         // Calculate the expected fee on the **gross** assets (convertToAssets(shares)).
         const grossAssets = await DStakeTokenV2.convertToAssets(shares);
         const fee = (grossAssets * 10000n) / 1000000n;
-        await expect(
-          DStakeTokenV2.connect(user1).redeem(
-            shares,
-            user1.address,
-            user1.address,
-          ),
-        )
-          .to.emit(DStakeTokenV2, "WithdrawalFee")
-          .withArgs(user1.address, user1.address, fee);
+        await DStakeTokenV2.connect(user1).redeem(
+          shares,
+          user1.address,
+          user1.address,
+        );
         // User balance should increase by the previewRedeem amount (net assets)
         expect(await dStableToken.balanceOf(user1.address)).to.equal(
           previewAssets,

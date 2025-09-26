@@ -7,7 +7,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - `DStakeTokenV2` – upgradeable ERC4626 share token (`contracts/vaults/dstake/DStakeTokenV2.sol`)
   - Implements the standard ERC4626 flows; solvers and fee logic now live on the router.
   - Calls into the router via `handleDeposit`/`handleWithdraw` hooks for all stateful work.
-  - Reads total value from the collateral vault through router helpers and emits only ERC4626 events.
+  - Reads total value and withdrawal-fee settings from router helpers and emits only ERC4626 events (including solver flows triggered via router-exclusive hooks).
   - Holds no custom solver entrypoints; router is the single integration surface for advanced flows.
 
 - `DStakeCollateralVaultV2` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVaultV2.sol`)
@@ -47,7 +47,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
   4. Router transfers the net amount directly to the receiver and retains the fee balance locally so all shareholders benefit until it is reinvested.
 
 - **Solver flows**
-  - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts live on the router. They sum assets, enforce ERC4626 previews via the token helpers, and mint/burn shares through router-only hooks on the token.
+  - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts live on the router. They sum assets, enforce ERC4626 previews via the token helpers, and mint/burn shares through router-only hooks that emit ERC4626 `Deposit`/`Withdraw` events (`mintForRouter(msg.sender, receiver, assets, shares)` and `burnFromRouter(msg.sender, receiver, owner, netAssets, shares)`).
   - Multi-vault deposits/withdrawals reuse the same dust tolerance and deterministic ordering; any failed adapter call reverts the entire solver transaction.
   - Router transfers net proceeds directly to recipients; token is not in the payout path.
 
@@ -128,7 +128,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
    - Optionally migrate vault configs by reusing `setVaultConfigs` on the new router.
 
 3. **Manage fees**
-   - Adjust withdrawal fee via `setWithdrawalFee()` within the 1% cap.
+   - Adjust withdrawal fee via `router.setWithdrawalFee()` (token proxy emits router events) within the 1% cap.
    - Tune caller incentive with `setReinvestIncentive()` (max 20%).
    - Schedule or automate `reinvestFees()` so fees re-enter strategies regularly.
 

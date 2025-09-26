@@ -22,7 +22,8 @@
 - `afterDeposit(assets, shares, receiver)` → invokes `router.handleDeposit(_msgSender(), assets, shares, receiver)`.
 - `beforeWithdraw(assets, shares, owner, receiver)` → invokes `router.handleWithdraw(_msgSender(), assets, shares, owner, receiver)`.
 - Token trusts router to deliver net withdrawals directly to the receiver and to retain fees locally; token only handles share accounting.
-- Optional maintenance hooks (`mintForRouter`, `burnForRouter`) restricted to the router for admin operations.
+- Token reads withdrawal-fee config from the router and exposes previews/max getters that reflect router-managed caps.
+- Optional maintenance hooks (`mintForRouter`, `burnFromRouter`) restricted to the router emit standard ERC4626 `Deposit`/`Withdraw` events so solver flows stay index-friendly.
 
 ### DStakeRouterV2 (Orchestrator)
 - State
@@ -88,7 +89,7 @@ function solverDepositAssets(address[] calldata vaults, uint256[] calldata amoun
     _solverDistributeDeposits(vaults, amounts);
     shares = token.previewDeposit(totalAssets);
     require(shares >= minShares);
-    token.mintForRouter(receiver, shares); // restricted to router
+    token.mintForRouter(msg.sender, receiver, totalAssets, shares); // emits ERC4626 Deposit
     emit RouterSolverDeposit(msg.sender, receiver, totalAssets, shares);
 }
 ```
@@ -96,15 +97,17 @@ function solverDepositAssets(address[] calldata vaults, uint256[] calldata amoun
 ### Solver Withdraw (multi-vault)
 ```solidity
 function solverWithdrawShares(address[] calldata vaults, uint256[] calldata strategyShares, uint256 maxShares, address receiver, address owner) external returns (uint256 netAssets) {
-    uint256 dStakeShares = token.previewWithdrawByShares(strategyShares);
-    require(dStakeShares <= maxShares);
-    token.burnFromRouter(owner, dStakeShares); // router-enforced allowance
+    uint256 grossRequested = _previewGross(vaults, strategyShares);
+    uint256 expectedNet = _getNetAmount(grossRequested);
+    uint256 sharesToBurn = token.previewWithdraw(expectedNet);
+    require(sharesToBurn <= maxShares);
     uint256 grossReceived = _solverCollectWithdrawals(vaults, strategyShares);
     uint256 fee = _calculateWithdrawalFee(grossReceived);
     netAssets = grossReceived - fee;
+    token.burnFromRouter(msg.sender, receiver, owner, netAssets, sharesToBurn); // emits ERC4626 Withdraw
     asset.safeTransfer(receiver, netAssets);
     _retainFee(fee);
-    emit RouterSolverWithdraw(msg.sender, receiver, netAssets, fee);
+    emit RouterSolverWithdraw(msg.sender, receiver, grossReceived, netAssets, fee);
 }
 ```
 

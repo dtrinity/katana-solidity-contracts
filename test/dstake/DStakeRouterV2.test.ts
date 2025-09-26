@@ -75,6 +75,14 @@ describe("DStakeRouterV2", function () {
     adapter1Address = fixture.adapter1Address;
     adapter2Address = fixture.adapter2Address;
     adapter3Address = fixture.adapter3Address;
+
+    const routerAddress = await router.getAddress();
+    await dStable.connect(alice).approve(routerAddress, ethers.MaxUint256);
+    await dStable.connect(bob).approve(routerAddress, ethers.MaxUint256);
+    await dStable.connect(charlie).approve(routerAddress, ethers.MaxUint256);
+    await dStakeToken.connect(alice).approve(routerAddress, ethers.MaxUint256);
+    await dStakeToken.connect(bob).approve(routerAddress, ethers.MaxUint256);
+    await dStakeToken.connect(charlie).approve(routerAddress, ethers.MaxUint256);
   });
 
   // Helper to compute total targetBps across all vault configs
@@ -908,9 +916,7 @@ describe("DStakeRouterV2", function () {
       const targetedAssets = [ethers.parseEther("1000"), ethers.parseEther("1000")];
       const targetedTotal = ethers.parseEther("2000");
       await dStable.connect(alice).approve(dStakeToken.target, targetedTotal);
-      await dStakeToken
-        .connect(alice)
-        .solverDepositAssets([vault1Address, vault2Address], targetedAssets, 0n, alice.address);
+      await router.connect(alice).solverDepositAssets([vault1Address, vault2Address], targetedAssets, 0n, alice.address);
 
       const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
       expect(vault1BalanceBefore).to.be.gt(0n);

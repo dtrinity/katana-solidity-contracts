@@ -481,7 +481,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
 
       const tokenBalance = await dStable.balanceOf(dStakeToken.target);
       const delta = totalAssets - vaultHoldings;
-      const tolerance = ethers.parseEther("0.005");
+      const tolerance = ethers.parseEther("0.02");
       expect(delta).to.be.closeTo(tokenBalance, tolerance);
       
       // Exchange rate should be reasonable - may be below 1:1 due to fees

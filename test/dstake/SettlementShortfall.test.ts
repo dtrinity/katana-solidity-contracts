@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
-import { DStakeTokenV2, TestMintableERC20 } from "../../typechain-types";
+import { DStakeRouterV2, DStakeTokenV2, TestMintableERC20 } from "../../typechain-types";
 import { SDUSD_CONFIG } from "./fixture";
 import { createDStakeRouterV2Fixture } from "./routerFixture";
 
@@ -12,6 +12,7 @@ describe("DStakeTokenV2 settlement shortfall", function () {
   const setupFixture = createDStakeRouterV2Fixture(SDUSD_CONFIG);
 
   let dStakeToken: DStakeTokenV2;
+  let router: DStakeRouterV2;
   let dStable: TestMintableERC20;
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -19,6 +20,7 @@ describe("DStakeTokenV2 settlement shortfall", function () {
 
   interface FixtureResult {
     dStakeToken: DStakeTokenV2;
+    router: DStakeRouterV2;
     dStable: TestMintableERC20;
     owner: SignerWithAddress;
     alice: SignerWithAddress;
@@ -27,11 +29,11 @@ describe("DStakeTokenV2 settlement shortfall", function () {
 
   beforeEach(async function () {
     const fixture = await setupFixture();
-    ({ dStakeToken, dStable, owner, alice, bob } = fixture as unknown as FixtureResult);
+    ({ dStakeToken, router, dStable, owner, alice, bob } = fixture as unknown as FixtureResult);
   });
 
   it("defaults to zero and emits on update", async function () {
-    expect(await dStakeToken.settlementShortfall()).to.equal(0n);
+    expect(await router.currentShortfall()).to.equal(0n);
 
     const seedDeposit = ethers.parseEther("100");
     await dStable.connect(alice).approve(dStakeToken, seedDeposit);
@@ -39,10 +41,10 @@ describe("DStakeTokenV2 settlement shortfall", function () {
 
     const newShortfall = ethers.parseEther("20");
     await expect(dStakeToken.connect(owner).setSettlementShortfall(newShortfall))
-      .to.emit(dStakeToken, "SettlementShortfallUpdated")
+      .to.emit(router, "SettlementShortfallUpdated")
       .withArgs(0n, newShortfall);
 
-    expect(await dStakeToken.settlementShortfall()).to.equal(newShortfall);
+    expect(await router.currentShortfall()).to.equal(newShortfall);
   });
 
   it("reduces withdrawable assets and maxWithdraw", async function () {
@@ -158,6 +160,6 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     const excessiveShortfall = ethers.parseEther("60");
     await expect(
       dStakeToken.connect(owner).setSettlementShortfall(excessiveShortfall)
-    ).to.be.revertedWithCustomError(dStakeToken, "SettlementShortfallTooHigh");
+    ).to.be.revertedWithCustomError(router, "SettlementShortfallTooHigh");
   });
 });

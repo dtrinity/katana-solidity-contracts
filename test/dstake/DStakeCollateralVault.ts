@@ -189,13 +189,10 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
       const depositChunk = parseUnits(1_000, dStableDecimals);
       await stable.mint(user1.address, depositChunk);
-      await dStableToken.connect(user1).approve(DStakeTokenV2Address, depositChunk);
-      await DStakeTokenV2.connect(user1).solverDepositAssets(
-        [strategyShareAddress],
-        [depositChunk],
-        0n,
-        user1.address,
-      );
+      await stable.connect(user1).approve(routerAddress, depositChunk);
+      await router
+        .connect(user1)
+        .solverDepositAssets([strategyShareAddress], [depositChunk], 0n, user1.address);
       currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
 
       expect(currentBalance, "Unable to seed collateral vault balance").to.be.gte(minimumBalance);

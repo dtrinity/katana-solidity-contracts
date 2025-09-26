@@ -29,6 +29,7 @@ describe("dSTAKE Invariants", function () {
   let adapterAddresses: string[];
   let vaultAddresses: string[];
   let adapters: MetaMorphoConversionAdapter[];
+  let routerAddress: string;
 
   beforeEach(async function () {
     const fixture = await setupRouterFixture();
@@ -43,6 +44,10 @@ describe("dSTAKE Invariants", function () {
     adapterAddresses = [fixture.adapter1Address, fixture.adapter2Address, fixture.adapter3Address];
     vaultAddresses = [fixture.vault1Address, fixture.vault2Address, fixture.vault3Address];
     adapters = [fixture.adapter1, fixture.adapter2, fixture.adapter3];
+
+    routerAddress = await router.getAddress();
+    await dStable.connect(alice).approve(routerAddress, ethers.MaxUint256);
+    await dStakeToken.connect(alice).approve(routerAddress, ethers.MaxUint256);
   });
 
   describe("Allowance hygiene", function () {
@@ -107,7 +112,7 @@ describe("dSTAKE Invariants", function () {
       const toAdapterAddress = adapterAddresses[1];
 
       await dStable.connect(alice).approve(await dStakeToken.getAddress(), depositAmount);
-      await dStakeToken.connect(alice).solverDepositAssets([fromVault], [depositAmount], 0, alice.address);
+      await router.connect(alice).solverDepositAssets([fromVault], [depositAmount], 0, alice.address);
 
       const fromAdapter = adapters[0];
       const toAdapter = adapters[1];
@@ -152,7 +157,7 @@ describe("dSTAKE Invariants", function () {
       await dStakeToken.connect(owner).setWithdrawalFee(0);
 
       await dStable.connect(alice).approve(dStakeTokenAddress, depositAmount);
-      await dStakeToken.connect(alice).solverDepositAssets([targetVault], [depositAmount], 0, alice.address);
+      await router.connect(alice).solverDepositAssets([targetVault], [depositAmount], 0, alice.address);
 
       const shareToken = (await ethers.getContractAt("IERC20", targetVault)) as IERC20;
       expect(await dStable.balanceOf(targetVault)).to.equal(depositAmount);
@@ -170,7 +175,11 @@ describe("dSTAKE Invariants", function () {
       const dStakeTokenSigner = await ethers.getImpersonatedSigner(dStakeTokenAddress);
       await ethers.provider.send("hardhat_setBalance", [dStakeTokenAddress, ethers.toBeHex(ethers.parseEther("10"))]);
 
-      await expect(router.connect(dStakeTokenSigner).solverWithdrawAssets([targetVault], [depositAmount])).to.be.revertedWithCustomError(
+      await expect(
+        router
+          .connect(dStakeTokenSigner)
+          .solverWithdrawAssets([targetVault], [depositAmount], ethers.MaxUint256, dStakeTokenAddress, dStakeTokenAddress)
+      ).to.be.revertedWithCustomError(
         router,
         "SlippageCheckFailed"
       );
