@@ -36,7 +36,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User deposit / mint**
   1. dSTABLE moves into `DStakeTokenV2` via `deposit()`/`mint()`.
   2. The token approves the router and calls `router.deposit(amount)`.
-  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter reverts, the router bubbles up the failure so operators can investigate or mark the vault unhealthy before retrying.
+  3. Router pulls dSTABLE, selects the healthiest under-allocated strategy, and attempts the entire conversion against that single vault. If the adapter reverts, the router bubbles up the failure so operators can investigate, mark the vault unhealthy, or use solver tools to reroute capital.
   4. Shares are minted to the user according to totalAssets() (which includes any pending fee balance held by the token).
 
 - **User withdraw / redeem**

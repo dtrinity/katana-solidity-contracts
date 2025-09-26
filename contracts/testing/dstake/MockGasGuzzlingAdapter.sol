@@ -8,7 +8,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 /**
  * @title MockGasGuzzlingAdapter
  * @notice Test adapter that intentionally burns nearly all call gas and reverts.
- *         Used to assert the router's retry reserve prevents gas griefing.
+ *         Used to assert the router surfaces gas-griefing adapters as hard failures.
  */
 contract MockGasGuzzlingAdapter is IDStableConversionAdapterV2 {
   using SafeERC20 for IERC20;
@@ -67,4 +67,3 @@ contract MockGasGuzzlingAdapter is IDStableConversionAdapterV2 {
     }
   }
 }
-
