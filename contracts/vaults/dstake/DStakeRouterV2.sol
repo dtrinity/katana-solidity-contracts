@@ -18,8 +18,8 @@ import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
 
 /**
  * @title DStakeRouterV2
- * @notice Supports deterministic, multi-vault routing for deposits and withdrawals.
- * @dev Extends the original single-dLEND router with allocation-aware selection and off-chain solver support.
+ * @notice Provides deterministic routing for dSTAKE, pairing single-vault ERC4626 flows with solver-managed multi-vault operations.
+ * @dev Extends the original single-dLEND router with allocation-aware selection and solver support for explicit multi-vault paths.
  */
 contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
