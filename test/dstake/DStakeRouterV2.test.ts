@@ -470,9 +470,10 @@ describe("DStakeRouterV2", function () {
       const depositAmount = ethers.parseEther("100");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
 
-      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address))
-        .to.be.revertedWithCustomError(router, "DepositConversionFailed")
-        .withArgs(vault1Address, depositAmount);
+      await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
+        gasBombAdapter,
+        "GasBomb"
+      );
     });
 
     it("clamps dust tolerance during share rebalances", async function () {
