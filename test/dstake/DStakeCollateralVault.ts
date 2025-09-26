@@ -11,7 +11,7 @@ import { createDStakeFixture, DSTAKE_CONFIGS, DStakeFixtureConfig } from "./fixt
 const parseUnits = (value: string | number, decimals: number | bigint) => ethers.parseUnits(value.toString(), decimals);
 
 DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
-  describe.skip(`DStakeCollateralVaultV2 for ${config.DStakeTokenV2Symbol}`, () => {
+  describe(`DStakeCollateralVaultV2 for ${config.DStakeTokenV2Symbol}`, () => {
     // Create fixture function once per suite for snapshot caching
     const fixture = createDStakeFixture(config);
 
@@ -27,10 +27,10 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let collateralVault: DStakeCollateralVaultV2;
     let router: DStakeRouterV2;
     let dStableToken: ERC20;
-    let dStableDecimals: bigint;
+    let dStableDecimals: number;
     let strategyShareToken: IERC20;
     let strategyShareAddress: string;
-    let strategyShareDecimals: bigint;
+    let strategyShareDecimals: number;
     let adapter: IDStableConversionAdapterV2 | null; // Adapter can be null
     let adapterAddress: string;
 
@@ -40,6 +40,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let routerAddress: string;
     // routerSigner will be an EOA (likely deployer) with ROUTER_ROLE
     let routerSigner: SignerWithAddress;
+    let amountToSend: bigint;
 
     // Load fixture before each test
     beforeEach(async function () {
@@ -55,7 +56,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       collateralVault = out.collateralVault as unknown as DStakeCollateralVaultV2;
       router = out.router as unknown as DStakeRouterV2;
       dStableToken = out.dStableToken;
-      dStableDecimals = await dStableToken.decimals();
+      dStableDecimals = Number(await dStableToken.decimals());
       strategyShareToken = out.strategyShareToken;
       strategyShareAddress = out.strategyShareAddress;
       adapter = out.adapter as unknown as IDStableConversionAdapterV2 | null;
@@ -73,22 +74,46 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
       if (strategyShareAddress !== ZeroAddress && strategyShareToken) {
         const tempStrategyShare = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/ERC20.sol:ERC20", strategyShareAddress);
-        strategyShareDecimals = await tempStrategyShare.decimals();
+        strategyShareDecimals = Number(await tempStrategyShare.decimals());
       } else {
-        strategyShareDecimals = 18n;
+        strategyShareDecimals = 18;
       }
+
+      amountToSend = parseUnits(1, strategyShareDecimals);
 
       adminRole = await collateralVault.DEFAULT_ADMIN_ROLE();
       routerRole = await collateralVault.ROUTER_ROLE();
 
+      const deployerIsAdmin = await collateralVault.hasRole(adminRole, deployer.address);
+      const user1IsAdmin = await collateralVault.hasRole(adminRole, user1.address);
+
+      if (!user1IsAdmin && deployerIsAdmin) {
+        await collateralVault.connect(deployer).grantRole(adminRole, user1.address);
+      }
+
+      const adminSignerForVault = (await collateralVault.hasRole(adminRole, user1.address)) ? user1 : deployer;
+
+      if (deployerIsAdmin && adminSignerForVault.address === user1.address) {
+        await collateralVault.connect(adminSignerForVault).revokeRole(adminRole, deployer.address).catch(() => {});
+      }
+
       if ((await collateralVault.router()) !== routerAddress) {
-        await collateralVault.connect(user1).setRouter(routerAddress);
+        await collateralVault.connect(adminSignerForVault).setRouter(routerAddress);
       }
 
       if (!(await collateralVault.hasRole(routerRole, deployer.address))) {
-        await collateralVault.connect(user1).grantRole(routerRole, deployer.address);
+        await collateralVault.connect(adminSignerForVault).grantRole(routerRole, deployer.address);
       }
-      routerSigner = deployer;
+
+      const adapterManagerRole = await router.ADAPTER_MANAGER_ROLE();
+      const deployerHasAdapterRole = await router.hasRole(adapterManagerRole, deployer.address);
+      const user1HasAdapterRole = await router.hasRole(adapterManagerRole, user1.address);
+
+      if (!deployerHasAdapterRole && !user1HasAdapterRole) {
+        await router.connect(deployer).grantRole(adapterManagerRole, deployer.address).catch(() => {});
+      }
+
+      routerSigner = (await router.hasRole(adapterManagerRole, deployer.address)) ? deployer : user1;
 
       // Note: ADAPTER_MANAGER_ROLE is granted via deployment scripts, not in test fixtures
 
@@ -104,6 +129,61 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         expect(await router.strategyShareToAdapter(strategyShareAddress)).to.equal(ZeroAddress);
       }
     });
+
+    const ensureAdapterRegistered = async (): Promise<IDStableConversionAdapterV2> => {
+      const registeredAdapter = await router.strategyShareToAdapter(strategyShareAddress);
+
+      if (registeredAdapter === ZeroAddress) {
+        expect(adapterAddress, "Fixture missing adapter for strategy share").to.not.equal(ZeroAddress);
+        await router.connect(routerSigner).addAdapter(strategyShareAddress, adapterAddress);
+      }
+
+      adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
+
+      if (!adapter || (await adapter.getAddress()) !== adapterAddress) {
+        adapter = (await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress)) as IDStableConversionAdapterV2;
+      }
+
+      return adapter;
+    };
+
+    const mintAndDepositDStable = async (amount: bigint, depositor: SignerWithAddress = deployer) => {
+      await stable.mint(depositor.address, amount);
+      await dStableToken.connect(depositor).approve(DStakeTokenV2Address, amount);
+      await DStakeTokenV2.connect(depositor).deposit(amount, depositor.address);
+    };
+
+    const depositDirectlyThroughAdapter = async (amount: bigint) => {
+      const activeAdapter = await ensureAdapterRegistered();
+      await stable.mint(routerSigner.address, amount);
+      await dStableToken.connect(routerSigner).approve(adapterAddress, amount);
+      await activeAdapter.connect(routerSigner).depositIntoStrategy(amount);
+    };
+
+    const ensureVaultHasStrategyShares = async (minimumBalance: bigint): Promise<bigint> => {
+      await ensureAdapterRegistered();
+      let currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
+
+      if (currentBalance >= minimumBalance) {
+        return currentBalance;
+      }
+
+      const depositChunk = parseUnits(1_000, dStableDecimals);
+      let attempts = 0;
+
+      while (currentBalance < minimumBalance && attempts < 5) {
+        try {
+          await mintAndDepositDStable(depositChunk);
+        } catch (error) {
+          await depositDirectlyThroughAdapter(depositChunk);
+        }
+        currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
+        attempts += 1;
+      }
+
+      expect(currentBalance, "Unable to seed collateral vault balance").to.be.gte(minimumBalance);
+      return currentBalance;
+    };
 
     describe("Initialization & Deployment State (from fixture)", () => {
       it("Should have deployed the vault correctly", async function () {
@@ -157,55 +237,34 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       });
     });
 
-    describe("Asset Transfer (sendAsset)", function () {
-      const amountToSend = parseUnits("1", 18);
-
+    describe("Strategy Share Transfers", function () {
       beforeEach(async function () {
-        if (!adapter) {
-          this.skip();
-        }
-
-        if ((await router.strategyShareToAdapter(strategyShareAddress)) === ZeroAddress) {
-          await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
-        }
-
-        const currentVaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
-
-        if (currentVaultBalance < amountToSend) {
-          const dStableDepositAmount = parseUnits("100", dStableDecimals);
-          // Mint dStable for deployer
-          await stable.mint(deployer.address, dStableDepositAmount);
-          // Approve DStakeTokenV2 to spend dStable for deposit
-          await dStableToken.connect(deployer).approve(DStakeTokenV2Address, dStableDepositAmount);
-          // Deposit via DStakeTokenV2 to fund collateral vault
-          await DStakeTokenV2.connect(deployer).deposit(dStableDepositAmount, deployer.address);
-        }
-
-        if ((await strategyShareToken.balanceOf(collateralVaultAddress)) < amountToSend) {
-          console.warn(`Vault has insufficient balance for sendAsset tests. Some tests might fail or be skipped.`);
-        }
+        await ensureVaultHasStrategyShares(amountToSend);
       });
 
       it("Should only allow router (via routerSigner) to send assets", async function () {
-        if ((await strategyShareToken.balanceOf(collateralVaultAddress)) < amountToSend) this.skip();
-
+        await ensureAdapterRegistered();
         const recipient = user1.address;
-        await expect(collateralVault.connect(user1).sendAsset(strategyShareAddress, amountToSend, recipient)).to.be.revertedWithCustomError(
+        await expect(
+          collateralVault.connect(user1).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
+        ).to.be.revertedWithCustomError(
           collateralVault,
           "AccessControlUnauthorizedAccount"
         );
 
-        await expect(collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, amountToSend, recipient)).to.not.be.reverted;
+        await expect(
+          collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
+        ).to.not.be.reverted;
       });
 
       it("Should transfer asset correctly", async function () {
-        if ((await strategyShareToken.balanceOf(collateralVaultAddress)) < amountToSend) this.skip();
-
         const recipient = user1.address;
         const initialVaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const initialRecipientBalance = await strategyShareToken.balanceOf(recipient);
 
-        await collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, amountToSend, recipient);
+        await collateralVault
+          .connect(routerSigner)
+          .transferStrategyShares(strategyShareAddress, amountToSend, recipient);
 
         const finalVaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const finalRecipientBalance = await strategyShareToken.balanceOf(recipient);
@@ -219,14 +278,16 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const vaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const attemptToSend = vaultBalance + parseUnits("1", strategyShareDecimals);
 
-        await expect(collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, attemptToSend, recipient)).to.be.reverted;
+        await expect(
+          collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, attemptToSend, recipient)
+        ).to.be.reverted;
       });
 
       it("Should revert if asset is not supported", async function () {
         const nonSupportedAsset = dStableTokenAddress;
         const recipient = user1.address;
-        await expect(collateralVault.connect(routerSigner).sendAsset(nonSupportedAsset, amountToSend, recipient))
-          .to.be.revertedWithCustomError(collateralVault, "AssetNotSupported")
+        await expect(collateralVault.connect(routerSigner).transferStrategyShares(nonSupportedAsset, amountToSend, recipient))
+          .to.be.revertedWithCustomError(collateralVault, "StrategyShareNotSupported")
           .withArgs(nonSupportedAsset);
       });
     });
@@ -239,9 +300,11 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           const balance = await strategyShareToken.balanceOf(collateralVaultAddress);
 
           if (balance > 0n) {
-            await collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, balance, deployer.address);
+            await collateralVault
+              .connect(routerSigner)
+              .transferStrategyShares(strategyShareAddress, balance, deployer.address);
           }
-          await router.connect(user1).removeAdapter(strategyShareAddress);
+          await router.connect(routerSigner).removeAdapter(strategyShareAddress);
         }
       });
 
@@ -250,92 +313,83 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       });
 
       it("Should return 0 if supported asset has zero balance", async function () {
-        if (!adapter) this.skip();
-        await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
+        await ensureAdapterRegistered();
         expect(await strategyShareToken.balanceOf(collateralVaultAddress)).to.equal(0);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
       });
 
       it("Should return correct value for a single asset with balance", async function () {
-        if (!adapter) this.skip();
-        await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
-
-        const dStableDepositAmount = parseUnits("100", dStableDecimals);
-        // Mint dStable for deployer
-        await stable.mint(deployer.address, dStableDepositAmount);
-        // Approve DStakeTokenV2 to spend dStable for deposit
-        await dStableToken.connect(deployer).approve(DStakeTokenV2Address, dStableDepositAmount);
-        // Deposit via DStakeTokenV2 to fund collateral vault
-        await DStakeTokenV2.connect(deployer).deposit(dStableDepositAmount, deployer.address);
-
+        const registeredAdapter = await ensureAdapterRegistered();
+        const targetBalance = parseUnits(100, strategyShareDecimals);
+        await ensureVaultHasStrategyShares(targetBalance);
         const vaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         expect(vaultBalance).to.be.gt(0);
 
-        const expectedValue = await adapter!.strategyShareValueInDStable(strategyShareAddress, vaultBalance);
+        const expectedValue = await registeredAdapter.strategyShareValueInDStable(strategyShareAddress, vaultBalance);
         const actualValue = await collateralVault.totalValueInDStable();
         expect(actualValue).to.equal(expectedValue);
 
-        await router.connect(user1).removeAdapter(strategyShareAddress);
+        await router.connect(routerSigner).removeAdapter(strategyShareAddress);
       });
 
       it("Should sum values correctly for multiple supported assets (if possible to set up)", async function () {
-        this.skip();
+        const primaryAdapter = await ensureAdapterRegistered();
+        const primaryTarget = parseUnits(50, strategyShareDecimals);
+        await ensureVaultHasStrategyShares(primaryTarget);
+
+        const MockAdapterFactory = await ethers.getContractFactory("MockAdapterPositiveSlippage");
+        const additionalAdapter = (await MockAdapterFactory.deploy(dStableTokenAddress, collateralVaultAddress)) as IDStableConversionAdapterV2;
+        const additionalAdapterAddress = await additionalAdapter.getAddress();
+        const additionalStrategyShare = await additionalAdapter.strategyShare();
+
+        await router.connect(routerSigner).addAdapter(additionalStrategyShare, additionalAdapterAddress);
+
+        const additionalDepositAmount = parseUnits(150, dStableDecimals);
+        await stable.mint(routerSigner.address, additionalDepositAmount);
+        await dStableToken.connect(routerSigner).approve(additionalAdapterAddress, additionalDepositAmount);
+        await additionalAdapter.connect(routerSigner).depositIntoStrategy(additionalDepositAmount);
+
+        const primaryBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
+        const additionalShareToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", additionalStrategyShare);
+        const secondaryBalance = await additionalShareToken.balanceOf(collateralVaultAddress);
+
+        const primaryValue = await primaryAdapter.strategyShareValueInDStable(strategyShareAddress, primaryBalance);
+        const secondaryValue = await additionalAdapter.strategyShareValueInDStable(additionalStrategyShare, secondaryBalance);
+
+        const totalValue = await collateralVault.totalValueInDStable();
+        expect(totalValue).to.equal(primaryValue + secondaryValue);
       });
 
       it("Should return 0 after asset balance is removed and adapter is removed", async function () {
-        if (!adapter) this.skip();
-        await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
-
-        const dStableDepositAmount = parseUnits("100", dStableDecimals);
-        // Mint dStable for deployer
-        await stable.mint(deployer.address, dStableDepositAmount);
-        // Approve DStakeTokenV2 to spend dStable for deposit
-        await dStableToken.connect(deployer).approve(DStakeTokenV2Address, dStableDepositAmount);
-        // Deposit via DStakeTokenV2 to fund collateral vault
-        await DStakeTokenV2.connect(deployer).deposit(dStableDepositAmount, deployer.address);
+        await ensureAdapterRegistered();
+        const seeded = await ensureVaultHasStrategyShares(parseUnits(50, strategyShareDecimals));
 
         expect(await collateralVault.totalValueInDStable()).to.be.gt(0);
 
         // Send all vault asset back to deployer
-        const vaultBalanceForRemoval = await strategyShareToken.balanceOf(collateralVaultAddress);
-        await collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, vaultBalanceForRemoval, deployer.address);
+        await collateralVault
+          .connect(routerSigner)
+          .transferStrategyShares(strategyShareAddress, seeded, deployer.address);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
 
-        await router.connect(user1).removeAdapter(strategyShareAddress);
+        await router.connect(routerSigner).removeAdapter(strategyShareAddress);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
       });
     });
 
-    describe("Supported Asset Removal without Zero Balance", function () {
+    describe("Supported Strategy Share Removal without Zero Balance", function () {
       beforeEach(async function () {
-        if (!adapter) {
-          this.skip();
-        }
-
-        // Ensure adapter added
-        if ((await router.strategyShareToAdapter(strategyShareAddress)) === ZeroAddress) {
-          await router.connect(user1).addAdapter(strategyShareAddress, adapterAddress);
-        }
-        // Ensure vault holds a positive balance of the asset
-        const currentBal = await strategyShareToken.balanceOf(collateralVaultAddress);
-
-        if (currentBal === 0n) {
-          const depositAmount = ethers.parseUnits("100", dStableDecimals);
-          await stable.mint(deployer.address, depositAmount);
-          await dStableToken.connect(deployer).approve(DStakeTokenV2Address, depositAmount);
-          await DStakeTokenV2.connect(deployer).deposit(depositAmount, deployer.address);
-          expect(await strategyShareToken.balanceOf(collateralVaultAddress)).to.be.gt(0n);
-        }
+        await ensureVaultHasStrategyShares(parseUnits(100, strategyShareDecimals));
       });
 
-      it("Should allow removeSupportedAsset even when balance > 0", async function () {
+      it("Should allow removeSupportedStrategyShare even when balance > 0", async function () {
         // Verify balance > 0
         const balBefore = await strategyShareToken.balanceOf(collateralVaultAddress);
         expect(balBefore).to.be.gt(0n);
 
         // Remove supported asset via routerSigner
-        await expect(collateralVault.connect(routerSigner).removeSupportedAsset(strategyShareAddress))
-          .to.emit(collateralVault, "SupportedAssetRemoved")
+        await expect(collateralVault.connect(routerSigner).removeSupportedStrategyShare(strategyShareAddress))
+          .to.emit(collateralVault, "StrategyShareRemoved")
           .withArgs(strategyShareAddress);
 
         // Asset should no longer be in supported list
@@ -343,13 +397,13 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         expect(supported).to.not.include(strategyShareAddress);
       });
 
-      it("Should revert sendAsset after asset is removed but balance remains", async function () {
+      it("Should block transfers after asset is removed but balance remains", async function () {
         // Remove asset first
-        await collateralVault.connect(routerSigner).removeSupportedAsset(strategyShareAddress);
+        await collateralVault.connect(routerSigner).removeSupportedStrategyShare(strategyShareAddress);
 
-        // Attempt to send should revert due to AssetNotSupported
-        await expect(collateralVault.connect(routerSigner).sendAsset(strategyShareAddress, 1n, deployer.address))
-          .to.be.revertedWithCustomError(collateralVault, "AssetNotSupported")
+        // Attempt to send should revert due to StrategyShareNotSupported
+        await expect(collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, 1n, deployer.address))
+          .to.be.revertedWithCustomError(collateralVault, "StrategyShareNotSupported")
           .withArgs(strategyShareAddress);
       });
     });
@@ -393,12 +447,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         });
 
         it("Should revert when trying to rescue supported vault assets", async function () {
-          if (!adapter) this.skip();
-
-          // Ensure the vault asset is supported
-          if ((await router.strategyShareToAdapter(strategyShareAddress)) === ZeroAddress) {
-            await router.connect(deployer).addAdapter(strategyShareAddress, adapterAddress);
-          }
+          await ensureVaultHasStrategyShares(parseUnits(10, strategyShareDecimals));
 
           await expect(collateralVault.connect(user1).rescueToken(strategyShareAddress, user1.address, 1n))
             .to.be.revertedWithCustomError(collateralVault, "CannotRescueRestrictedToken")
@@ -518,36 +567,33 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         });
 
         it("Should prevent rescue of newly added supported assets", async function () {
-          if (!adapter) this.skip();
+          const registeredAdapter = await ensureAdapterRegistered();
 
-          // Initially the vault asset should not be supported if adapter is not set
-          if ((await router.strategyShareToAdapter(strategyShareAddress)) === ZeroAddress) {
-            // Send vault asset to the contract
-            const amount = parseUnits("10", strategyShareDecimals);
-
-            if (strategyShareAddress !== ZeroAddress && strategyShareToken) {
-              // Mint or transfer vault asset to the vault
-              const dStableDepositAmount = parseUnits("100", dStableDecimals);
-              await stable.mint(deployer.address, dStableDepositAmount);
-              await dStableToken.connect(deployer).approve(DStakeTokenV2Address, dStableDepositAmount);
-              await DStakeTokenV2.connect(deployer).deposit(dStableDepositAmount, deployer.address);
-            }
-
-            // Should be able to rescue before it's supported
-            const vaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
-
-            if (vaultBalance > 0n) {
-              await expect(collateralVault.connect(user1).rescueToken(strategyShareAddress, user1.address, 1n)).to.not.be.reverted;
-            }
-
-            // Add adapter to make it supported
-            await router.connect(deployer).addAdapter(strategyShareAddress, adapterAddress);
-
-            // Now should not be able to rescue
-            await expect(collateralVault.connect(user1).rescueToken(strategyShareAddress, user1.address, 1n))
-              .to.be.revertedWithCustomError(collateralVault, "CannotRescueRestrictedToken")
-              .withArgs(strategyShareAddress);
+          const existingBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
+          if (existingBalance > 0n) {
+            await collateralVault
+              .connect(routerSigner)
+              .transferStrategyShares(strategyShareAddress, existingBalance, deployer.address);
           }
+
+          await router.connect(routerSigner).removeAdapter(strategyShareAddress);
+          expect(await router.strategyShareToAdapter(strategyShareAddress)).to.equal(ZeroAddress);
+
+          const seedAmount = parseUnits(25, dStableDecimals);
+          await stable.mint(routerSigner.address, seedAmount);
+          await dStableToken.connect(routerSigner).approve(adapterAddress, seedAmount);
+          await registeredAdapter.connect(routerSigner).depositIntoStrategy(seedAmount);
+
+          const vaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
+          expect(vaultBalance).to.be.gt(0n);
+
+          await expect(collateralVault.connect(user1).rescueToken(strategyShareAddress, user1.address, 1n)).to.not.be.reverted;
+
+          await router.connect(routerSigner).addAdapter(strategyShareAddress, adapterAddress);
+
+          await expect(collateralVault.connect(user1).rescueToken(strategyShareAddress, user1.address, 1n))
+            .to.be.revertedWithCustomError(collateralVault, "CannotRescueRestrictedToken")
+            .withArgs(strategyShareAddress);
         });
       });
     });

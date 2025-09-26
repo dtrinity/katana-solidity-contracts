@@ -941,11 +941,6 @@ describe("DStake Solver Mode Tests", function () {
 
       // The key assertion: solver withdrawal applies fees at the same rate as normal withdrawals
       // This proves fees are not being double-charged in solver mode
-      console.log(`Normal withdrawal fee rate: ${withdrawalFeeBps} bps`);
-      console.log(`Solver withdrawal fee rate: ${solverFeeRate} bps`);
-      console.log(
-        `Difference: ${solverFeeRate > withdrawalFeeBps ? solverFeeRate - withdrawalFeeBps : withdrawalFeeBps - solverFeeRate} bps`
-      );
     });
 
     it("Should handle zero fee scenarios correctly in solver withdrawals", async function () {

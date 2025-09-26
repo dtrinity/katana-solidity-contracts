@@ -335,7 +335,6 @@ describe("DeterministicVaultSelector Library Tests", function () {
       const tx = await harness.selectTopUnderallocated.populateTransaction(vaults, currentBps, targetBps, count);
 
       const gasEstimate = await deployer.estimateGas(tx);
-      console.log(`Gas estimate for selectTopUnderallocated (4 vaults, select 2): ${gasEstimate}`);
 
       // Gas should be reasonable (less than 100k for 4 vaults)
       expect(gasEstimate).to.be.lt(100000n);
@@ -358,7 +357,6 @@ describe("DeterministicVaultSelector Library Tests", function () {
       const tx4 = await harness.selectTopUnderallocated.populateTransaction(vaults4, currentBps4, targetBps4, 1);
       const gas4 = await deployer.estimateGas(tx4);
 
-      console.log(`Gas usage: 3 vaults = ${gas3}, 4 vaults = ${gas4}`);
 
       // Gas increase should be reasonable (not exponential)
       const gasIncrease = gas4 - gas3;

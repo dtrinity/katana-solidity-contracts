@@ -162,7 +162,6 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       const hasRole = await routerContract.hasRole(DEFAULT_ADMIN_ROLE, allSigners[i].address);
       if (hasRole) {
         adminSigner = allSigners[i];
-        console.log(`Found admin signer at index ${i}: ${adminSigner.address}`);
         break;
       }
     }
@@ -183,10 +182,7 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       if (!hasVaultRole) {
         await routerContract.connect(adminSigner).grantRole(VAULT_MANAGER_ROLE, ownerSigner.address);
       }
-
-      console.log("✅ Successfully granted all required roles");
     } catch (e) {
-      console.log("⚠️ Could not grant required roles - skipping vault configuration");
       // If we can't grant roles, we'll check if vault is already configured
       const currentVaultCount = await routerContract.getVaultCount();
       if (currentVaultCount === 0n) {
@@ -198,8 +194,6 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     const vaultCount = await routerContract.getVaultCount();
     if (vaultCount === 0n) {
       // Manually configure the vault since deployment scripts may not have run
-      console.log("⚙️ Manually configuring vault - deployment scripts didn't set up the vault");
-
       // Register the adapter with the strategy share
       await routerContract.connect(ownerSigner).addAdapter(
         metaMorphoVaultContract.target,
@@ -214,8 +208,6 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       };
       await routerContract.setVaultConfigs([vaultConfig]);
       await routerContract.setDefaultDepositStrategyShare(metaMorphoVaultContract.target);
-
-      console.log("✅ Manual vault configuration completed");
     }
 
     // Note: Router configuration, adapter registration, and permissions should be handled by deployment scripts
@@ -426,29 +418,17 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
     
     it("Phase 7: Simulate vault fee changes", async function () {
       // Note: Router automatically handles vault withdrawal fees using ERC-4626 standards
-      console.log("Alice shares before fee:", ethers.formatEther(await dStakeToken.balanceOf(alice.address)));
-      console.log("MetaMorpho total assets before fee:", ethers.formatEther(await metaMorphoVault.totalAssets()));
-      console.log("MetaMorpho total supply before fee:", ethers.formatEther(await metaMorphoVault.totalSupply()));
-      
       // Set a withdrawal fee on the MetaMorpho vault
       await metaMorphoVault.setFees(0, 100); // 1% withdrawal fee
       
       // Try a simpler approach: test shows that vault fees make exact withdrawals difficult
       // Instead, just verify that withdrawal fees affect the final amounts
       const aliceSharesBalance = await dStakeToken.balanceOf(alice.address);
-      
-      console.log("Alice shares balance:", ethers.formatEther(aliceSharesBalance));
-      
       // Only attempt withdrawal if Alice has sufficient shares
       if (aliceSharesBalance > 0) {
         // Use a percentage of Alice's shares instead of fixed amount
         const smallShareAmount = aliceSharesBalance / 10n; // 10% of her shares
-        
-        console.log("Attempting to redeem shares:", ethers.formatEther(smallShareAmount));
-        
         const expectedAssets = await dStakeToken.previewRedeem(smallShareAmount);
-        console.log("Expected assets from previewRedeem:", ethers.formatEther(expectedAssets));
-        
         // Only proceed if the preview returns a positive amount
         if (expectedAssets > 0) {
           const assetsBefore = await dStable.balanceOf(alice.address);
@@ -457,33 +437,23 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
           const vaultTotalAssets = await metaMorphoVault.totalAssets();
           const vaultTotalSupply = await metaMorphoVault.totalSupply();
           const collateralVaultShares = await metaMorphoVault.balanceOf(collateralVault.target);
-
-          console.log("Vault total assets:", ethers.formatEther(vaultTotalAssets));
-          console.log("Vault total supply:", ethers.formatEther(vaultTotalSupply));
-          console.log("Collateral vault shares:", ethers.formatEther(collateralVaultShares));
-
           try {
             await dStakeToken.connect(alice).redeem(smallShareAmount, alice.address, alice.address);
             const assetsAfter = await dStable.balanceOf(alice.address);
 
             const received = assetsAfter - assetsBefore;
-            console.log("Actual received:", ethers.formatEther(received));
-
             // With vault fees, user should receive some amount but potentially less than expected
             expect(received).to.be.gt(0);
           } catch (error: any) {
-            console.log("Withdrawal failed with error:", error.message);
             // If withdrawal fails due to liquidity issues after setting fees, that's acceptable
             // The important thing is that the fee is set correctly
             expect(await metaMorphoVault.withdrawalFee()).to.equal(100);
           }
         } else {
-          console.log("Skipping withdrawal as preview returned 0 assets");
           // Just verify the vault fee is set
           expect(await metaMorphoVault.withdrawalFee()).to.equal(100);
         }
       } else {
-        console.log("Skipping withdrawal as Alice has no shares");
         // Just verify the vault fee is set
         expect(await metaMorphoVault.withdrawalFee()).to.equal(100);
       }
@@ -534,12 +504,6 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
       // Initial deposits: Alice 1000 + Bob 2000 + Charlie 1000 = 4000
       // Bob withdrew half (~1000+) in Phase 6, Alice withdrew 10% in Phase 7 (if she had shares)
       // With yield generation and fees, expect some remaining value
-      
-      console.log("Alice final value:", ethers.formatEther(aliceValue));
-      console.log("Bob final value:", ethers.formatEther(bobValue));
-      console.log("Charlie final value:", ethers.formatEther(charlieValue));
-      console.log("Total final value:", ethers.formatEther(totalFinalValue));
-      
       // More flexible expectation - if there are any shares left, they should have value
       if (aliceFinalShares + bobFinalShares + charlieFinalShares > 0) {
         expect(totalFinalValue).to.be.gt(0);
@@ -551,7 +515,6 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
           expect(totalFinalValue).to.be.gt(ethers.parseEther("50"));
         }
       } else {
-        console.log("All shares have been redeemed - skipping value check");
         expect(totalFinalValue).to.equal(0);
       }
       
@@ -576,13 +539,11 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
           // Verify Charlie's shares are now zero
           expect(await dStakeToken.balanceOf(charlie.address)).to.equal(0);
         } catch (error: any) {
-          console.log("Charlie's redemption failed:", error.message);
           // If redemption fails due to liquidity constraints after fees, that's acceptable
           // Just ensure we still have the shares recorded
           expect(charlieFinalShares).to.be.gt(0);
         }
       } else {
-        console.log("Charlie has no shares to redeem");
       }
     });
     
@@ -618,19 +579,11 @@ describe("dSTAKE MetaMorpho Lifecycle", function () {
         expect(metaMorphoTotalSupply).to.be.gt(0);
       } else {
         // If no shares left, vault may be empty
-        console.log("All dSTAKE shares redeemed - vault may be empty");
       }
       
       // Verify reward manager state
       expect(await rewardManager.isURDConfigured()).to.be.true;
       expect(await rewardManager.currentSkimRecipient()).to.equal(urd.target);
-      
-      console.log("\n=== Final System State ===");
-      console.log("Total dSTAKE Supply:", ethers.formatEther(totalSupply));
-      console.log("Total Assets (dStable):", ethers.formatEther(totalAssets));
-      console.log("Vault Holdings:", ethers.formatEther(vaultHoldings));
-      console.log("MetaMorpho Total Assets:", ethers.formatEther(metaMorphoTotalAssets));
-      console.log("MetaMorpho Total Supply:", ethers.formatEther(metaMorphoTotalSupply));
     });
   });
 });

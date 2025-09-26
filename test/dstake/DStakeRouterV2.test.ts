@@ -413,15 +413,15 @@ describe("DStakeRouterV2", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
 
-      // Listen for DeterministicDeposit event and verify only 1 vault is selected
+      // Listen for StrategyDepositRouted and verify only 1 vault is selected
       const tx = await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
       const receipt = await tx.wait();
 
-      // Find DeterministicDeposit event (or StrategyDepositRouted for backward compatibility)
+      // Parse StrategyDepositRouted event emitted by the fail-fast router
       const depositEvent = receipt.logs.find((log: any) => {
         try {
           const decoded = router.interface.parseLog(log);
-          return decoded?.name === "StrategyDepositRouted" || decoded?.name === "DeterministicDeposit";
+          return decoded?.name === "StrategyDepositRouted";
         } catch {
           return false;
         }
@@ -825,7 +825,6 @@ describe("DStakeRouterV2", function () {
 
       // Perform deterministic deposits/withdrawals to test convergence
       // With deterministic selection, convergence should be faster and more predictable
-      const operations = [];
       for (let i = 0; i < 50; i++) {
         // Reduced from 100 since deterministic is more efficient
         const isDeposit = i % 4 !== 3; // 75% deposits, 25% withdrawals (deterministic pattern)
@@ -834,7 +833,6 @@ describe("DStakeRouterV2", function () {
         if (isDeposit) {
           await dStable.connect(alice).approve(dStakeToken.target, amount);
           await dStakeToken.connect(alice).deposit(amount, alice.address);
-          operations.push(`Deposit: ${ethers.formatEther(amount)}`);
         } else {
           // Only withdraw if we have sufficient shares
           const aliceShares = await dStakeToken.balanceOf(alice.address);
@@ -842,22 +840,12 @@ describe("DStakeRouterV2", function () {
             const maxWithdrawShares = aliceShares / 10n; // Max 10% of shares per withdrawal
             const withdrawShares = amount > maxWithdrawShares ? maxWithdrawShares : amount;
             await dStakeToken.connect(alice).redeem(withdrawShares, alice.address, alice.address);
-            operations.push(`Withdraw: ${ethers.formatEther(withdrawShares)} shares`);
           }
-        }
-
-        // Log progress every 10 operations
-        if ((i + 1) % 10 === 0) {
-          const [, currentAllocsBps] = await router.getCurrentAllocations();
-          console.log(`After ${i + 1} operations: [${currentAllocsBps.map((a: bigint) => (Number(a) / 100).toFixed(1)).join("%, ")}%]`);
         }
       }
 
       // Check final convergence - should be within 5% of targets
       const [, finalAllocations] = await router.getCurrentAllocations();
-
-      console.log("Final allocations:", finalAllocations.map((a: bigint) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
-      console.log("Target allocations: [50.0%, 30.0%, 20.0%]");
 
       // Allow 5% tolerance for convergence (500 basis points) - deterministic should achieve this easily
       expect(finalAllocations[0]).to.be.closeTo(500000, 50000); // 50% ± 5%
@@ -877,7 +865,6 @@ describe("DStakeRouterV2", function () {
 
       // Record initial skewed state
       let [, allocsBefore] = await router.getCurrentAllocations();
-      console.log("Initial (skewed):", allocsBefore.map((a: bigint) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
 
       // Re-enable all vaults
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Active);
@@ -889,10 +876,6 @@ describe("DStakeRouterV2", function () {
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
 
-        if ((i + 1) % 5 === 0) {
-          const [, currentAllocs] = await router.getCurrentAllocations();
-          console.log(`After ${i + 1} deposits:`, currentAllocs.map((a: bigint) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
-        }
       }
 
       const [, allocsAfter] = await router.getCurrentAllocations();
@@ -920,24 +903,16 @@ describe("DStakeRouterV2", function () {
       await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Active);
       await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Active);
 
-      // With deterministic selection, ensure vault1 has some balance
-      // If vault1 doesn't have balance initially, make targeted deposits to rebalance
-      let vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
+      // Seed deterministic holdings so the exchange path has liquidity on both legs
+      const targetedAssets = [ethers.parseEther("1000"), ethers.parseEther("1000")];
+      const targetedTotal = ethers.parseEther("2000");
+      await dStable.connect(alice).approve(dStakeToken.target, targetedTotal);
+      await dStakeToken
+        .connect(alice)
+        .solverDepositAssets([vault1Address, vault2Address], targetedAssets, 0n, alice.address);
 
-      if (vault1BalanceBefore == 0n) {
-        // Make deposits that will deterministically go to most underallocated vaults
-        // Since vault1 target is 50% and has 0%, it should be selected
-        const additionalAmount = ethers.parseEther("5000");
-        await dStable.connect(alice).approve(dStakeToken.target, additionalAmount);
-        await dStakeToken.connect(alice).deposit(additionalAmount, alice.address);
-        vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
-
-        // With deterministic selection, this should now have balance
-        if (vault1BalanceBefore == 0n) {
-          this.skip(); // Skip if still no balance (unexpected with deterministic selection)
-          return;
-        }
-      }
+      const vault1BalanceBefore = await vault1.balanceOf(collateralVault.target);
+      expect(vault1BalanceBefore).to.be.gt(0n);
 
       const [vaultsBefore, allocationsBefore] = await router.getCurrentAllocations();
 
@@ -1349,13 +1324,13 @@ describe("DStakeRouterV2", function () {
       expect(allocationsAfter[2]).to.be.gt(allocationsBefore[2]);
     });
 
-    it("Should handle large withdrawals across multiple vaults", async function () {
+    it("Should handle large withdrawals with deterministic routing", async function () {
       // Make initial deposit
       const depositAmount = ethers.parseEther("10000");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
 
-      // Test that the system can handle large withdrawals even when there are minor inefficiencies
+      // Test that the system can handle large withdrawals without needing multi-vault fallbacks
       // Remove any fees to avoid slippage protection issues
       await vault1.setFees(0, 0);
       await vault2.setFees(0, 0);
@@ -1400,9 +1375,6 @@ describe("DStakeRouterV2", function () {
       expect(receipt2).to.not.be.null;
       const gasUsed2 = receipt2!.gasUsed;
 
-      console.log(`Small deposit gas: ${gasUsed1}`);
-      console.log(`Large deposit gas: ${gasUsed2}`);
-
       // Gas should be very similar (within 10% variance)
       const gasDifference = gasUsed1 > gasUsed2 ? gasUsed1 - gasUsed2 : gasUsed2 - gasUsed1;
       const maxAllowedDifference = gasUsed1 / 10n; // 10% tolerance
@@ -1435,9 +1407,6 @@ describe("DStakeRouterV2", function () {
       const receipt2 = await tx2.wait();
       expect(receipt2).to.not.be.null;
       const gasUsed2 = receipt2!.gasUsed;
-
-      console.log(`Small withdrawal gas: ${gasUsed1}`);
-      console.log(`Large withdrawal gas: ${gasUsed2}`);
 
       // Gas should be reasonable for withdrawals (typically higher than deposits due to liquidity calculations)
       expect(gasUsed1).to.be.lt(425000n); // Headroom for new dust tolerance valuation math
@@ -1502,11 +1471,6 @@ describe("DStakeRouterV2", function () {
         }
       }
 
-      console.log("Vault selection frequency over", iterations, "deposits (deterministic):");
-      console.log(`Vault1 (overweight, target 50%): ${results[vault1.target.toString()]} selections`);
-      console.log(`Vault2 (underweight, target 30%): ${results[vault2.target.toString()]} selections`);
-      console.log(`Vault3 (underweight, target 20%): ${results[vault3.target.toString()]} selections`);
-
       // With deterministic selection, underweight vaults should be strongly preferred
       // Vault1 should be selected less often since it's overweight
       // Vault2 and Vault3 should be selected more often since they're underweight
@@ -1536,9 +1500,6 @@ describe("DStakeRouterV2", function () {
       }
 
       // Check we're reasonably close to targets
-      const [, allocations] = await router.getCurrentAllocations();
-      console.log("Balanced state allocations:", allocations.map((a: bigint) => (Number(a) / 100).toFixed(1)).join("%, ") + "%");
-
       // When at targets, deterministic selection should default to first vaults
       const selectionCount = { [vault1.target.toString()]: 0, [vault2.target.toString()]: 0, [vault3.target.toString()]: 0 };
 
@@ -1569,11 +1530,6 @@ describe("DStakeRouterV2", function () {
           }
         }
       }
-
-      console.log("Deterministic selection distribution when near targets:");
-      console.log(`Vault1: ${selectionCount[vault1.target.toString()]} selections`);
-      console.log(`Vault2: ${selectionCount[vault2.target.toString()]} selections`);
-      console.log(`Vault3: ${selectionCount[vault3.target.toString()]} selections`);
 
       // With deterministic selection at balance, should consistently select first vault
       // when no underallocations exist
@@ -1665,8 +1621,6 @@ describe("DStakeRouterV2", function () {
       expect(receipt).to.not.be.null;
       const gasUsed = receipt!.gasUsed;
 
-      console.log(`Deterministic implementation gas usage: ${gasUsed}`);
-
       // Gas should be reasonable for deterministic selection (targeting < 500k)
       expect(gasUsed).to.be.lt(500000n);
 
@@ -1713,11 +1667,6 @@ describe("DStakeRouterV2", function () {
         expect(receipt).to.not.be.null;
         gasResults.push(receipt!.gasUsed);
       }
-
-      console.log(
-        "Gas usage across scenarios:",
-        gasResults.map((g: bigint) => g.toString())
-      );
 
       // Gas usage should be relatively consistent
       const minGas = gasResults.reduce((min, gas) => (gas < min ? gas : min), gasResults[0]);
@@ -1797,12 +1746,6 @@ describe("DStakeRouterV2", function () {
         }
       }
 
-      console.log("Convergence progression:");
-      convergenceData.forEach((data) => {
-        const percentages = data.allocations.map((a: number) => (a / 100).toFixed(1));
-        console.log(`  Iteration ${data.iteration}: [${percentages.join("%, ")}%]`);
-      });
-
       // Final allocation should be closer to targets than initial
       const finalData = convergenceData[convergenceData.length - 1];
       expect(finalData.allocations[0]).to.be.lt(900000); // Less than 90% (started at 100%)
@@ -1856,8 +1799,6 @@ describe("DStakeRouterV2", function () {
 
       // With deterministic selection, the pattern should be predictable based on allocations
       expect(selections.length).to.equal(5);
-      console.log("Deterministic vault selections over 5 identical deposits:", selections);
-
       // Should show consistent selection behavior (not necessarily identical since allocations change)
       // but should demonstrate deterministic logic
       for (const selection of selections) {
@@ -1893,26 +1834,14 @@ describe("DStakeRouterV2", function () {
         const [vaults, currentAllocations, targetAllocations, totalBalance] = await router.getCurrentAllocations();
         expect(totalBalance).to.be.gt(ethers.parseEther("15000")); // Should have funds
 
-        // Verify that the deterministic single-vault routing actually funded a vault
-        for (let i = 0; i < vaults.length; i++) {
-          const vaultShares = await ethers.getContractAt("IERC20", vaults[i]).then((c) => c.balanceOf(collateralVault.target));
-          if (vaultShares > 0) {
-            console.log(`Vault ${i} (${vaults[i]}) has ${ethers.formatEther(vaultShares)} shares`);
-          }
-        }
-
-        const anyVaultFunded = await Promise.all(
+        const balances = await Promise.all(
           vaults.map((vault) =>
             ethers.getContractAt("IERC20", vault).then((c) => c.balanceOf(collateralVault.target))
           )
-        ).then((balances) => balances.some((bal) => bal > 0n));
+        );
+        expect(balances.some((bal) => bal > 0n)).to.equal(true);
 
-        if (!anyVaultFunded) {
-          this.skip();
-          return;
-        }
-
-        // Try to withdraw a large amount that may require multiple vaults
+        // Try to withdraw a large amount even if a single vault cannot satisfy it
         const aliceShares = await dStakeToken.balanceOf(alice.address);
         const withdrawShares = aliceShares / 2n; // 50% withdrawal
 
@@ -2057,8 +1986,8 @@ describe("DStakeRouterV2", function () {
       });
     });
 
-    describe("Test 2: Proportional Deposits by Underallocation", function () {
-      it("Should split deposits proportionally to underallocations", async function () {
+    describe("Deterministic deposit routing", function () {
+      it("Should route deposits toward underallocated vaults", async function () {
         // Create initial imbalance - put most funds in vault1
         await router.updateVaultConfig(vault2Address, adapter2Address, 300000, VaultStatus.Suspended);
         await router.updateVaultConfig(vault3Address, adapter3Address, 200000, VaultStatus.Suspended);
@@ -2077,7 +2006,7 @@ describe("DStakeRouterV2", function () {
         expect(allocationsBefore[1]).to.equal(0); // Vault2 = 0%
         expect(allocationsBefore[2]).to.equal(0); // Vault3 = 0%
 
-        // Make deposit that should be split proportionally based on underallocations
+        // Make deposit that should target the most underallocated vault
         const deposit = ethers.parseEther("5000");
         await dStable.connect(alice).approve(dStakeToken.target, deposit);
 
@@ -2113,7 +2042,7 @@ describe("DStakeRouterV2", function () {
         }
       });
 
-      it("Should distribute remainder correctly in proportional splits", async function () {
+      it("Should emit deposit totals that match the requested amount", async function () {
         // Create specific underallocation scenario
         await router.updateVaultConfig(vault3Address, adapter3Address, 200000, VaultStatus.Suspended);
 
@@ -2147,7 +2076,7 @@ describe("DStakeRouterV2", function () {
         // Should have spent exactly the deposit amount
         expect(spent).to.equal(deposit);
 
-        // Check the event for proper remainder distribution
+        // Check the event to ensure accounting equals the requested amount
         const depositEvent = receipt.logs.find((log: any) => {
           try {
             const decoded = router.interface.parseLog(log);
@@ -2169,7 +2098,7 @@ describe("DStakeRouterV2", function () {
         }
       });
 
-      it("Should fallback to even split when all vaults are balanced", async function () {
+      it("Should maintain deterministic selection when vaults are balanced", async function () {
         // Create balanced scenario by making multiple deposits
         for (let i = 0; i < 20; i++) {
           const balanceDeposit = ethers.parseEther("500");
@@ -2201,9 +2130,8 @@ describe("DStakeRouterV2", function () {
         if (depositEvent) {
           const decoded = router.interface.parseLog(depositEvent);
 
-          // When balanced, should still use deterministic selection
-          // With balanced allocations, should select based on deterministic criteria
-          expect(decoded.args.selectedVaults.length).to.be.gte(1);
+          // Even in a balanced state the router still chooses a single vault deterministically
+          expect(decoded.args.selectedVaults.length).to.equal(1);
           expect(decoded.args.depositAmounts.length).to.equal(decoded.args.selectedVaults.length);
 
           // Total should equal deposit amount

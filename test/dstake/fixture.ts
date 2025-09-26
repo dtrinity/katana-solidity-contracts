@@ -114,19 +114,35 @@ async function fetchDStakeComponents(
     // Ignore permission setup errors in testing
   }
 
-  const wrappedATokenAddress = (await deployments.get(config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID))
-    .address;
-  const wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", wrappedATokenAddress);
-
-  const strategyShareAddress = wrappedATokenAddress;
-  let adapterAddress;
+  let strategyShareAddress: string;
+  let adapterAddress: string;
   let adapter;
-  adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
+  let wrappedAToken;
 
-  if (adapterAddress !== ethers.ZeroAddress) {
-    adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
-  } else {
-    adapter = null;
+  try {
+    const wrappedATokenDeployment = await deployments.get(
+      config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID
+    );
+    strategyShareAddress = wrappedATokenDeployment.address;
+    wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", strategyShareAddress);
+    adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
+    if (adapterAddress !== ethers.ZeroAddress) {
+      adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
+    } else {
+      adapter = null;
+    }
+  } catch (error) {
+    const mockAdapterFactory = await ethers.getContractFactory("MockAdapterPositiveSlippage");
+    const fallbackAdapter = await mockAdapterFactory.deploy(await dStableToken.getAddress(), await collateralVault.getAddress());
+    adapterAddress = await fallbackAdapter.getAddress();
+    strategyShareAddress = await fallbackAdapter.strategyShare();
+    wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", strategyShareAddress);
+    try {
+      await router.connect(deployerSigner).addAdapter(strategyShareAddress, adapterAddress);
+      adapter = fallbackAdapter;
+    } catch (addAdapterError) {
+      adapter = fallbackAdapter;
+    }
   }
 
   return {

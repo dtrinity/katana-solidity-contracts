@@ -42,7 +42,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request back to a gross vault withdrawal, burns the user’s shares, and calls `router.withdraw(netAmount, receiver, owner)`.
-  3. Router withdraws the *entire* request from the most over-allocated strategy using strict slippage checks (no tolerance). Failures bubble up immediately; operators can flip vault health or rely on solver endpoints to orchestrate partial withdrawals across multiple vaults.
+  3. Router withdraws the *entire* request from the most over-allocated strategy using strict slippage checks (no tolerance). Failures bubble up immediately—there is no retry or fallback loop—so operators can flip vault health or rely on solver endpoints to orchestrate partial withdrawals across multiple vaults.
   4. Withdrawal fees remain temporarily inside `DStakeTokenV2` until reinvested.
 
 - **Solver flows**
@@ -58,8 +58,8 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 ### Router V2 Details
 
-- **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight strategy; auto withdrawals start with the most overweight strategy.
-- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault and bubble up adapter failures immediately. Operations that need multi-vault aggregation must call the solver entry points instead.
+- **Deterministic allocation** – Uses `DeterministicVaultSelector` and `AllocationCalculator` libraries to compute current vs target allocations. Auto deposits target the most underweight strategy; auto withdrawals start with the most overweight strategy. Given identical inputs, the selector always produces the same vault, keeping routing behaviour repeatable across environments and tests.
+- **Single-vault ERC4626 path** – Standard deposit and withdraw calls commit the entire amount to the first eligible vault and bubble up adapter failures immediately. There is no router-level retry; operators respond by marking vault health or using solver flows when an adapter misbehaves. Operations that need multi-vault aggregation must call the solver entry points instead.
 - **Health checks & liveness** – Strategies must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy strategies are skipped automatically.
 - **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
 - **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, surplus sweeping, and pause controls live on the router under dedicated roles.
@@ -78,6 +78,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 - Enumerates supported strategy shares via an `EnumerableSet` and exposes helpers for enumerating them (`supportedStrategyShares`, `getSupportedStrategyShares`).
 - Only the router (via `ROUTER_ROLE`) may move collateral or mutate the supported set; governance rotates routers with `setRouter`.
+- Collateral movements happen through `transferStrategyShares(strategyShare, amount, recipient)`—the legacy `sendAsset` helper has been removed along with router retry scaffolding.
 - Allows strategy share removal even if a balance remains, so governance can delist griefed strategy shares and recover funds manually if needed.
 - Rescue functions exist for miscellaneous tokens/ETH sent by mistake, but disallow extracting dSTABLE or any supported strategy shares.
 
