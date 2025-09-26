@@ -17,14 +17,26 @@ contract MockGasGuzzlingAdapter is IDStableConversionAdapterV2 {
   address public immutable collateralVault;
   address public immutable strategyShareToken;
   uint256 public immutable gasFloor;
+  uint256 public immutable burnIterations;
+
+  // Internal storage used solely to consume gas through deterministic SSTORE operations.
+  mapping(uint256 => uint256) private _gasSink;
+  uint256 private constant _MAX_FALLBACK_SPINS = 512;
 
   error GasBomb();
 
-  constructor(address _dStable, address _collateralVault, address _strategyShareToken, uint256 _gasFloor) {
+  constructor(
+    address _dStable,
+    address _collateralVault,
+    address _strategyShareToken,
+    uint256 _gasFloor,
+    uint256 _burnIterations
+  ) {
     dStable = _dStable;
     collateralVault = _collateralVault;
     strategyShareToken = _strategyShareToken;
     gasFloor = _gasFloor;
+    burnIterations = _burnIterations;
   }
 
   // IDStableConversionAdapterV2 ------------------------------------------------
@@ -58,11 +70,28 @@ contract MockGasGuzzlingAdapter is IDStableConversionAdapterV2 {
 
   // Internal -------------------------------------------------------------------
 
-  function _burnGas() private view {
-    // Consume almost all forwarded gas while leaving a small remainder defined by `gasFloor`.
-    while (gasleft() > gasFloor) {
+  function _burnGas() private {
+    uint256 floor = gasFloor;
+    uint256 maxIterations = burnIterations;
+    uint256 writes;
+
+    // Use storage writes to deterministic slots so each iteration pays the full cold SSTORE cost.
+    while (gasleft() > floor && writes < maxIterations) {
+      _gasSink[writes] = block.timestamp;
+      unchecked {
+        ++writes;
+      }
+    }
+
+    // If the caller forwarded significantly more gas than expected, fall back to a short
+    // compute loop to finish the remaining headroom without risking an out-of-gas error.
+    uint256 spins;
+    while (gasleft() > floor && spins < _MAX_FALLBACK_SPINS) {
       assembly {
         pop(0)
+      }
+      unchecked {
+        ++spins;
       }
     }
   }

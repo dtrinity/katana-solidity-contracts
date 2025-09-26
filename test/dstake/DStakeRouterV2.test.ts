@@ -456,7 +456,8 @@ describe("DStakeRouterV2", function () {
         await dStable.getAddress(),
         collateralVault.target,
         vault1Address,
-        1_000
+        1_000,
+        64
       );
       await gasBombAdapter.waitForDeployment();
 

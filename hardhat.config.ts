@@ -49,6 +49,21 @@ extendEnvironment((hre: HardhatRuntimeEnvironment) => {
 });
 
 /* eslint-disable camelcase -- Network names follow specific naming conventions that require snake_case */
+const mochaConfig: HardhatUserConfig["mocha"] = {};
+
+if (process.env.MOCHA_REPORTER) {
+  mochaConfig.reporter = process.env.MOCHA_REPORTER;
+
+  const rawOptions = process.env.MOCHA_REPORTER_OPTIONS;
+  if (rawOptions) {
+    try {
+      mochaConfig.reporterOptions = JSON.parse(rawOptions);
+    } catch {
+      mochaConfig.reporterOptions = rawOptions;
+    }
+  }
+}
+
 const config: HardhatUserConfig = {
   //
   // Compile settings -------------------------------------------------------
@@ -201,6 +216,7 @@ const config: HardhatUserConfig = {
     // Just here to mute warning
     enabled: false,
   },
+  mocha: mochaConfig,
 };
 /* eslint-enable camelcase -- Re-enabling camelcase rule after network definitions */
 
