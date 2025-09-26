@@ -1,124 +1,110 @@
-# SIMPLIFY: dSTAKE Token + Router Engine Split
+# SIMPLIFY: dSTAKE Token + Router Split
 
 ## Motivation
-- Keep `DStakeTokenV2` as close to vanilla ERC4626 as feasible for easier auditing, upgrade safety, and reuse of OZ behavior.
-- Push mutable business logic (strategy routing, fee handling, settlement management, solver flows) into a replaceable periphery module.
-- Enable iterative feature development without touching the token proxy or breaking ERC4626 semantics.
+- Keep `DStakeTokenV2` as close to vanilla ERC4626 as possible for auditability and shared library coverage.
+- Concentrate mutable business logic—routing, solver flows, fees, incentives, settlement shortfall—in `DStakeRouterV2`, which is already the operational control surface.
+- Preserve the router’s fail-fast philosophy (single-vault attempts, solver overrides) while letting the token act purely as an ERC4626 share ledger.
 
 ## High-Level Components
 - `DStakeTokenV2` (lean ERC4626)
-  - Inherits `ERC4626Upgradeable` with minimal overrides.
-  - Holds immutable pointer (set during initialize) to the periphery: `routerEngine`.
-  - Exposes stock ERC4626 interface + admin setters, no solver-specific surface.
-- `RouterEngine`
-  - Performs all asset routing, fee application (fees retained in vault), reinvestment, settlement shortfall accounting, pausing/caps.
-  - Talks to existing strategy router + collateral vault.
-  - Provides read helpers for token (`totalManagedAssets`, `maxDeposit`, etc.).
+  - Minimal overrides that delegate side effects to the router.
+  - Holds references set during initialization: `router`, `collateralVault`.
+  - Emits only standard ERC4626 events and shares settlement; no solver-specific entrypoints.
+- `DStakeRouterV2` (periphery)
+  - Owns all movement of assets and strategy shares, fee calculation, reinvestment, caps/pauses, solver tooling, and settlement tracking.
+  - Exposes deterministic single-vault paths for user flows and multi-vault solver flows.
+  - Surfaces view helpers consumed by the token and UIs.
 
 ## Contract Responsibilities
 
 ### DStakeTokenV2 (Thin ERC4626)
-- `totalAssets()` → call `routerEngine.totalManagedAssets() - routerEngine.currentShortfall()`.
-- `afterDeposit(assets, shares, receiver)` → `routerEngine.onDeposit(_msgSender(), assets, shares, receiver)`.
-- `beforeWithdraw(assets, shares, owner, receiver)` → `routerEngine.onWithdraw(_msgSender(), assets, shares, owner, receiver)`; engine takes custody and settles net transfer directly to receiver.
-- Provide optional maintenance hooks (`mintForMaintenance`, `burnForMaintenance`) gated to engine if needed; no public solver entrypoints.
-- Emits standard ERC4626 events; periphery emits fee/solver detail events.
+- `totalAssets()` → `router.totalManagedAssets() - router.currentShortfall()`.
+- `afterDeposit(assets, shares, receiver)` → invokes `router.handleDeposit(_msgSender(), assets, shares, receiver)`.
+- `beforeWithdraw(assets, shares, owner, receiver)` → invokes `router.handleWithdraw(_msgSender(), assets, shares, owner, receiver)`.
+- Token trusts router to deliver net withdrawals directly to the receiver and to retain fees locally; token only handles share accounting.
+- Optional maintenance hooks (`mintForRouter`, `burnForRouter`) restricted to the router for admin operations.
 
-### RouterEngine (Periphery Brain)
-- State:
-  - `IERC20 asset`, `IDStakeRouter router`, `IDStakeCollateralVault collateralVault`, `DStakeTokenV2 token`.
+### DStakeRouterV2 (Orchestrator)
+- State
+  - `IERC20 asset`, `IDStakeCollateralVaultV2 collateralVault`, `DStakeTokenV2 token`.
   - Fee config (`withdrawalFeeBps`, `incentiveBps`, `dustTolerance`).
-  - Settlement tracking (`uint256 settlementShortfall`).
-  - Control flags (`pausedDeposits`, `pausedWithdrawals`, deposit caps) shared across user + solver flows.
-- External entrypoints:
-  - Core hooks: `onDeposit(address initiator, uint256 assets, uint256 shares, address receiver)` and `onWithdraw(address initiator, uint256 grossAssets, uint256 shares, address owner, address receiver)` returning `WithdrawMeta`.
-  - Solver flows: `solverDepositAssets`, `solverDepositShares`, `solverWithdrawAssets`, `solverWithdrawShares` (directly exposed; no separate gateway).
-  - Reinvestment: `reinvestFees()` (engine compounds residual balances back into strategies, after optional incentive).
-  - Settlement updates: `recordShortfall(uint256 delta)`, `clearShortfall(uint256 amount)`.
-  - Config setters: `setFeeBps`, `setIncentive`, `setPauseState`, `setDepositCap`, etc.
-- View helpers consumed by token + UIs: `totalManagedAssets()`, `currentShortfall()`, `maxDeposit(address)`, `maxWithdraw(address)`, `isPaused()`.
-- Internals handle:
-  - Receiving assets from token on deposit (token approves engine as necessary) and distributing through router.
-  - Computing withdrawal fees and incentives once; fees remain in engine/token balance so all shareholders benefit.
-  - Settling withdrawals by transferring net assets directly to receiver from engine (token trusts engine for payout).
-  - Emitting detailed fee/solver events for analytics.
-  - Unified pause logic—solver and user flows respect the same flags.
+  - Settlement tracking (`settlementShortfall`).
+  - Unified control flags (`pausedDeposits`, `pausedWithdrawals`, `depositCap`).
+- External entrypoints
+  - Hook targets: `handleDeposit(...)`, `handleWithdraw(...)` (callable only by token).
+  - Solver tooling: `solverDepositAssets`, `solverDepositShares`, `solverWithdrawAssets`, `solverWithdrawShares` (accessible to end users / automation).
+  - Fee upkeep: `reinvestFees()` reinjects accumulated balances after paying optional caller incentive.
+  - Governance knobs: `setWithdrawalFee`, `setReinvestIncentive`, `setPauseState`, `setDepositCap`, `recordShortfall`, `clearShortfall`.
+- Views
+  - `totalManagedAssets()`, `currentShortfall()`, `maxDeposit(address)`, `maxMint(address)`, `maxWithdraw(address)`, `maxRedeem(address)`, `paused()`.
+- Behavioural guarantees
+  - Deposits: single-strategy attempt using the existing deterministic ranking; any adapter revert bubbles up to the token caller (fail fast).
+  - Withdraws: single-strategy unwind with strict slippage check; revert on adapter failure; no partial fills unless caller uses solver endpoints.
+  - Allowances: always use OZ `forceApprove` so non-standard ERC20s are supported; no additional manual zeroing needed because `forceApprove` already clears stale allowances.
+  - Fees: deducted once per withdrawal, retained inside router/token balance, reinvested via `reinvestFees()` so share price increases.
+  - Dust: respect router `dustTolerance` for solver operations to avoid dust donations or endless loops.
+  - Net transfers: router transfers net assets directly to recipients; token does not intermediate.
 
 ## Sequence Sketches (Pseudocode)
 
 ### ERC4626 User Deposit
 ```solidity
-function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
-    shares = previewDeposit(assets); // pure OZ math
-    _deposit(msg.sender, receiver, assets, shares); // OZ transfer + share mint
-}
-
 function afterDeposit(uint256 assets, uint256 shares, address receiver) internal override {
-    routerEngine.onDeposit(msg.sender, assets, shares, receiver);
+    router.handleDeposit(_msgSender(), assets, shares, receiver);
 }
-```
 
-`RouterEngine.onDeposit` pseudocode:
-```solidity
-function onDeposit(address initiator, uint256 assets, uint256 shares, address receiver) external onlyToken {
+function handleDeposit(address initiator, uint256 assets, uint256 shares, address receiver) external onlyToken {
     require(!pausedDeposits);
-    asset.safeTransferFrom(token, address(this), assets); // token already holds assets
-    asset.forceApprove(address(router), assets);
-    router.deposit(assets); // distribute into strategy vaults
-    _updateAccounting(shares, assets);
-    emit EngineDepositRouted(initiator, receiver, assets, shares);
+    asset.safeTransferFrom(address(token), address(this), assets); // token already holds funds
+    _depositIntoSingleStrategy(assets); // fails fast if adapter reverts
+    emit RouterDepositRouted(initiator, receiver, assets, shares);
 }
 ```
 
 ### ERC4626 User Withdraw
 ```solidity
 function beforeWithdraw(uint256 assets, uint256 shares, address owner, address receiver) internal override {
-    routerEngine.onWithdraw(msg.sender, assets, shares, owner, receiver);
+    router.handleWithdraw(_msgSender(), assets, shares, owner, receiver);
 }
-```
 
-`RouterEngine.onWithdraw` pseudocode:
-```solidity
-function onWithdraw(...) external onlyToken {
+function handleWithdraw(...) external onlyToken {
     require(!pausedWithdrawals);
-    uint256 grossRequested = assets;
-    uint256 grossReceived = router.withdraw(grossRequested);
-    require(grossReceived >= grossRequested);
-    uint256 fee = _calcFee(grossReceived);
+    uint256 grossReceived = _withdrawFromSingleStrategy(assets);
+    require(grossReceived >= assets);
+    uint256 fee = _calculateWithdrawalFee(grossReceived);
     uint256 netAssets = grossReceived - fee;
-    asset.safeTransfer(receiver, netAssets); // engine pays receiver directly
-    _retainFee(fee); // keep balance on engine/token so share price rises
-    emit EngineWithdrawSettled(initiator, receiver, netAssets, fee);
+    asset.safeTransfer(receiver, netAssets);
+    _retainFee(fee); // stays in router balance so all shareholders benefit
+    emit RouterWithdrawSettled(_msgSender(), receiver, netAssets, fee);
 }
 ```
 
-### Solver Deposit (direct on Engine)
+### Solver Deposit (multi-vault)
 ```solidity
 function solverDepositAssets(address[] calldata vaults, uint256[] calldata amounts, uint256 minShares, address receiver) external returns (uint256 shares) {
-    uint256 totalAssets = sum(amounts);
+    uint256 totalAssets = _sum(amounts);
     require(totalAssets > 0);
     asset.safeTransferFrom(msg.sender, address(this), totalAssets);
-    asset.forceApprove(address(router), totalAssets);
-    router.solverDepositAssets(vaults, amounts);
+    _solverDistributeDeposits(vaults, amounts);
     shares = token.previewDeposit(totalAssets);
     require(shares >= minShares);
-    token.mint(receiver, shares); // restricted mint callable by engine
-    emit EngineSolverDeposit(msg.sender, receiver, totalAssets, shares);
+    token.mintForRouter(receiver, shares); // restricted to router
+    emit RouterSolverDeposit(msg.sender, receiver, totalAssets, shares);
 }
 ```
 
-### Solver Withdraw (direct on Engine)
+### Solver Withdraw (multi-vault)
 ```solidity
-function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shares, uint256 maxShares, address receiver, address owner) external returns (uint256 netAssets) {
-    uint256 dStakeShares = token.previewWithdrawByShares(shares);
+function solverWithdrawShares(address[] calldata vaults, uint256[] calldata strategyShares, uint256 maxShares, address receiver, address owner) external returns (uint256 netAssets) {
+    uint256 dStakeShares = token.previewWithdrawByShares(strategyShares);
     require(dStakeShares <= maxShares);
-    token.burnFrom(owner, dStakeShares); // engine holds allowance from owner via solver controller
-    uint256 grossReceived = router.solverWithdrawShares(vaults, shares);
-    uint256 fee = _calcFee(grossReceived);
+    token.burnFromRouter(owner, dStakeShares); // router-enforced allowance
+    uint256 grossReceived = _solverCollectWithdrawals(vaults, strategyShares);
+    uint256 fee = _calculateWithdrawalFee(grossReceived);
     netAssets = grossReceived - fee;
     asset.safeTransfer(receiver, netAssets);
     _retainFee(fee);
-    emit EngineSolverWithdraw(msg.sender, receiver, netAssets, fee);
+    emit RouterSolverWithdraw(msg.sender, receiver, netAssets, fee);
 }
 ```
 
@@ -127,23 +113,27 @@ function solverWithdrawShares(address[] calldata vaults, uint256[] calldata shar
 function reinvestFees() external returns (uint256 amountReinvested) {
     uint256 balance = asset.balanceOf(address(this));
     if (balance == 0) return 0;
-    uint256 incentive = balance * incentiveBps / 1e4;
+
+    uint256 incentive = balance * reinvestIncentiveBps / BASIS_POINTS_DENOMINATOR;
     if (incentive > 0) asset.safeTransfer(msg.sender, incentive);
-    uint256 reinvestAmount = balance - incentive;
-    asset.forceApprove(address(router), reinvestAmount);
-    router.deposit(reinvestAmount);
-    emit EngineFeesReinvested(reinvestAmount, incentive, msg.sender);
-    return reinvestAmount;
+
+    amountReinvested = balance - incentive;
+    _depositIntoSingleStrategy(amountReinvested);
+    emit RouterFeesReinvested(amountReinvested, incentive, msg.sender);
 }
 ```
 
-## Open Questions / Iteration Hooks
-- How should allowances be handled between token ↔ engine for mint/burn? Likely `token.mintToEngine` restricted to engine and `engine` maintains per-user approvals for solver withdrawals.
-- Ensure shortfall management keeps `totalAssets` consistent: token subtracts `routerEngine.currentShortfall()`, engine updates when settlements occur.
-- Revisit dust handling to avoid rounding issues when fees accumulate and are reinvested.
+## Checked Lessons
+- Preserve fail-fast routing; no retry loops or silent fallbacks.
+- Use `forceApprove` when approvals are needed; no separate zeroing step required because the helper already clears stale allowances.
+- Keep solver & user flows under shared pause flags.
+- Ensure dust tolerance is respected during solver distribution/collection.
+- Fees stay inside router/token and are reinvested promptly; events originate from router for analytics.
+- Adapter failures should revert without partial side effects to minimize exploit surface.
 
 ## Next Steps
-1. Define `IRouterEngine` interface with deposit/withdraw hooks, solver flows, and views.
-2. Modify `DStakeTokenV2` to rely solely on engine hooks; strip solver methods from token.
-3. Port existing unit tests to call engine solver methods and validate ERC4626 behavior remains unchanged.
-4. Iterate on fee retention + reinvest tests to confirm share price uplift matches expectations.
+1. Define `IDStakeRouterV2` interface for token hooks, solver flows, and view helpers.
+2. Strip solver entrypoints and fee logic from `DStakeTokenV2`, delegating to router hooks.
+3. Refactor `DStakeRouterV2` to implement the new hook functions while preserving existing public behaviour for operators.
+4. Update tests to cover token-router integration (user flows) and direct router solver flows.
+5. Add regression tests for fee retention, reinvestment, dust handling, and fail-fast adapter reverts.
