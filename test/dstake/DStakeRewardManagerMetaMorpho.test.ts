@@ -530,6 +530,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
   describe("Exchange Asset Processing", function () {
     beforeEach(async function () {
+      await metaMorphoVault.setYieldRate(0);
+
       // Setup vault
       await dStable.connect(user).approve(metaMorphoVault.target, ethers.MaxUint256);
       await metaMorphoVault.connect(user).deposit(ethers.parseEther("1000"), user.address);

@@ -36,6 +36,12 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Fix**: Preview helpers now use `_netManagedAssets()` (gross assets minus recorded shortfall) so `previewDeposit`/`previewMint` align with the NAV that withdrawals redeem. `totalAssets()` delegates to the same helper, keeping ERC4626 invariants consistent.
 - **Tests**: `test/dstake/SettlementShortfall.test.ts` verifies preview parity during active shortfalls and that insolvency saturates `totalAssets()` without reverting.
 
+### 4. Removing vault with live balance halts NAV
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:795-863`, `:1542-1598`, `contracts/vaults/dstake/interfaces/IDStakeRouterV2.sol:88-99`
+- **Fix**: Vault removals now enforce a residual-balance guard and expose governance tooling to handle both recoverable and impaired strategies. `sweepStrategyDust` withdraws dust through the adapter (optionally redepositing into a target vault), while `acknowledgeStrategyLoss` + `forceRemoveVault` let operators retire unrecoverable shares after recording the loss. This keeps NAV queryable without blocking adapter rotations.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts` covers dust sweeps, impairment flow, and hostile adapter swaps; `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` exercises adapter removal under the new guard.
+
 ### 5. maxWithdraw publishes capacity the active vault cannot honor
 - **Severity**: High
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1182-1189`, `:396-413`
@@ -79,14 +85,6 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: `test/dstake/FeeAccountingRegression.test.ts` adds a shortfall scenario that confirms reinvestment is blocked until losses are cleared.
 
 ## Open
-### 4. Removing vault with live balance halts NAV
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1481-1523`, `contracts/vaults/dstake/DStakeCollateralVaultV2.sol:73-90`
-- **Impact**: `removeVault`/`removeVaultConfig` delete the adapter mapping even if the collateral vault still holds that strategy’s shares. The share stays listed as supported but now lacks an adapter, so `totalValueInDStable` and downstream valuations revert with `AdapterValuationUnavailable`, freezing deposits/withdrawals while the remaining balance becomes unreachable until governance re-adds the config.
-- **Status**: Needs design follow-up — simply reverting when balances remain blocks adapter rotation in edge cases, but leaving the mapping unset bricks NAV. We need an explicit dust-handling story before changing behaviour.
-- **Suggested fix**: Gate vault removal behind a zero-balance check *and* provide a helper (or documented playbook) that force-withdraws residual dust prior to removal, so adapters can still be rotated without reintroducing griefing vectors.
-- **Testing**: Add a regression in `test/dstake/DStakeRouterV2.test.ts` that removes a vault with residual shares and asserts valuation calls revert.
-
 ### 5. maxWithdraw publishes capacity the active vault cannot honor
 - **Severity**: High
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:271-304`, `:397-454`, `:1190-1199`

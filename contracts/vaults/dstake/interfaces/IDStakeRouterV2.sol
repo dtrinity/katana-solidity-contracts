@@ -85,4 +85,15 @@ interface IDStakeRouterV2 {
   function recordShortfall(uint256 delta) external;
 
   function clearShortfall(uint256 amount) external;
+
+  function acknowledgeStrategyLoss(address vault, uint256 lossValue) external;
+
+  function forceRemoveVault(address vault) external;
+
+  function sweepStrategyDust(
+    address fromVault,
+    address targetStrategyShare,
+    uint256 minDStableOut,
+    uint256 minTargetShares
+  ) external returns (uint256 dStableOut, uint256 targetShares);
 }

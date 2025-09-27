@@ -564,7 +564,7 @@ describe("DStakeRouterV2", function () {
       expect(toBalanceAfter).to.equal(toBalanceBefore);
     });
 
-    it("surfaces valuation errors when removing an adapter with live balances", async function () {
+    it("prevents removing an adapter while balances remain", async function () {
       const depositAmount = ethers.parseEther("250");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
@@ -572,18 +572,13 @@ describe("DStakeRouterV2", function () {
       const vault1Balance = await vault1.balanceOf(collateralVault.target);
       expect(vault1Balance).to.be.gt(0n);
 
-      await router.connect(owner).removeAdapter(vault1Address);
-      expect(await router.strategyShareToAdapter(vault1Address)).to.equal(ethers.ZeroAddress);
-
-      await expect(dStakeToken.totalAssets()).to.be.revertedWithCustomError(
-        collateralVault,
-        "AdapterValuationUnavailable"
+      await expect(router.connect(owner).removeAdapter(vault1Address)).to.be.revertedWithCustomError(
+        router,
+        "VaultResidualBalance"
       );
 
-      await expect(collateralVault.totalValueInDStable()).to.be.revertedWithCustomError(
-        collateralVault,
-        "AdapterValuationUnavailable"
-      );
+      expect(await router.strategyShareToAdapter(vault1Address)).to.equal(adapter1Address);
+      await expect(collateralVault.totalValueInDStable()).to.not.be.reverted;
     });
   });
 
@@ -1165,6 +1160,96 @@ describe("DStakeRouterV2", function () {
       expect(vaultCount).to.equal(2);
 
       await expect(router.getVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+    });
+
+    it("reverts removing a vault while collateral remains", async function () {
+      const depositAmount = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      await expect(router.connect(owner).removeVault(vault1.target)).to.be.revertedWithCustomError(
+        router,
+        "VaultResidualBalance"
+      );
+    });
+
+    it("allows sweeping strategy balances before removal", async function () {
+      await vault1.connect(owner).setYieldRate(0);
+
+      const depositAmount = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const collateralVaultAddress = await collateralVault.getAddress();
+      const targetBefore = await vault2.balanceOf(collateralVaultAddress);
+
+      await router.connect(owner).sweepStrategyDust(vault1.target, vault2.target, 0, 0);
+
+      expect(await vault1.balanceOf(collateralVaultAddress)).to.equal(0n);
+      const targetAfter = await vault2.balanceOf(collateralVaultAddress);
+      expect(targetAfter).to.be.gt(targetBefore);
+
+      await expect(router.connect(owner).removeVault(vault1.target))
+        .to.emit(router, "VaultConfigRemoved")
+        .withArgs(vault1.target);
+    });
+
+    it("rejects forcing removal without impairment acknowledgement", async function () {
+      await expect(router.connect(owner).forceRemoveVault(vault2.target)).to.be.revertedWithCustomError(
+        router,
+        "VaultNotImpaired"
+      );
+    });
+
+    it("records losses and permits force removal for impaired vaults", async function () {
+      await vault1.connect(owner).setYieldRate(0);
+
+      const depositAmount = ethers.parseEther("100");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const collateralVaultAddress = await collateralVault.getAddress();
+      const shareBalance = await vault1.balanceOf(collateralVaultAddress);
+      expect(shareBalance).to.be.gt(0n);
+
+      const lossValue = await adapter1.strategyShareValueInDStable(vault1Address, shareBalance);
+      const shortfallBefore = await router.currentShortfall();
+
+      await expect(router.connect(owner).acknowledgeStrategyLoss(vault1.target, lossValue))
+        .to.emit(router, "VaultLossAcknowledged")
+        .withArgs(vault1.target, lossValue, owner.address);
+
+      const impairedConfig = await router.getVaultConfig(vault1.target);
+      expect(impairedConfig.status).to.equal(VaultStatus.Impaired);
+
+      await expect(router.connect(owner).forceRemoveVault(vault1.target))
+        .to.emit(router, "VaultForceRemoved")
+        .withArgs(vault1.target, owner.address);
+
+      expect(await router.currentShortfall()).to.equal(shortfallBefore + lossValue);
+      expect(await router.getVaultCount()).to.equal(2);
+      expect(await router.vaultImpaired(vault1.target)).to.equal(false);
+      await expect(router.getVaultConfig(vault1.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+      await expect(collateralVault.totalValueInDStable()).to.not.be.reverted;
+    });
+
+    it("rejects duplicate impairment acknowledgements", async function () {
+      await vault1.connect(owner).setYieldRate(0);
+
+      const depositAmount = ethers.parseEther("10");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const collateralVaultAddress = await collateralVault.getAddress();
+      const shareBalance = await vault1.balanceOf(collateralVaultAddress);
+      const lossValue = await adapter1.strategyShareValueInDStable(vault1Address, shareBalance);
+
+      await router.connect(owner).acknowledgeStrategyLoss(vault1.target, lossValue);
+
+      await expect(router.connect(owner).acknowledgeStrategyLoss(vault1.target, lossValue)).to.be.revertedWithCustomError(
+        router,
+        "VaultAlreadyImpaired"
+      );
     });
 
     it("Should revert when calling removeVaultConfig on non-existent vault", async function () {
@@ -2657,8 +2742,17 @@ describe("DStakeRouterV2", function () {
         );
         await gasBombAdapter.waitForDeployment();
 
-        await router.connect(owner).removeAdapter(vault1Address);
-        await router.connect(owner).addAdapter(vault1Address, await gasBombAdapter.getAddress());
+        await vault1.connect(owner).setYieldRate(0);
+
+        const primeDeposit = ethers.parseEther("25");
+        await dStable.connect(alice).approve(dStakeToken.target, primeDeposit);
+        await dStakeToken.connect(alice).deposit(primeDeposit, alice.address);
+
+        await router.connect(owner).acknowledgeStrategyLoss(vault1Address, 0);
+        await router.connect(owner).forceRemoveVault(vault1Address);
+        await router
+          .connect(owner)
+          .addVaultConfig(vault1Address, await gasBombAdapter.getAddress(), 500000, VaultStatus.Active);
 
         await expect(
           router
