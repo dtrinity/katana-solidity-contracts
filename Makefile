@@ -153,5 +153,44 @@ clean: ## When renaming directories or files, run this to clean up
 	@rm -rf cache
 	@echo "Cleaned solidity cache and artifacts. Remember to recompile."
 
-.PHONY: help compile test deploy clean slither slither.check slither.focused mythril mythril.focused mythril.deep mythril.fast mythril.force mythril.summary audit
 
+####################
+## Role Operations ##
+####################
+
+ROLE_NETWORK    ?= katana_mainnet
+ROLE_MANIFEST   ?= manifests/katana-mainnet-roles.json
+ROLE_TS_NODE    = TS_NODE_TRANSPILE_ONLY=1 npx ts-node --project node_modules/@dtrinity/shared-hardhat-tools/tsconfig.json
+ROLE_SCRIPT_DIR = node_modules/@dtrinity/shared-hardhat-tools/scripts/roles
+
+roles.scan: ## Scan deployments and enforce manifest coverage (pass EXTRA="--no-drift-check" to skip guardrail)
+	@$(ROLE_TS_NODE) $(ROLE_SCRIPT_DIR)/scan-roles.ts \
+		-n $(ROLE_NETWORK) \
+		--manifest $(ROLE_MANIFEST) \
+		--drift-check $(EXTRA)
+
+roles.transfer.plan: ## Dry-run ownership + DEFAULT_ADMIN_ROLE transfers
+	@$(ROLE_TS_NODE) $(ROLE_SCRIPT_DIR)/transfer-roles.ts \
+		-n $(ROLE_NETWORK) \
+		-m $(ROLE_MANIFEST) \
+		--dry-run-only $(EXTRA)
+
+roles.transfer.run: ## Execute ownership + DEFAULT_ADMIN_ROLE transfers (set YES=1 to skip confirmation)
+	@$(ROLE_TS_NODE) $(ROLE_SCRIPT_DIR)/transfer-roles.ts \
+		-n $(ROLE_NETWORK) \
+		-m $(ROLE_MANIFEST) \
+		$(if $(YES),--yes) $(EXTRA)
+
+roles.revoke.plan: ## Dry-run Safe revoke batch creation
+	@$(ROLE_TS_NODE) $(ROLE_SCRIPT_DIR)/revoke-roles.ts \
+		-n $(ROLE_NETWORK) \
+		-m $(ROLE_MANIFEST) \
+		--dry-run-only $(EXTRA)
+
+roles.revoke.run: ## Queue Safe revoke transactions (set YES=1 to skip confirmation)
+	@$(ROLE_TS_NODE) $(ROLE_SCRIPT_DIR)/revoke-roles.ts \
+		-n $(ROLE_NETWORK) \
+		-m $(ROLE_MANIFEST) \
+		$(if $(YES),--yes) $(EXTRA)
+
+.PHONY: help compile test deploy clean slither slither.check slither.focused mythril mythril.focused mythril.deep mythril.fast mythril.force mythril.summary audit roles.scan roles.transfer.plan roles.transfer.run roles.revoke.plan roles.revoke.run

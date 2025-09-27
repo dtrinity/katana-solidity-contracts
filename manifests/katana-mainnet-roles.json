@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "deployer": "0x0f5e3D9AEe7Ab5fDa909Af1ef147D98a7f4B3022",
+  "governance": "0xE83c188a7BE46B90715C757A06cF917175f30262",
+  "safe": {
+    "safeAddress": "0xE83c188a7BE46B90715C757A06cF917175f30262",
+    "owners": [
+      "0x9E0c8376940aBE845A89b7304147a95c72644f59",
+      "0x0000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000"
+    ],
+    "threshold": 2,
+    "chainId": 747474,
+    "description": "Katana governance Safe"
+  },
+  "autoInclude": {
+    "ownable": true,
+    "defaultAdmin": true
+  },
+  "defaults": {
+    "defaultAdmin": {
+      "newAdmin": "{{governance}}",
+      "remove": {
+        "strategy": "renounce",
+        "execution": "direct",
+        "address": "{{deployer}}"
+      }
+    }
+  },
+  "exclusions": [],
+  "overrides": []
+}

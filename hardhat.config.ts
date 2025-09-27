@@ -7,7 +7,7 @@ import "hardhat-deploy";
 import "dotenv/config";
 
 import { extendEnvironment, HardhatUserConfig } from "hardhat/config";
-import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { HardhatRuntimeEnvironment, HttpNetworkUserConfig } from "hardhat/types";
 
 import { getEnvPrivateKeys } from "./typescript/hardhat/named-accounts";
 
@@ -49,7 +49,12 @@ extendEnvironment((hre: HardhatRuntimeEnvironment) => {
 });
 
 /* eslint-disable camelcase -- Network names follow specific naming conventions that require snake_case */
-const mochaConfig: HardhatUserConfig["mocha"] = {};
+const mochaConfig: HardhatUserConfig['mocha'] = {};
+
+const createNetworkWithRoles = (config: HttpNetworkUserConfig, roles: { deployer?: string; governance?: string }): HttpNetworkUserConfig => ({
+  ...config,
+  ...(roles.deployer || roles.governance ? { roles } : {}),
+});
 
 if (process.env.MOCHA_REPORTER) {
   mochaConfig.reporter = process.env.MOCHA_REPORTER;
@@ -63,6 +68,16 @@ if (process.env.MOCHA_REPORTER) {
     }
   }
 }
+
+const KATANA_MAINNET_ROLES = {
+  deployer: process.env.KATANA_MAINNET_DEPLOYER_ADDRESS ?? '0x0f5e3D9AEe7Ab5fDa909Af1ef147D98a7f4B3022',
+  governance: process.env.KATANA_MAINNET_GOVERNANCE_ADDRESS ?? '0xE83c188a7BE46B90715C757A06cF917175f30262',
+};
+
+const KATANA_TESTNET_ROLES = {
+  deployer: process.env.KATANA_TESTNET_DEPLOYER_ADDRESS,
+  governance: process.env.KATANA_TESTNET_GOVERNANCE_ADDRESS,
+};
 
 const config: HardhatUserConfig = {
   //
@@ -152,21 +167,21 @@ const config: HardhatUserConfig = {
       deploy: ["deploy-mocks", "deploy"],
       saveDeployments: true,
     },
-    katana_testnet: {
+    katana_testnet: createNetworkWithRoles({
       // Katana Bokuto testnet
       url: `https://rpc-bokuto.katanarpc.com`,
       chainId: 737373,
-      deploy: ["deploy-mocks", "deploy"],
+      deploy: ['deploy-mocks', 'deploy'],
       saveDeployments: true,
-      accounts: getEnvPrivateKeys("katana_testnet"),
-    },
-    katana_mainnet: {
+      accounts: getEnvPrivateKeys('katana_testnet'),
+    }, KATANA_TESTNET_ROLES),
+    katana_mainnet: createNetworkWithRoles({
       url: `https://rpc.katana.network/`,
       chainId: 747474,
-      deploy: ["deploy"], // NOTE: DO NOT DEPLOY mocks
+      deploy: ['deploy'], // NOTE: DO NOT DEPLOY mocks
       saveDeployments: true,
-      accounts: getEnvPrivateKeys("katana_mainnet"),
-    },
+      accounts: getEnvPrivateKeys('katana_mainnet'),
+    }, KATANA_MAINNET_ROLES),
   },
   namedAccounts: {
     deployer: 0,

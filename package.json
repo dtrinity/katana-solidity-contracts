@@ -6,9 +6,13 @@
   "packageManager": "yarn@4.5.0",
   "scripts": {
     "gas-estimate": "npx tsx scripts/mainnet-gas-estimation.ts",
-    "gas-estimate:help": "npx tsx scripts/mainnet-gas-estimation.ts --help"
+    "gas-estimate:help": "npx tsx scripts/mainnet-gas-estimation.ts --help",
+    "roles:scan": "make roles.scan",
+    "roles:transfer": "make roles.transfer.run YES=1",
+    "roles:revoke": "make roles.revoke.run YES=1"
   },
   "devDependencies": {
+    "@dtrinity/shared-hardhat-tools": "file:../shared-hardhat-tools",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.20.0",

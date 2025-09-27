@@ -13,7 +13,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - `DStakeCollateralVaultV2` – non-upgradeable asset store (`contracts/vaults/dstake/DStakeCollateralVaultV2.sol`)
   - Holds ERC20 "strategy shares" (e.g., ERC4626 wrapper shares from upstream strategies) and exposes `totalValueInDStable()`.
   - Maintains a registry of supported strategy shares; adapters can be rotated without migrating balances.
-  - Allows governance to delist strategy shares even if dust remains (avoids griefing vector).
+  - Lets the router delist strategy shares once balances are swept down to the configured `dustTolerance`, with a force-removal escape hatch for impaired vaults.
   - Refuses to value a strategy share without a live adapter; NAV queries revert so governance must restore pricing or pause deposits before removal.
   - Grants `ROUTER_ROLE` to the active router so only the router can move collateral.
 
@@ -44,7 +44,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **User withdraw / redeem**
   1. User requests a net dSTABLE amount; withdrawal previews already deduct the governance-configured fee.
   2. Token translates the request to gross assets, burns shares inside `_withdraw`, and triggers `router.handleWithdraw(caller, receiver, owner, grossAssets, expectedNet)`.
-  3. Router exits a single over-allocated strategy with strict slippage and reverts on adapter failure.
+  3. The same deterministic selector powers both `maxWithdraw`/`maxRedeem` and live withdrawals, so published limits always match the vault that will actually service the next exit—no surprises for integrators when allocations are balanced.
   4. Router transfers the net amount directly to the receiver, reverting if the actual net falls below the token’s previewed `expectedNet`. Fee balances remain on the router so all shareholders benefit until reinvested.
 
 - **Solver flows**
@@ -66,7 +66,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - **Allowance hygiene** – All approvals use OZ `forceApprove` and immediately zero allowances afterward so non-standard tokens stay compatible and no residual approvals linger.
 - **Health checks & liveness** – Strategies must pass protocol health probes (`previewDeposit`, `previewRedeem`) to be considered active for an operation. Paused or unhealthy strategies are skipped automatically.
 - **Adapter registry** – `_strategyShareToAdapter` pairs strategy shares with adapters. Adding an active strategy automatically registers the adapter and whitelists the strategy shares on the collateral vault. Removing a strategy also evacuates the adapter mapping.
-- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, `setDepositCap`, `setWithdrawalFee`, `setReinvestIncentive`, surplus sweeping, pause controls, and settlement shortfall bookkeeping (`recordShortfall` / `clearShortfall`) all live on the router under dedicated roles.
+- **Governance knobs** – `setVaultConfigs`, `add/update/removeVault`, `setDefaultDepositStrategyShare`, `setDustTolerance`, `setMaxVaultCount`, `setDepositCap`, `setWithdrawalFee`, `setReinvestIncentive`, `acknowledgeStrategyLoss`, `forceRemoveVault`, `sweepStrategyDust`, surplus sweeping, pause controls (`pause` / `unpause` / `emergencyPauseVault`), and settlement shortfall bookkeeping (`recordShortfall` / `clearShortfall`) all live on the router under dedicated roles.
 - **Collateral exchanges** – Exchanges validate adapter previews in both directions and enforce `dustTolerance` when comparing expected vs realised dSTABLE value, preventing silent degradation across strategies.
 - **Surplus handling** – Router retains withdrawal fees and any interim dSTABLE from solver operations. `reinvestFees()` and `sweepSurplus()` recycle these balances into the default strategy, with events documenting caller incentives and compounding cadence.
 
@@ -84,7 +84,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - Enumerates supported strategy shares via an `EnumerableSet` and exposes helpers for enumerating them (`supportedStrategyShares`, `getSupportedStrategyShares`).
 - Only the router (via `ROUTER_ROLE`) may move collateral or mutate the supported set; governance rotates routers with `setRouter`.
 - Collateral movements happen through `transferStrategyShares(strategyShare, amount, recipient)`—the legacy `sendAsset` helper has been removed along with router retry scaffolding.
-- Allows strategy share removal even if a balance remains, so governance can delist griefed strategy shares and recover funds manually if needed.
+- Enforces router-led delists so balances must be swept below `dustTolerance` (or the vault must be marked impaired and force-removed) before the adapter mapping is deleted, preventing accidental TVL blackouts.
 - Rescue functions exist for miscellaneous tokens/ETH sent by mistake, but disallow extracting dSTABLE or any supported strategy shares.
 
 ### Access Control Surface
@@ -139,8 +139,10 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
    - For structural changes, update vault configs or run `rebalanceStrategiesByShares`, `rebalanceStrategiesBySharesViaExternalLiquidity`, or `rebalanceStrategiesByValue` with conservative `min` values.
 
 5. **Offboard a strategy**
-   - Mark the vault impaired or suspended so auto-routing stops using it, then migrate positions via solver withdrawals or operator swaps.
-   - Only call `removeAdapter` once the collateral vault no longer holds the strategy shares; otherwise NAV queries revert with `AdapterValuationUnavailable` and block user flows until a replacement adapter is installed.
+   - Mark the vault `Suspended` (via config updates or `emergencyPauseVault`) or `Impaired` (`acknowledgeStrategyLoss`) so auto-routing stops using it. `acknowledgeStrategyLoss` records any governance-recognised write-down in the router’s settlement shortfall.
+   - Use solver withdrawals, standard rebalances, or `sweepStrategyDust` to migrate as much balance as possible. `sweepStrategyDust` can optionally roll recovered dSTABLE straight into a replacement strategy.
+   - When residual value is below `dustTolerance`, `removeVault` / `removeVaultConfig` succeeds and will also clear the adapter mapping. If the remaining shares are unredeemable, first call `acknowledgeStrategyLoss` and then `forceRemoveVault` to drop the impaired position without reintroducing NAV traps.
+   - Finally, call `removeAdapter` only once the collateral vault no longer needs valuations for that strategy; removing the adapter early will cause NAV queries to revert with `AdapterValuationUnavailable`.
 
 ### Developer Map
 

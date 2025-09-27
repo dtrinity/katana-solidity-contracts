@@ -44,9 +44,10 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ### 5. maxWithdraw publishes capacity the active vault cannot honor
 - **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1182-1189`, `:396-413`
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:284-309`, `:410-427`, `:1273-1291`
 - **Fix**: `_maxSingleVaultWithdraw()` now reuses the deterministic withdrawal selector so router capacity mirrors the vault the next exit will actually target. ERC4626 `maxWithdraw/maxRedeem` consequently surface accurate limits even when allocations are balanced or vault statuses change.
 - **Tests**: `test/dstake/DStakeRouterV2.test.ts` covers balanced-set fallback behaviour and the suspended-vault scenario to ensure the reported capacity tracks the active vault.
+- **Status**: Verified end-to-end; no follow-up actions required.
 
 ### 6. Surplus sweep ignores adapter slippage checks
 - **Severity**: Medium
@@ -85,57 +86,15 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Tests**: `test/dstake/FeeAccountingRegression.test.ts` adds a shortfall scenario that confirms reinvestment is blocked until losses are cleared.
 
 ## Open
-### 5. maxWithdraw publishes capacity the active vault cannot honor
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:271-304`, `:397-454`, `:1190-1199`
-- **Impact**: `maxWithdraw`/`maxRedeem` advertise the largest single-vault balance via `_maxSingleVaultWithdraw`, but when no vault is over target the withdrawal selector falls back to the first active vault. If that vault has less than the advertised capacity (e.g., target zero but still active with dust), `handleWithdraw` reverts with `NoLiquidityAvailable`. Integrators that respect ERC4626 limits still face withdrawal DoS despite staying within the published bound.
-- **Reproduction**: Configure two active vaults where the first holds dust but the second holds liquidity; observe `maxWithdraw` returning the larger second-vault balance, then call `withdraw` within that limit—`_selectVaultForWithdrawal` picks the dust-heavy first vault and `_withdrawFromVaultAtomically` reverts with `NoLiquidityAvailable`.
-- **Status**: Low hanging fruit — we just need to align the ERC4626 limit with the router’s deterministic vault selector.
-- **Suggested fix**: Reuse the same selection path as `_selectVaultForWithdrawal` (including the “no overallocations” fallback) when computing router capacity so `maxWithdraw` reflects the vault that will service the next exit. Keep returning the min of user capacity and router capacity.
-- **Testing**: Add a regression that withdraws the published `maxWithdraw` limit under this setup and expects `NoLiquidityAvailable` to surface.
 
-### 6. Surplus sweep ignores adapter slippage checks
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:980-999`
-- **Status**: Low hanging fruit — the router already has deposit helpers that enforce share deltas.
-- **Suggested fix**: Route `sweepSurplus` through `_depositToVaultAtomically` (or replicate its before/after balance checks) so the adapter must mint the expected share amount or revert, then cover the scenario in router surplus tests.
-- **Testing**: Introduce a `sweepSurplus` scenario in `test/dstake/DStakeRouterV2.test.ts` where the adapter under-delivers and assert the router guards against the slippage.
-
-### 7. Rebalance adapters can zero out collateral
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:790-903`
-- **Status**: Low hanging fruit — we can reuse existing deposit checks to measure the actual share delta instead of trusting adapter return values.
-- **Suggested fix**: Measure the collateral-vault balance change (or call `_depositToVaultAtomically`) when depositing into the destination strategy and derive `resultingToShareAmount` from that delta, guaranteeing adapters can’t lie about minted shares. Update rebalancing tests with a hostile adapter case.
-- **Testing**: Add a malicious-adapter rebalance scenario in `test/dstake/DStakeRouterV2.test.ts` to ensure bogus `resultingToShareAmount` values are rejected.
-
-### 8. Shortfall cap hides new deficits once underwater
-- **Severity**: Critical
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:750-757`, `contracts/vaults/dstake/DStakeTokenV2.sol:357-367`
-- **Status**: Low hanging fruit — removing the cap keeps accounting truthful without impacting healthy-path maths.
-- **Suggested fix**: Drop the `newShortfall > totalManagedAssets()` guard (and associated custom error). `totalAssets()` already saturates at zero when liabilities exceed assets, so the system can represent insolvency correctly. Extend the shortfall tests to cover the underwater case.
-
-### 9. migrateCore can orphan router permissions and lock withdrawals
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:371-389`, `contracts/vaults/dstake/DStakeCollateralVaultV2.sol:103-155`
-- **Impact**: `migrateCore` only checks the new router’s token/collateral pairing. If governance calls it before `DStakeCollateralVaultV2.setRouter`, the updated router lacks `ROUTER_ROLE`, so every withdrawal reverts with `AccessControlUnauthorizedAccount` until a second transaction fixes the grant.
-- **Status**: Low hanging fruit — adding a preflight check avoids the bricked state without complicating migration.
-- **Suggested fix**: Require `IDStakeCollateralVaultV2(newCollateralVault).router() == newRouter` before finalizing `migrateCore`, so governance must install the new router on the collateral vault first (or add a helper that does so atomically). Update migration tests accordingly.
-
-### 10. Router migration wipes recorded shortfall
-- **Severity**: Critical
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:357-389`, `contracts/vaults/dstake/DStakeRouterV2.sol:732-758`
-- **Impact**: `migrateCore` installs a fresh router without copying `settlementShortfall`. `totalAssets()` drops the liability instantly, so anyone withdrawing before governance re-records it can drain recapitalized funds that should cover past losses.
-- **Reproduction**: With a recorded shortfall, deploy a new router and call `migrateCore`; before governance re-runs `setSettlementShortfall`, call `redeem` to withdraw assets at the inflated NAV, draining the funds earmarked to cover the deficit.
-- **Status**: Low hanging fruit — we can snapshot the current shortfall and seed it into the new router during migration.
-- **Suggested fix**: Capture `router.currentShortfall()` before the swap and invoke `recordShortfall` on the freshly installed router (skipping if zero). Extend migration tests to ensure the liability carries over.
-
-### 11. reinvestFees leaks shortfall collateral via incentives
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:696-738`
-- **Impact**: `reinvestFees` pays caller incentives and redeploys fees even when `settlementShortfall` is non-zero. Keepers can repeatedly collect up to the 20% incentive from assets meant to plug the shortfall, worsening insolvency and delaying recovery for legacy holders.
-- **Reproduction**: After recording a shortfall, transfer fee revenue to the router and call `reinvestFees`; observe the incentive payment to the caller while `currentShortfall()` remains unchanged, proving that recovery capital leaks to opportunistic keepers.
-- **Status**: Low hanging fruit — a single guard keeps recovery capital from leaking.
-- **Suggested fix**: Early-return or revert from `reinvestFees` while `settlementShortfall > 0` (optionally auto-clearing the deficit before paying incentives). Update fee regression tests to assert reinvestment is blocked until the shortfall is cleared.
+### 12. Dust share redeem burns shares without payout
+- **Severity**: Low
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:318`
+- **Impact**: Calling `redeem` with a very small share amount (e.g., when the vault has a large supply but near-zero net assets after a recorded shortfall) causes `_withdraw` to hit the `assets == 0` branch. The router hook is skipped, the shares are permanently burned, and the caller gets no assets despite the vault still holding value for larger withdrawals. Automated integrators that redeem in tiny batches can silently lose principal.
+- **Reproduction**:
+  1. Stand up a fork/local test, deposit to create supply, and record a shortfall so `previewRedeem(1)` returns zero.
+  2. Call `redeem(1, receiver, owner)` from the token.
+  3. Observe that `Withdraw` emits with zero assets, the caller receives nothing, and the router never ran, so the burned share’s pro-rata value stays in the pool.
 
 ## Acknowledged (Won't Fix)
 
