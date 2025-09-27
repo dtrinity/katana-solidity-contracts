@@ -131,6 +131,24 @@ describe("Fee Accounting Regression Test", function () {
     await dStakeToken.connect(solver).approve(routerAddress, ethers.MaxUint256);
   });
 
+  describe("Redeem path", function () {
+    it("Should match previewRedeem payout and avoid double fee", async function () {
+      const depositAmount = ethers.parseEther("1000");
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const shares = await dStakeToken.balanceOf(alice.address);
+      const previewNet = await dStakeToken.previewRedeem(shares);
+
+      const balanceBefore = await dStable.balanceOf(alice.address);
+      await dStakeToken.connect(alice).redeem(shares, alice.address, alice.address);
+      const balanceAfter = await dStable.balanceOf(alice.address);
+
+      const assetsReceived = balanceAfter - balanceBefore;
+      const tolerance = ethers.parseUnits("0.0001", 18);
+      expect(assetsReceived).to.be.closeTo(previewNet, tolerance);
+    });
+  });
+
   describe("Fee Accounting in totalAssets()", function () {
     it("Should include router-held fees in totalAssets()", async function () {
       // Initial deposit to establish vault
