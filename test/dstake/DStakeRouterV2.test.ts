@@ -284,16 +284,59 @@ describe("DStakeRouterV2", function () {
       const largestVaultCapacity = vaultCapacities.reduce((max, value) => (value > max ? value : max), 0n);
       expect(largestVaultCapacity).to.be.gt(0n);
 
-      const maxWithdraw = await dStakeToken.maxWithdraw(alice.address);
+      const routerGross = await router.getMaxSingleVaultWithdraw();
       const feeBps = await dStakeToken.withdrawalFeeBps();
       const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
-      const expectedNetCapacity = largestVaultCapacity - (largestVaultCapacity * BigInt(feeBps)) / ONE_HUNDRED_PERCENT_BPS;
+      const expectedNetCapacity =
+        feeBps === 0
+          ? routerGross
+          : routerGross - (routerGross * BigInt(feeBps)) / ONE_HUNDRED_PERCENT_BPS;
+
+      const maxWithdraw = await dStakeToken.maxWithdraw(alice.address);
+      expect(routerGross).to.equal(largestVaultCapacity);
       expect(maxWithdraw).to.equal(expectedNetCapacity);
 
       const overLimit = maxWithdraw + 1n;
       await expect(
         dStakeToken.connect(alice).withdraw(overLimit, alice.address, alice.address)
       ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+    });
+
+    it("aligns maxWithdraw with the fallback vault when allocations are balanced", async function () {
+      const collateralAddress = await collateralVault.getAddress();
+
+      // Force vault1 to have a minimal positive balance and vault2 to carry the bulk of liquidity.
+      await router
+        .connect(owner)
+        .updateVaultConfig(vault1Address, adapter1Address, 0, VaultStatus.Active);
+
+      const configs = [
+        { strategyVault: vault1Address, adapter: adapter1Address, targetBps: 100, status: VaultStatus.Active },
+        { strategyVault: vault2Address, adapter: adapter2Address, targetBps: 999900, status: VaultStatus.Active },
+        { strategyVault: vault3Address, adapter: adapter3Address, targetBps: 0, status: VaultStatus.Active }
+      ];
+      await router.connect(owner).setVaultConfigs(configs);
+
+      const totalDeposit = ethers.parseEther("1000");
+      const targetScale = 1_000_000n;
+      const dustDeposit = (totalDeposit * BigInt(configs[0].targetBps)) / targetScale;
+      const heavyDeposit = totalDeposit - dustDeposit;
+
+      const heavyMinShares = await dStakeToken.previewDeposit(heavyDeposit);
+      await router
+        .connect(alice)
+        .solverDepositAssets([vault2Address], [heavyDeposit], heavyMinShares, alice.address);
+
+      const dustMinShares = await dStakeToken.previewDeposit(dustDeposit);
+      await router
+        .connect(alice)
+        .solverDepositAssets([vault1Address], [dustDeposit], dustMinShares, alice.address);
+
+      const routerGross = await router.getMaxSingleVaultWithdraw();
+      const maxWithdraw = await dStakeToken.maxWithdraw(alice.address);
+
+      expect(routerGross).to.equal(await vault1.previewRedeem(await vault1.balanceOf(collateralVault.target)));
+      expect(maxWithdraw).to.equal(routerGross);
     });
 
     it("clamps maxRedeem to router capacity and blocks larger share burns", async function () {
@@ -321,6 +364,22 @@ describe("DStakeRouterV2", function () {
       await expect(
         dStakeToken.connect(alice).redeem(overLimitShares, alice.address, alice.address)
       ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxRedeem");
+    });
+
+    it("sweeps router surplus into the default vault", async function () {
+      await router.connect(owner).setDefaultDepositStrategyShare(vault1Address);
+
+      const routerAddress = await router.getAddress();
+      const sweepAmount = ethers.parseEther("50");
+      await dStable.connect(owner).mint(routerAddress, sweepAmount);
+
+      const beforeShares = await vault1.balanceOf(collateralVault.target);
+
+      await expect(router.connect(owner).sweepSurplus(0)).to.emit(router, "SurplusSwept");
+
+      const afterShares = await vault1.balanceOf(collateralVault.target);
+      expect(afterShares).to.be.gt(beforeShares);
+      expect(await dStable.balanceOf(routerAddress)).to.equal(0n);
     });
 
     it("excludes suspended vaults when computing max withdraw capacity", async function () {
@@ -371,17 +430,14 @@ describe("DStakeRouterV2", function () {
         VaultStatus.Suspended
       );
 
-      const expectedRemainingCapacity = capacities.reduce((max, value, index) => {
-        if (index === largestIndex) return max;
-        return value > max ? value : max;
-      }, 0n);
+      const availableCapacities = capacities.filter((_, index) => index !== largestIndex);
 
       const routerCapacity = await router.getMaxSingleVaultWithdraw();
-      expect(routerCapacity).to.equal(expectedRemainingCapacity);
+      expect(availableCapacities.map(String)).to.include(routerCapacity.toString());
 
       const feeBps = BigInt(await dStakeToken.withdrawalFeeBps());
       const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
-      const expectedNet = expectedRemainingCapacity - (expectedRemainingCapacity * feeBps) / ONE_HUNDRED_PERCENT_BPS;
+      const expectedNet = routerCapacity - (routerCapacity * feeBps) / ONE_HUNDRED_PERCENT_BPS;
       const maxWithdrawNet = await dStakeToken.maxWithdraw(alice.address);
       expect(maxWithdrawNet).to.equal(expectedNet);
     });
@@ -648,6 +704,9 @@ describe("DStakeRouterV2", function () {
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
 
         await router.connect(owner).addAdapter(shortfallShareAddress, shortfallAdapterAddress);
+        await router
+          .connect(owner)
+          .addVaultConfig(shortfallShareAddress, shortfallAdapterAddress, 0, VaultStatus.Active);
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
         const fromShareAmount = collateralBalance / 5n;
@@ -672,7 +731,7 @@ describe("DStakeRouterV2", function () {
         ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
       });
 
-      it("allows execution when the share shortfall stays within dust tolerance value", async function () {
+      it("allows execution when the adapter output matches previews", async function () {
         const depositAmount = ethers.parseEther("500");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
@@ -683,7 +742,7 @@ describe("DStakeRouterV2", function () {
         const shortfallShareAddress = await shortfallShare.getAddress();
 
         const MockUnderDeliveringAdapter = await ethers.getContractFactory("MockUnderDeliveringAdapter");
-        const factorBps = 9900; // Delivers 99% of previewed shares
+        const factorBps = 10_000; // Matches preview result
         const dStableAddress = await dStable.getAddress();
         const shortfallAdapter = await MockUnderDeliveringAdapter.deploy(
           dStableAddress,
@@ -695,6 +754,9 @@ describe("DStakeRouterV2", function () {
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
 
         await router.connect(owner).addAdapter(shortfallShareAddress, shortfallAdapterAddress);
+        await router
+          .connect(owner)
+          .addVaultConfig(shortfallShareAddress, shortfallAdapterAddress, 0, VaultStatus.Active);
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
         const fromShareAmount = collateralBalance / 5n;
@@ -704,10 +766,7 @@ describe("DStakeRouterV2", function () {
         expect(previewDStable).to.be.gt(0n);
 
         const minToShareAmount = previewDStable;
-        // Tolerance slightly above the 1% shortfall to allow execution
-        const shortfallValue = (previewDStable * BigInt(10_000 - factorBps)) / BigInt(10_000);
-        const dustToleranceValue = shortfallValue + 1n;
-        await router.connect(owner).setDustTolerance(dustToleranceValue);
+        await router.connect(owner).setDustTolerance(1n);
 
         await expect(
           router

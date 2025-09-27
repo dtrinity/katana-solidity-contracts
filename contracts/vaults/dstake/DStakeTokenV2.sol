@@ -28,6 +28,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   error ERC4626ExceedsMaxRedeem(uint256 shares, uint256 maxShares);
   error RouterCollateralMismatch(address router, address expectedVault, address actualVault);
   error RouterTokenMismatch(address router, address expectedToken, address actualToken);
+  error CollateralVaultRouterMismatch(address collateralVault, address expectedRouter, address actualRouter);
 
   // --- State ---
   IDStakeCollateralVaultV2 public collateralVault;
@@ -134,13 +135,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
   // --- Accounting ---
   function totalAssets() public view virtual override returns (uint256) {
-    uint256 grossAssets = _grossTotalAssets();
-    if (grossAssets == 0) {
-      return 0;
-    }
-
-    uint256 shortfall = address(router) == address(0) ? 0 : router.currentShortfall();
-    return shortfall >= grossAssets ? 0 : grossAssets - shortfall;
+    return _netManagedAssets();
   }
 
   function _grossTotalAssets() internal view returns (uint256) {
@@ -148,6 +143,20 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       return 0;
     }
     return router.totalManagedAssets();
+  }
+
+  function _netManagedAssets() internal view returns (uint256) {
+    uint256 grossAssets = _grossTotalAssets();
+    if (grossAssets == 0) {
+      return 0;
+    }
+
+    if (address(router) == address(0)) {
+      return grossAssets;
+    }
+
+    uint256 shortfall = router.currentShortfall();
+    return shortfall >= grossAssets ? 0 : grossAssets - shortfall;
   }
 
   function grossTotalAssets() public view returns (uint256) {
@@ -160,8 +169,8 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 grossAssets = _grossTotalAssets();
-    return Math.mulDiv(assets, supply, grossAssets + 1, rounding);
+    uint256 netAssets = _netManagedAssets();
+    return Math.mulDiv(assets, supply, netAssets + 1, rounding);
   }
 
   function _convertToAssetsUsingGross(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
@@ -170,8 +179,8 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 grossAssets = _grossTotalAssets();
-    return Math.mulDiv(shares, grossAssets + 1, supply, rounding);
+    uint256 netAssets = _netManagedAssets();
+    return Math.mulDiv(shares, netAssets + 1, supply, rounding);
   }
 
   function convertToShares(uint256 assets) public view virtual override returns (uint256) {
@@ -374,7 +383,8 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     IDStakeRouterV2 routerCandidate = IDStakeRouterV2(newRouter);
-    if (routerCandidate.collateralVault() != IDStakeCollateralVaultV2(newCollateralVault)) {
+    IDStakeCollateralVaultV2 collateralCandidate = IDStakeCollateralVaultV2(newCollateralVault);
+    if (routerCandidate.collateralVault() != collateralCandidate) {
       revert RouterCollateralMismatch(newRouter, newCollateralVault, address(routerCandidate.collateralVault()));
     }
 
@@ -382,8 +392,18 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       revert RouterTokenMismatch(newRouter, address(this), routerCandidate.dStakeToken());
     }
 
+    if (collateralCandidate.router() != newRouter) {
+      revert CollateralVaultRouterMismatch(newCollateralVault, newRouter, collateralCandidate.router());
+    }
+
+    uint256 currentShortfall = address(router) == address(0) ? 0 : router.currentShortfall();
+
     router = routerCandidate;
-    collateralVault = IDStakeCollateralVaultV2(newCollateralVault);
+    collateralVault = collateralCandidate;
+
+    if (currentShortfall > 0) {
+      router.recordShortfall(currentShortfall);
+    }
 
     emit RouterSet(newRouter);
     emit CollateralVaultSet(newCollateralVault);

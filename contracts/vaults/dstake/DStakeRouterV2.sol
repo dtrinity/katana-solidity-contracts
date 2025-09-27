@@ -81,7 +81,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error SharesExceedMaxRedeem(uint256 requestedShares, uint256 maxShares);
   error InvalidDepositCap(uint256 newCap, uint256 currentManaged);
   error InvalidReinvestIncentive(uint256 incentiveBps, uint256 maxBps);
-  error SettlementShortfallTooHigh(uint256 shortfall, uint256 managedAssets);
+  error SettlementShortfallActive(uint256 shortfall);
   error UnauthorizedConfigCaller();
   error InvalidWithdrawalFee(uint256 feeBps, uint256 maxFeeBps);
 
@@ -692,6 +692,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     whenNotPaused
     returns (uint256 amountReinvested, uint256 incentivePaid)
   {
+    if (settlementShortfall > 0) {
+      revert SettlementShortfallActive(settlementShortfall);
+    }
+
     uint256 balance = IERC20(dStable).balanceOf(address(this));
     if (balance == 0) {
       return (0, 0);
@@ -752,9 +756,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       return;
     }
     uint256 newShortfall = settlementShortfall + delta;
-    if (newShortfall > totalManagedAssets()) {
-      revert SettlementShortfallTooHigh(newShortfall, totalManagedAssets());
-    }
     uint256 previous = settlementShortfall;
     settlementShortfall = newShortfall;
     emit SettlementShortfallUpdated(previous, newShortfall);
@@ -809,15 +810,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 receivedDStable = fromAdapter.withdrawFromStrategy(fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(fromAdapterAddress, 0);
 
-    IERC20(dStable).forceApprove(toAdapterAddress, receivedDStable);
-    (address actualToStrategyShare, uint256 resultingToShareAmount) = toAdapter.depositIntoStrategy(receivedDStable);
-    if (actualToStrategyShare != toStrategyShare) {
-      revert AdapterAssetMismatch(toAdapterAddress, toStrategyShare, actualToStrategyShare);
-    }
+    uint256 resultingToShareAmount = _depositToVaultAtomically(toStrategyShare, receivedDStable);
     if (resultingToShareAmount < minToShareAmount) {
       revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
     }
-    IERC20(dStable).forceApprove(toAdapterAddress, 0);
 
     {
       uint256 previewValue = toAdapter.previewWithdrawFromStrategy(resultingToShareAmount);
@@ -872,12 +868,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 receivedDStable = locals.fromAdapter.withdrawFromStrategy(fromShareAmount);
     IERC20(fromStrategyShare).forceApprove(locals.fromAdapterAddress, 0);
 
-    IERC20(dStable).forceApprove(locals.toAdapterAddress, receivedDStable);
-    (address actualToStrategyShare, uint256 resultingToShareAmount) = locals.toAdapter.depositIntoStrategy(receivedDStable);
-    if (actualToStrategyShare != toStrategyShare)
-      revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
+    uint256 resultingToShareAmount = _depositToVaultAtomically(toStrategyShare, receivedDStable);
 
-    // Validate actual conversion result by measuring the share shortfall in dStable units and comparing to tolerance
     if (resultingToShareAmount < minToShareAmount) {
       uint256 shareShortfall = minToShareAmount - resultingToShareAmount;
       uint256 shortfallValue = shareShortfall.mulDiv(
@@ -890,8 +882,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
       }
     }
-
-    IERC20(dStable).forceApprove(locals.toAdapterAddress, 0);
 
     emit StrategySharesExchanged(
       fromStrategyShare,
@@ -981,20 +971,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (balance == 0) revert ZeroInputDStableValue(dStable, 0);
 
     uint256 amountToSweep = (maxAmount == 0 || maxAmount > balance) ? balance : maxAmount;
-    address adapterAddress = _strategyShareToAdapter[defaultDepositStrategyShare];
-    if (adapterAddress == address(0)) revert AdapterNotFound(defaultDepositStrategyShare);
+    address strategyShare = defaultDepositStrategyShare;
+    if (_strategyShareToAdapter[strategyShare] == address(0)) revert AdapterNotFound(strategyShare);
 
-    IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
-    address strategyShare = adapter.strategyShare();
+    _depositToVaultAtomically(strategyShare, amountToSweep);
 
-    IERC20(dStable).forceApprove(adapterAddress, amountToSweep);
-    (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
-    if (mintedShare != strategyShare) revert AdapterAssetMismatch(adapterAddress, strategyShare, mintedShare);
-
-    // Prevent residual allowances for the adapter regardless of token behaviour.
-    IERC20(dStable).forceApprove(adapterAddress, 0);
-
-    emit SurplusSwept(amountToSweep, mintedShare);
+    emit SurplusSwept(amountToSweep, strategyShare);
   }
 
   // --- Vault Configuration ---
@@ -1187,14 +1169,24 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _maxSingleVaultWithdraw() internal view returns (uint256 maxAssets) {
-    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
+    (
+      address[] memory activeVaults,
+      uint256[] memory currentAllocations,
+      uint256[] memory targetAllocations
+    ) = _getActiveVaultsAndAllocations(OperationType.WITHDRAWAL);
 
-    for (uint256 i = 0; i < activeVaults.length; i++) {
-      uint256 vaultBalance = _getVaultBalance(activeVaults[i]);
-      if (vaultBalance > maxAssets) {
-        maxAssets = vaultBalance;
-      }
+    if (activeVaults.length == 0) {
+      return 0;
     }
+
+    (address[] memory selectedVaults, ) = DeterministicVaultSelector.selectTopOverallocated(
+      activeVaults,
+      currentAllocations,
+      targetAllocations,
+      1
+    );
+
+    return _getVaultBalance(selectedVaults[0]);
   }
 
   // --- Internal Helpers ---

@@ -257,6 +257,22 @@ describe("Fee Accounting Regression Test", function () {
     });
   });
 
+  describe("Shortfall interactions", function () {
+    it("blocks reinvestment while a shortfall is recorded", async function () {
+      await dStakeToken.connect(alice).deposit(ethers.parseEther("500"), alice.address);
+
+      const shortfall = ethers.parseEther("50");
+      await dStakeToken.connect(owner).setSettlementShortfall(shortfall);
+
+      await dStable.mint(routerAddress, ethers.parseEther("10"));
+
+      await expect(router.connect(owner).reinvestFees()).to.be.revertedWithCustomError(
+        router,
+        "SettlementShortfallActive"
+      );
+    });
+  });
+
   describe("reinvestFees() Function", function () {
     beforeEach(async function () {
       // Setup initial position and generate some fees

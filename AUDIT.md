@@ -30,16 +30,55 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Fix**: `redeem` now pulls the pre-fee amount via `super.previewRedeem` before applying `_getNetAmountAfterFee`, ensuring the withdrawal fee is assessed exactly once while forwarding the correct gross value to the router.
 - **Tests**: `test/dstake/FeeAccountingRegression.test.ts` asserts `previewRedeem` matches actual payouts, catching any future double-fee regressions.
 
-## Open
-### 3. Deposit/mint previews ignore recorded shortfall
+### 4. Deposit/mint previews ignore recorded shortfall
 - **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:157-190`
-- **Impact**: Deposit/mint previews divide by `router.totalManagedAssets()` (gross) even when `router.currentShortfall()` is non-zero. Incoming capital mints shares against the higher gross denominator, immediately socializing legacy losses and violating preview expectations.
-- **Status**: Low hanging fruit — share/conversion helpers just need to use the net asset view that already powers `totalAssets()` so previews line up with what withdrawals redeem.
-- **Suggested fix**: Recompute the preview denominators from `gross - shortfall` (or `totalAssets()`) in `_convertToSharesUsingGross` / `_convertToAssetsUsingGross`, keeping the +1 rounding guard. Mirror the change in `previewDeposit`/`previewMint`, and extend `SettlementShortfall` tests to cover deposits during an active deficit.
-- **Reproduction**: After recording a shortfall (e.g., `setSettlementShortfall(20)` with 100 assets), call `previewDeposit(10)` to see it return ~10 even though `convertToAssets(10)` ≈ 8; executing `deposit(10, user)` mints 10 shares that redeem for only 8 assets, proving new entrants instantly absorb old losses.
-- **Testing**: Expand `test/dstake/SettlementShortfall.test.ts` to deposit during an active shortfall and assert share price neutrality (new shares match net assets).
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:136-204`
+- **Fix**: Preview helpers now use `_netManagedAssets()` (gross assets minus recorded shortfall) so `previewDeposit`/`previewMint` align with the NAV that withdrawals redeem. `totalAssets()` delegates to the same helper, keeping ERC4626 invariants consistent.
+- **Tests**: `test/dstake/SettlementShortfall.test.ts` verifies preview parity during active shortfalls and that insolvency saturates `totalAssets()` without reverting.
 
+### 5. maxWithdraw publishes capacity the active vault cannot honor
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1182-1189`, `:396-413`
+- **Fix**: `_maxSingleVaultWithdraw()` now reuses the deterministic withdrawal selector so router capacity mirrors the vault the next exit will actually target. ERC4626 `maxWithdraw/maxRedeem` consequently surface accurate limits even when allocations are balanced or vault statuses change.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts` covers balanced-set fallback behaviour and the suspended-vault scenario to ensure the reported capacity tracks the active vault.
+
+### 6. Surplus sweep ignores adapter slippage checks
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:970-979`
+- **Fix**: `sweepSurplus` now routes through `_depositToVaultAtomically`, inheriting adapter preview, share-delta, and allowance hygiene checks before surplus capital re-enters strategies.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds a surplus sweep regression that confirms router-held fees are redeployed into the default vault.
+
+### 7. Rebalance adapters can zero out collateral
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:789-879`
+- **Fix**: Both rebalance paths deposit via `_depositToVaultAtomically`, measuring actual share deltas and reusing slippage guards instead of trusting adapter return values. This prevents adapters from claiming minted shares without transferring them.
+- **Tests**: `test/dstake/DStakeRouterV2.test.ts` hostile-adapter regressions now pass because bogus share reports trigger slippage checks.
+
+### 8. Shortfall cap hides new deficits once underwater
+- **Severity**: Critical
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:753-761`
+- **Fix**: Removed the `totalManagedAssets()` cap so governance can record losses that exceed current assets. NAV now saturates at zero while insolvency persists, preserving liability accounting.
+- **Tests**: `test/dstake/SettlementShortfall.test.ts` pushes the system underwater and asserts that additional shortfalls record cleanly and `totalAssets()` clamps to zero.
+
+### 9. migrateCore can orphan router permissions and lock withdrawals
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:380-409`, `deploy/08_dstake/03_configure_dstake.ts:90-120`
+- **Fix**: `migrateCore` now insists the collateral vault already recognizes the incoming router, and the deployment script sets that relationship before migrating. This prevents transient `ROUTER_ROLE` gaps that previously bricked withdrawals.
+- **Tests**: `test/dstake/DStakeToken.ts` covers the missing-router-role revert and the happy path, while the deployment script change keeps fixtures aligned.
+
+### 10. Router migration wipes recorded shortfall
+- **Severity**: Critical
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:399-405`
+- **Fix**: The token snapshots `router.currentShortfall()` before swapping routers and re-records it on the replacement, preserving liabilities across upgrades.
+- **Tests**: `test/dstake/DStakeToken.ts` asserts that migrating routers keeps the outstanding shortfall intact.
+
+### 11. reinvestFees leaks shortfall collateral via incentives
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:690-717`
+- **Fix**: `reinvestFees` now reverts while a shortfall is outstanding so recovery capital cannot be siphoned through caller incentives.
+- **Tests**: `test/dstake/FeeAccountingRegression.test.ts` adds a shortfall scenario that confirms reinvestment is blocked until losses are cleared.
+
+## Open
 ### 4. Removing vault with live balance halts NAV
 - **Severity**: Medium
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1481-1523`, `contracts/vaults/dstake/DStakeCollateralVaultV2.sol:73-90`

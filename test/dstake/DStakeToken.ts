@@ -197,6 +197,8 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           );
           await deployedRouter.waitForDeployment();
 
+          await deployedVault.setRouter(await deployedRouter.getAddress());
+
           return { deployedVault, deployedRouter };
         };
 
@@ -204,6 +206,9 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           const { deployedVault, deployedRouter } = await deployNewCore();
           const newVaultAddress = await deployedVault.getAddress();
           const newRouterAddress = await deployedRouter.getAddress();
+
+           const recordedShortfall = ethers.parseEther("15");
+           await DStakeTokenV2.connect(user1).setSettlementShortfall(recordedShortfall);
 
           await expect(
             DStakeTokenV2.connect(user1).migrateCore(
@@ -218,6 +223,7 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
           expect(await DStakeTokenV2.router()).to.equal(newRouterAddress);
           expect(await DStakeTokenV2.collateralVault()).to.equal(newVaultAddress);
+          expect(await deployedRouter.currentShortfall()).to.equal(recordedShortfall);
         });
 
         it("Should revert if non-admin calls migrateCore", async () => {
@@ -255,6 +261,38 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           ).to.be.revertedWithCustomError(
             DStakeTokenV2,
             "RouterCollateralMismatch",
+          );
+        });
+
+        it("Should revert when collateral vault does not grant the router role", async () => {
+          const vaultFactory = await ethers.getContractFactory(
+            "DStakeCollateralVaultV2",
+            user1,
+          );
+          const freshVault = await vaultFactory.deploy(
+            DStakeTokenV2Address,
+            await dStableToken.getAddress(),
+          );
+          await freshVault.waitForDeployment();
+
+          const routerFactory = await ethers.getContractFactory(
+            "DStakeRouterV2",
+            user1,
+          );
+          const freshRouter = await routerFactory.deploy(
+            DStakeTokenV2Address,
+            await freshVault.getAddress(),
+          );
+          await freshRouter.waitForDeployment();
+
+          await expect(
+            DStakeTokenV2.connect(user1).migrateCore(
+              await freshRouter.getAddress(),
+              await freshVault.getAddress(),
+            ),
+          ).to.be.revertedWithCustomError(
+            DStakeTokenV2,
+            "CollateralVaultRouterMismatch",
           );
         });
 

@@ -90,6 +90,16 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       await ethers.getSigner(deployer) // Use deployer as signer for read calls
     );
 
+    // --- Ensure collateral vault trusts the configured router before migration ---
+    const vaultRouter = await collateralVault.router();
+    const vaultRouterRole = await collateralVault.ROUTER_ROLE();
+    const isRouterRoleGranted = await collateralVault.hasRole(vaultRouterRole, routerDeployment.address);
+
+    if (vaultRouter !== routerDeployment.address || !isRouterRoleGranted) {
+      console.log(`    ⚙️ Setting router for ${collateralVaultDeploymentName} to ${routerDeployment.address}`);
+      await collateralVault.connect(deployerSigner).setRouter(routerDeployment.address);
+    }
+
     // --- Configure DStakeTokenV2 ---
     const currentRouter = await dstakeToken.router();
     const currentVault = await dstakeToken.collateralVault();
@@ -111,15 +121,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     // --- Configure DStakeCollateralVaultV2 ---
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address, deployerSigner);
-
-    const vaultRouter = await collateralVault.router();
-    const vaultRouterRole = await collateralVault.ROUTER_ROLE();
-    const isRouterRoleGranted = await collateralVault.hasRole(vaultRouterRole, routerDeployment.address);
-
-    if (vaultRouter !== routerDeployment.address || !isRouterRoleGranted) {
-      console.log(`    ⚙️ Setting router for ${collateralVaultDeploymentName} to ${routerDeployment.address}`);
-      await collateralVault.connect(deployerSigner).setRouter(routerDeployment.address);
-    }
 
     // --- Configure DStakeCollateralVaultV2 Adapters ---
     for (const adapterConfig of instanceConfig.adapters) {

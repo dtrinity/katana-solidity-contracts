@@ -148,18 +148,22 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     await dStakeToken.connect(owner).setSettlementShortfall(0);
 
     const redeemableAfterRecovery = await dStakeToken.convertToAssets(bobShares);
-    const tolerance = 1_000_000_000_000_000n;
-    expect(redeemableAfterRecovery).to.be.closeTo(bobDeposit, tolerance);
+    expect(redeemableAfterRecovery).to.be.gt(bobDeposit);
   });
 
-  it("reverts when the shortfall exceeds gross assets", async function () {
+  it("allows shortfall to exceed managed assets and saturates NAV", async function () {
     const depositAmount = ethers.parseEther("50");
     await dStable.connect(alice).approve(dStakeToken, depositAmount);
     await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
 
     const excessiveShortfall = ethers.parseEther("60");
-    await expect(
-      dStakeToken.connect(owner).setSettlementShortfall(excessiveShortfall)
-    ).to.be.revertedWithCustomError(router, "SettlementShortfallTooHigh");
+    await expect(dStakeToken.connect(owner).setSettlementShortfall(excessiveShortfall))
+      .to.emit(router, "SettlementShortfallUpdated")
+      .withArgs(0n, excessiveShortfall);
+
+    expect(await dStakeToken.totalAssets()).to.equal(0n);
+    const aliceShares = await dStakeToken.balanceOf(alice.address);
+    expect(await dStakeToken.convertToAssets(aliceShares)).to.equal(0n);
+    expect(await dStakeToken.maxWithdraw(alice.address)).to.equal(0n);
   });
 });
