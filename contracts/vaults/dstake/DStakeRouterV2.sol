@@ -61,7 +61,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error AdapterAssetMismatch(address adapter, address expectedAsset, address actualAsset);
   error SlippageCheckFailed(address asset, uint256 actualAmount, uint256 requiredAmount);
   error AdapterSharesMismatch(uint256 actualShares, uint256 reportedShares);
-  error ShareWithdrawalConversionFailed();
   error SolverShareDepositShortfall(address vault, uint256 expectedShares, uint256 actualShares);
   error InvalidAmount();
   error InvalidVaultConfig();
@@ -668,7 +667,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert SharesExceedMaxRedeem(sharesBurned, maxShares);
     }
 
-    uint256 grossWithdrawn = _executeWithdrawShares(vaults, strategyShares);
+    uint256 grossWithdrawn = _executeGrossWithdrawals(vaults, grossAssetAmounts);
 
     fee = _calculateFee(grossWithdrawn);
     netAssets = grossWithdrawn - fee;
@@ -1265,43 +1264,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return receivedDStable;
   }
 
-  function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal returns (uint256 receivedDStable) {
-    VaultConfig memory config = _getVaultConfig(vault);
-
-    address adapter = config.adapter;
-    IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
-
-    uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
-    if (shares > availableShares) revert NoLiquidityAvailable();
-
-    collateralVault.transferStrategyShares(vault, shares, address(this));
-    IERC20(vault).forceApprove(adapter, shares);
-
-    try conversionAdapter.withdrawFromStrategy(shares) returns (uint256 redeemed) {
-      receivedDStable = redeemed;
-      IERC20(vault).forceApprove(adapter, 0);
-    } catch {
-      // No cleanup needed before revert; state will roll back
-      revert ShareWithdrawalConversionFailed();
-    }
-
-    return receivedDStable;
-  }
-
   function _executeGrossWithdrawals(address[] calldata vaults, uint256[] memory grossRequests) internal returns (uint256 totalWithdrawn) {
     for (uint256 i = 0; i < vaults.length; i++) {
       uint256 grossRequest = grossRequests[i];
       if (grossRequest > 0) {
         totalWithdrawn += _withdrawFromVaultAtomically(vaults[i], grossRequest);
-      }
-    }
-  }
-
-  function _executeWithdrawShares(address[] calldata vaults, uint256[] calldata shareAmounts) internal returns (uint256 totalWithdrawn) {
-    for (uint256 i = 0; i < vaults.length; i++) {
-      uint256 shareAmount = shareAmounts[i];
-      if (shareAmount > 0) {
-        totalWithdrawn += _withdrawSharesFromVaultAtomically(vaults[i], shareAmount);
       }
     }
   }

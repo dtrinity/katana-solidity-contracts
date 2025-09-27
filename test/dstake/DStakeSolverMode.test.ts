@@ -10,7 +10,7 @@ import {
   DStakeTokenV2,
 } from "../../typechain-types";
 import { SDUSD_CONFIG } from "./fixture";
-import { createDStakeRouterV2Fixture } from "./routerFixture";
+import { createDStakeRouterV2Fixture, VaultStatus } from "./routerFixture";
 
 describe("DStake Solver Mode Tests", function () {
   // Test configuration
@@ -360,6 +360,19 @@ describe("DStake Solver Mode Tests", function () {
       // Verify vault balance decreased
       expect(vault1BalanceAfter).to.be.lt(vault1BalanceBefore);
     });
+
+    it("reverts solverWithdrawAssets when target vault is suspended", async function () {
+      await router.connect(owner).setVaultStatus(vault1Address, VaultStatus.Suspended);
+
+      const assets = [ethers.parseEther("100")];
+      const maxShares = ethers.parseEther("500");
+
+      await expect(
+        router.connect(alice).solverWithdrawAssets([vault1Address], assets, maxShares, alice.address, alice.address)
+      )
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault1Address);
+    });
   });
 
   describe("Solver Mode: solverWithdrawShares", function () {
@@ -426,6 +439,20 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault1.balanceOf(collateralVault.target)).to.be.lt(vault1Balance);
       expect(await vault2.balanceOf(collateralVault.target)).to.equal(vault2BalanceBefore);
       expect(await vault3.balanceOf(collateralVault.target)).to.equal(vault3BalanceBefore);
+    });
+
+    it("reverts solverWithdrawShares when target vault is suspended", async function () {
+      const vaultBalance = await vault1.balanceOf(collateralVault.target);
+      const vaultShares = [vaultBalance / 4n];
+      const maxShares = ethers.parseEther("2000");
+
+      await router.connect(owner).setVaultStatus(vault1Address, VaultStatus.Suspended);
+
+      await expect(
+        router.connect(alice).solverWithdrawShares([vault1Address], vaultShares, maxShares, alice.address, alice.address)
+      )
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault1Address);
     });
   });
 
