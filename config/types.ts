@@ -213,6 +213,16 @@ export interface DStakeAdapterConfig {
   readonly adapterContract: string; // Contract name for deployment (e.g., dLendConversionAdapter)
 }
 
+export interface DStakeIdleVaultConfig {
+  readonly name?: string; // Optional name override for the idle vault token
+  readonly symbol?: string; // Optional symbol override for the idle vault token
+  readonly admin?: Address; // Optional admin override; defaults to the instance initialAdmin
+  readonly rewardManager?: Address; // Optional reward manager override; defaults to admin
+  readonly emissionStart?: number; // Optional initial emission start timestamp
+  readonly emissionEnd?: number; // Optional initial emission end timestamp
+  readonly emissionPerSecond?: string; // Optional initial emission rate (string to avoid precision issues)
+}
+
 export interface DLendRewardManagerConfig {
   readonly managedStrategyShare: Address; // Address of the StaticATokenLM wrapper this manager handles (e.g. wddUSD)
   readonly dLendAssetToClaimFor: Address; // Address of the underlying aToken in dLEND (e.g. aDUSD)
@@ -237,6 +247,7 @@ export interface DStakeInstanceConfig {
   readonly collateralExchangers: Address[]; // List of allowed exchanger addresses
   readonly collateralVault?: Address; // The DStakeCollateralVaultV2 for this instance (needed for adapter deployment)
   readonly dLendRewardManager?: DLendRewardManagerConfig; // Added for dLend rewards
+  readonly idleVault?: DStakeIdleVaultConfig; // Optional idle vault configuration
 }
 
 export interface VestingConfig {

@@ -29,6 +29,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   const dLendATokenWrapperDUSDDeployment = await _hre.deployments.getOrNull("dLend_ATokenWrapper_dUSD");
   const dLendATokenWrapperDSDeployment = await _hre.deployments.getOrNull("dLend_ATokenWrapper_dETH");
 
+  const idleVaultSdUSDDeployment = await _hre.deployments.getOrNull("DStakeIdleVault_sdUSD");
+  const idleVaultSdETHDeployment = await _hre.deployments.getOrNull("DStakeIdleVault_sdETH");
+
   // Fetch deployed dLend RewardsController
   const rewardsControllerDeployment = await _hre.deployments.getOrNull(INCENTIVES_PROXY_ID);
 
@@ -287,13 +290,22 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         initialWithdrawalFeeBps: 10,
         adapters: [
           {
+            strategyShare: emptyStringIfUndefined(idleVaultSdUSDDeployment?.address),
+            adapterContract: "GenericERC4626ConversionAdapter",
+          },
+          {
             strategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address),
+        defaultDepositStrategyShare: emptyStringIfUndefined(
+          idleVaultSdUSDDeployment?.address || dLendATokenWrapperDUSDDeployment?.address
+        ),
         collateralVault: "DStakeCollateralVaultV2_sdUSD",
         collateralExchangers: [user1],
+        idleVault: {
+          rewardManager: deployer,
+        },
         dLendRewardManager: {
           managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDUSDDeployment?.address), // This should be the deployed StaticATokenLM address for dUSD
           dLendAssetToClaimFor: emptyStringIfUndefined(aTokenDUSDDeployment?.address), // Use the deployed dLEND-dUSD aToken address
@@ -315,13 +327,22 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
         initialWithdrawalFeeBps: 10,
         adapters: [
           {
+            strategyShare: emptyStringIfUndefined(idleVaultSdETHDeployment?.address),
+            adapterContract: "GenericERC4626ConversionAdapter",
+          },
+          {
             strategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address),
+        defaultDepositStrategyShare: emptyStringIfUndefined(
+          idleVaultSdETHDeployment?.address || dLendATokenWrapperDSDeployment?.address
+        ),
         collateralVault: "DStakeCollateralVaultV2_sdETH",
         collateralExchangers: [user1],
+        idleVault: {
+          rewardManager: deployer,
+        },
         dLendRewardManager: {
           managedStrategyShare: emptyStringIfUndefined(dLendATokenWrapperDSDeployment?.address), // This should be the deployed StaticATokenLM address for dETH
           dLendAssetToClaimFor: emptyStringIfUndefined(dETHDeployment?.address), // Use the dETH underlying asset address as a placeholder
