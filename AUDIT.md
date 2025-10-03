@@ -12,127 +12,68 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ## Resolved
 
-### 1. Router retry gas removal
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`
-- **Fix**: Simplified deposit/withdraw routing to attempt a single deterministic vault and bubble up adapter failures, removing `_computeRetryCallGas`, the external retry wrappers, and the `setRetryGasConfig` governance knob. Eliminates the EIP-150 stipend gap while aligning with the "trusted adapters" operating assumption.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (`"surfaces adapter failures to operators"`)
-- **Residual risk**: A misconfigured or failing adapter now reverts the user flow until operators mark it unhealthy or rotate configurations; solver flows remain the escape hatch for partial fills.
-
-### 2. Dust-tolerance underflow in share rebalances
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`
-- **Fix**: Saturated the dust adjustment in `_rebalanceStrategiesByShares` (`dustAdjusted`) and short-circuit the flow entirely when the previewed withdrawal value is within `dustTolerance` (`DStakeRouterV2.sol:452`, `:456`). Dust-sized moves are now ignored instead of reverting or donating collateral.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (dust clamp regression)
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds `"clamps dust tolerance during share rebalances"` to confirm the router skips micro-moves without reverting or mutating balances.
-- **Residual risk**: Operators should monitor dust tolerance so that repeated no-op calls do not mask larger mismatches. Consider emitting an explicit event when a rebalance is skipped due to dust.
-
-### 3. Adapter removal valuation guard
-- **Component**: `contracts/vaults/dstake/DStakeCollateralVaultV2.sol`
-- **Fix**: Removing an adapter while balances remain now causes NAV queries to revert with `AdapterValuationUnavailable`, forcing operators to supply a replacement adapter or migrate collateral before continuing.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (`"surfaces valuation errors when removing an adapter with live balances"`)
-- **Residual risk**: Token operations halt until governance restores a pricing path. Runbooks must call out the need to migrate or relist collateral before adapter removal.
-
-### 4. Documentation alignment
-- **Component**: `contracts/vaults/dstake/Design.md`
-- **Update**: Router docs now call out the single-vault, fail-fast routing model and direct operators toward health toggles / solver flows for exceptions, replacing the old gas-stipend narrative.
-- **Tested**: ❌ Documentation-only change
-
-### 5. Solver dust donation (reference)
-- **Status**: Previously fixed; regression coverage retained in `test/dstake/DStakeSolverMode.test.ts`.
-- **Tested**: ✅ Regression retained in `test/dstake/DStakeSolverMode.test.ts`
-
-### 6. Rebalance adapter allowances
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`
-- **Fix**: Both `_rebalanceStrategiesByShares` and the external-liquidity variant now clear approvals back to zero after adapter calls to prevent lingering allowances that a compromised adapter could replay (`DStakeRouterV2.sol:456-468`, `:518-537`).
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts` (allowance reset assertions)
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts` adds "clears allowances after internal share rebalances" and "clears allowances after external-liquidity rebalances" to assert share and dStable allowances return to zero once the operation completes.
-- **Residual risk**: Set `dustTolerance` conservatively; raising it materially increases the value an adapter can walk off with before slippage guards catch the drift.
-
-### 7. Exchange-asset rewards bypassed compounding float guard
-- **Component**: `contracts/vaults/rewards_claimable/RewardClaimable.sol`
-- **Fix**: `compoundRewards` now subtracts the caller's freshly supplied exchange asset before splitting rewards, so the subsequent `_processExchangeAssetDeposit` still has liquidity even when URD lists the exchange asset itself (`RewardClaimable.sol:163-216`).
-- **Tested**: ✅ `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` (dStable reward compounding)
-- **Tests**: `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` adds "should handle dStable rewards without consuming the compounding float" to exercise the regression scenario.
-
-### 8. Settlement shortfall guard
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`
-- **Fix**: Governance now sets a fixed `settlementShortfall` (denominated in dStable). `totalAssets()` reports net collateral (gross minus the shortfall), `setSettlementShortfall` rejects values above the gross backing, and all mint/share previews price against `grossTotalAssets()` so new deposits cannot capture reserved value (`DStakeTokenV2.sol:112-177`, `:743-752`).
-- **Tested**: ✅ `test/dstake/SettlementShortfall.test.ts`
-- **Tests**: `test/dstake/SettlementShortfall.test.ts` exercises the guard, ERC4626 invariant preservation, preview alignment, and shows a shortfall-front-run deposit no longer profits.
-
-### 9. Single-vault withdrawal DoS
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol`, `contracts/vaults/dstake/DStakeTokenV2.sol`
-- **Fix**: Rather than over-reporting liquidity that the deterministic router cannot satisfy, `DStakeRouterV2` now exposes `getMaxSingleVaultWithdraw`, and `DStakeTokenV2.maxWithdraw` clamps ERC4626 limits to that per-vault ceiling after fees (`DStakeRouterV2.sol:844-852`, `DStakeTokenV2.sol:274-288`, `IDStakeRouterV2.sol:76-78`). Integrators no longer observe withdraw amounts that would revert.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:246-289`
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts:246-289` adds "clamps maxWithdraw to the largest single-vault capacity", verifying the reported limit matches the largest vault and that requests above it revert with `ERC4626ExceedsMaxWithdraw`.
-- **Residual risk**: The router still services a single vault per deterministic withdrawal; user exits above the cap must route through solver mode or wait for rebalancing. Tracking aggregate withdrawals across vaults remains future work.
-
-### 10. Router zero-capacity maxWithdraw floor
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:277-294`
-- **Fix**: `maxWithdraw` now returns zero whenever the router reports no eligible liquidity or the call reverts, only falling back to the owner's balance while the router is unset. Outage scenarios therefore advertise the same "no capacity" limit the router enforces.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:351-378`
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts:351-378` suspends every vault, confirms the reported limit drops to zero, blocks larger withdrawals, and still allows `withdraw(0)` probes.
-
-### 11. Zero-amount withdrawals honor ERC4626 semantics
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:333-344`
-- **Fix**: `_withdraw` now short-circuits zero-asset/share flows, burning nothing, emitting the ERC4626 `Withdraw` event with zero values, and skipping the router call so the downstream `InvalidAmount` check is never triggered.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:374-378`
-- **Tests**: `test/dstake/DStakeRouterV2.test.ts:374-378` exercises `withdraw(0)` while the router has no capacity, demonstrating it succeeds as a no-op instead of reverting.
-
-### 12. Collateral vault retargeting desync mints inflated shares
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:36`, `contracts/vaults/dstake/DStakeTokenV2.sol:760`, `contracts/vaults/dstake/interfaces/IDStakeRouterV2.sol:9`
-- **Fix**: Removed the piecemeal `setRouter`/`setCollateralVault` governance knobs in favour of a single `migrateCore` function that atomically rewires the router and collateral vault once the router proves it already targets the same vault and token. Custom errors (`RouterCollateralMismatch`, `RouterTokenMismatch`) enforce the invariant and the router interface now exposes the necessary getters for the check.
-- **Tested**: ✅ `test/dstake/DStakeToken.ts:203` + `test/dstake/FeeAccountingRegression.test.ts:92`
-- **Tests**: `test/dstake/DStakeToken.ts:203` covers the happy path plus both mismatch revert scenarios, while `test/dstake/FeeAccountingRegression.test.ts:92` and `test/dstake/routerFixture.ts:266` update integration flows to exercise `migrateCore` during fixture setup.
-- **Residual risk**: Governance still needs to coordinate pausing around migrations; future work could make `migrateCore` assert the router is paused or that the new collateral vault already reflects assets when `totalSupply() > 0`.
-
-### 13. Permissionless compounding strips claimed rewards
-- **Component**: `contracts/vaults/rewards_claimable/RewardClaimable.sol`
-- **Fix**: Temporarily restricted `compoundRewards` to callers holding `REWARDS_MANAGER_ROLE`, removing the permissionless entrypoint that let anyone drain staged rewards while a pricing-safe settlement redesign is underway (`RewardClaimable.sol:162-168`).
-- **Tested**: ✅ Role-aware flows in `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` and `test/reward_claimable/RewardClaimable.ts`
-- **Tests**: Updated `test/dstake/DStakeRewardManagerMetaMorpho.test.ts` and `test/reward_claimable/RewardClaimable.ts` to grant the role in fixtures before exercising compounding so behaviour and accounting remain covered.
-- **Residual risk**: Compounding now relies on a trusted operator. Revisit once a robust permissionless auction or router-executed swap flow is ready.
-
-### 14. Redeem return value ignores over-withdrawals
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`
-- **Fix**: Refactored `_withdraw` through `_withdrawAndReturnNet`, allowing `redeem` to surface the router-settled net assets even when rounding delivers more than requested (`DStakeTokenV2.sol:249`, `:269-309`). The helper centralizes allowance spending, share burns, router invocation, and settlement so every exit path now reports the true post-fee amount.
-- **Tested**: ✅ `test/dstake/DStakeSolverMode.test.ts` & ERC4626 regression suite
-- **Tests**: `yarn hardhat test test/dstake/DStakeSolverMode.test.ts` (covers solver withdrawals and fee consistency) and existing ERC4626 regression suite.
-- **Residual risk**: None noted; ERC4626 callers now observe accurate balances under all router rounding outcomes.
-
-### 15. Redeem capacity clamp surfaced to callers
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol`, `test/dstake/DStakeRouterV2.test.ts`
-- **Fix**: Overrode `maxRedeem` to mirror the router-aware `maxWithdraw` ceiling and return the share burn that matches the single-vault capacity, preventing callers from overshooting the deterministic router limit (`DStakeTokenV2.sol:302-319`). Added a regression test that verifies the clamp both matches `previewWithdraw(maxWithdraw)` and rejects larger share burns with `ERC4626ExceedsMaxRedeem` (`test/dstake/DStakeRouterV2.test.ts:292`).
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:292`
-- **Residual risk**: Router heuristics may still surface `NoLiquidityAvailable` if no single vault can satisfy the clamped request; the ERC4626 view functions now advertise that limit so integrators can split redemptions when needed.
-
-### 16. External-liquidity dust tolerance mismatched units
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:530`
-- **Fix**: External-liquidity rebalances now translate any share shortfall into its dStable-equivalent value via `mulDiv(..., Math.Rounding.Ceil)` and only waive slippage when that deficit stays within `dustTolerance`, keeping the caller’s `minToShareAmount` effective even with adapters that under-deliver (`DStakeRouterV2.sol:532-541`).
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:627` & `:674`
-- **Tests**: Added `"reverts when the output share shortfall exceeds dust tolerance value"` and `"allows execution when the share shortfall stays within dust tolerance value"` in `test/dstake/DStakeRouterV2.test.ts:627` and `:674`, leveraging a mock adapter to prove both the failure and success paths.
-- **Residual risk**: Trust still rests on adapter previews; governance should continue monitoring adapters for dishonest previews or unexpected fees.
-
-### 17. Reward compounding auth regression guard
-- **Component**: `test/dstake/DStakeRewardManagerMetaMorpho.test.ts:404`, `test/reward_claimable/RewardClaimable.ts:460`
-- **Fix**: Added explicit regression coverage that revokes `REWARDS_MANAGER_ROLE` before calling `compoundRewards`, asserting the `AccessControlUnauthorizedAccount` revert so the permissioned gate cannot silently regress.
-- **Tested**: ✅ `yarn hardhat test test/dstake/DStakeRewardManagerMetaMorpho.test.ts` ("Reward Compounding › should revert when caller lacks rewards manager role"), `yarn hardhat test test/reward_claimable/RewardClaimable.ts`
-- **Notes**: Closes Open #1.
-
-### 18. Pause surfaces zero withdraw capacity
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:255`, `contracts/vaults/dstake/DStakeTokenV2.sol:263`, `contracts/vaults/dstake/DStakeRouterV2.sol:177`
-- **Fix**: `maxWithdraw` now checks the router’s pause flag (via the newly surfaced interface) and returns zero capacity whenever the router is paused or the call reverts, aligning ERC4626 views with enforced router behaviour.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:1240` (pause regression)
-- **Notes**: Closes Open #2.
-
-### 19. Deposit limits mirror router availability
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:302`, `contracts/vaults/dstake/DStakeTokenV2.sol:310`, `contracts/vaults/dstake/DStakeTokenV2.sol:433`, `contracts/vaults/dstake/interfaces/IDStakeRouterV2.sol:82`
-- **Fix**: Overrode `maxDeposit`/`maxMint` to call a shared `_routerAllowsDeposits()` helper that requires a configured router, unpaused state, and at least one active deposit vault, returning zero when flow is blocked so integrators no longer send transactions that deterministically revert.
-- **Tested**: ✅ `test/dstake/DStakeRouterV2.test.ts:1254`
-- **Notes**: Closes Open #3.
+- None
 
 ## Open
 
-*(none)*
+### 1. Redeem double-charges withdrawal fee
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:181`, `:286-295`
+- **Impact**: `redeem()` passes the fee-reduced preview into `_withdraw`, leading the router to reapply the withdrawal fee so redeemers receive roughly `(1 – feeBps/10_000)^2` of their claim while `previewRedeem` only advertises a single fee. The excess accrues to remaining holders.
+- **Reproduction**: 1) Configure a non-zero withdrawal fee via `setWithdrawalFee`. 2) Hold shares and call `previewRedeem(shares)` to observe the single-fee deduction. 3) Execute `redeem(shares, receiver, owner)` and note the emitted/returned amount equals `previewRedeem(shares) – fee(previewRedeem(shares))`, evidencing the second fee.
+
+### 2. Deposits mispriced under settlement shortfall
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:157-201`
+- **Impact**: `previewDeposit`/`previewMint` ignore `router.currentShortfall()`, so when governance records a deficit new deposits mint `assets * totalSupply / grossTotalAssets` shares but those shares redeem against `(gross – shortfall)` value, forcing newcomers to donate the logged shortfall to incumbents instead of socializing it via share price.
+
+### 3. Deterministic withdraw selector strands liquidity
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:397`, `contracts/vaults/dstake/DStakeRouterV2.sol:1237`, `contracts/vaults/dstake/libraries/DeterministicVaultSelector.sol:198`
+- **Impact**: When allocations exactly match targets `selectTopOverallocated` falls back to `vaults[0]`, so `handleWithdraw` always routes to that single vault even if it cannot cover the request. Withdrawals larger than that vault’s balance revert with `NoLiquidityAvailable` while `maxWithdraw` still reports the system-wide limit, effectively freezing withdrawals despite ample liquidity elsewhere.
+- **Reproduction**: 1) Configure two vaults with target weights (e.g., 10%/90%) and rebalance so balances == targets. 2) `maxWithdraw` advertises the large vault capacity. 3) `withdraw` any amount exceeding the first vault’s cash but within `maxWithdraw`; the router picks the first vault, `previewWithdraw` underflows liquidity, and the call reverts with `NoLiquidityAvailable`.
+
+### 4. MetaMorpho valuation masks paused withdrawals
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/adapters/MetaMorphoConversionAdapter.sol:217-230`
+- **Impact**: If the MetaMorpho vault pauses or otherwise makes `previewRedeem` revert, the adapter falls back to `convertToAssets`, keeping valuations at par even though `redeem` will still revert. dSTAKE continues minting shares 1:1 while any withdrawal or rebalance that touches the adapter bricks, trapping new deposits.
+- **Reproduction**: 1) Put the MetaMorpho vault in a state where `previewRedeem` reverts but `convertToAssets` still returns the last rate (e.g., pause withdrawals). 2) Observe `DStakeToken.totalAssets()` and previews remain unchanged. 3) Deposit through dSTAKE; shares mint at par. 4) Attempt a withdrawal or rebalance against the MetaMorpho adapter; the underlying `redeem` reverts, freezing funds even though accounting considered them liquid.
+
+### 5. Reward compounding bypasses deposit cap
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/rewards/DStakeRewardManagerMetaMorpho.sol:243`, `contracts/vaults/dstake/DStakeRouterV2.sol:249-326`
+- **Impact**: `_processExchangeAssetDeposit` pushes assets into adapters directly without enforcing the router’s `depositCap`, so a rewards manager can grow total managed assets beyond the governance cap while `maxDeposit` still reports zero, undermining the cap’s safety guarantee.
+- **Reproduction**: 1) Set `router.setDepositCap(router.totalManagedAssets())` to saturate the cap. 2) Accumulate exchange-asset rewards in the URD. 3) Call `compoundRewards` with the dStable reward; despite the cap, router totals increase and the vault overflows the intended limit.
+
+### 6. Emergency pause bricks single-vault withdrawals
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:354-414`, `contracts/vaults/dstake/DStakeRouterV2.sol:1105-1116`, `contracts/vaults/dstake/DStakeRouterV2.sol:1342-1359`
+- **Impact**: `emergencyPauseVault` marks a vault `Suspended`, but withdrawal routing filters only Active/Impaired statuses. With a single active vault, pausing it makes `_selectVaultForWithdrawal` revert with `InsufficientActiveVaults`, freezing all user withdrawals until governance reconfigures targets.
+- **Reproduction**: 1) Operate with a single active vault and deposit funds. 2) Have a `PAUSER_ROLE` holder call `emergencyPauseVault` on it. 3) Attempt `withdraw`/`redeem`; selection fails before assets move, bricking exits despite funds sitting idle.
+
+### 7. Solver withdraw bypasses vault pause
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1268`
+- **Impact**: `_withdrawSharesFromVaultAtomically` skips `_isVaultStatusEligible`, so `solverWithdrawShares` can redeem from vaults marked `Suspended`, defeating emergency pauses and letting share holders drain quarantined strategies while governance believes exits are halted.
+- **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Have any share holder call `solverWithdrawShares([vault], [shareAmount], maxShares, receiver, owner)`. 3) Observe dStable returned despite the suspension, showing the pause is bypassed.
+
+### 8. Fee-applied convertToAssets breaks ERC4626 invariants
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:181`
+- **Impact**: `convertToAssets` and `previewRedeem` apply `_getNetAmountAfterFee`, so with any withdrawal fee `convertToAssets(totalSupply())` undercounts `totalAssets()` and `convertToShares(convertToAssets(x)) < x`, misleading integrators that rely on ERC4626 conversions and understating vault equity by the fee percentage.
+- **Reproduction**: 1) Set a non-zero withdrawal fee (e.g., `setWithdrawalFee(1000)`). 2) Deposit to mint shares. 3) Observe `totalAssets()` versus `convertToAssets(totalSupply())`, or round-trip `convertToShares(convertToAssets(shares))` returning fewer shares, showing the invariant break.
+
+### 9. Share rebalances ignore paused vaults
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:780-848`
+- **Impact**: `_rebalanceStrategiesByShares` and the external-liquidity variant skip any vault-status gate, so after `emergencyPauseVault` a `STRATEGY_REBALANCER_ROLE` caller can keep routing liquidity into the suspended strategy, undermining quarantine.
+- **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Call `rebalanceStrategiesByShares` (or `_rebalanceStrategiesWithExternalLiquidity`) from an active vault into the paused one. 3) Observe the paused vault receives new shares/assets despite being suspended.
+
+### 10. sweepSurplus refills paused default vault
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:980-1012`
+- **Impact**: `sweepSurplus` blindly deposits leftover dStable into `defaultDepositStrategyShare` without checking its status. If governance pauses that vault, the next surplus sweep silently restocks it, undoing the pause intent.
+- **Reproduction**: 1) Set a vault as `defaultDepositStrategyShare` and then pause it. 2) Accumulate idle dStable (fees or manual transfer) in the router. 3) Call `sweepSurplus`; funds are forwarded into the paused vault.
 
 ## Acknowledged (Won't Fix)
 
