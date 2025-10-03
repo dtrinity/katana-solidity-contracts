@@ -154,24 +154,24 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     return _grossTotalAssets();
   }
 
-  function _convertToSharesUsingGross(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
+  function _convertToSharesUsingNet(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
     if (assets == 0) {
       return 0;
     }
 
     uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 grossAssets = _grossTotalAssets();
-    return Math.mulDiv(assets, supply, grossAssets + 1, rounding);
+    uint256 netAssets = totalAssets();
+    return Math.mulDiv(assets, supply, netAssets + 1, rounding);
   }
 
-  function _convertToAssetsUsingGross(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
+  function _convertToAssetsUsingNet(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
     if (shares == 0) {
       return 0;
     }
 
     uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 grossAssets = _grossTotalAssets();
-    return Math.mulDiv(shares, grossAssets + 1, supply, rounding);
+    uint256 netAssets = totalAssets();
+    return Math.mulDiv(shares, netAssets + 1, supply, rounding);
   }
 
   function convertToShares(uint256 assets) public view virtual override returns (uint256) {
@@ -183,11 +183,11 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-    return _convertToSharesUsingGross(assets, Math.Rounding.Floor);
+    return _convertToSharesUsingNet(assets, Math.Rounding.Floor);
   }
 
   function previewMint(uint256 shares) public view virtual override returns (uint256) {
-    return _convertToAssetsUsingGross(shares, Math.Rounding.Ceil);
+    return _convertToAssetsUsingNet(shares, Math.Rounding.Ceil);
   }
 
   function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {

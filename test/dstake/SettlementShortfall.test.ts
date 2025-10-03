@@ -80,6 +80,32 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     expect(await dStakeToken.balanceOf(alice.address)).to.be.lte(1n);
   });
 
+  it("quotes new deposits against net assets when a shortfall is active", async function () {
+    const seedDeposit = ethers.parseEther("100");
+    await dStable.connect(alice).approve(dStakeToken, seedDeposit);
+    await dStakeToken.connect(alice).deposit(seedDeposit, alice.address);
+
+    const recordedShortfall = ethers.parseEther("20");
+    await dStakeToken.connect(owner).setSettlementShortfall(recordedShortfall);
+
+    const supplyBefore = await dStakeToken.totalSupply();
+    const netAssetsBefore = await dStakeToken.totalAssets();
+
+    const bobDeposit = ethers.parseEther("10");
+    await dStable.connect(bob).approve(dStakeToken, bobDeposit);
+    const expectedShares = (bobDeposit * (supplyBefore + 1n)) / (netAssetsBefore + 1n);
+
+    const previewShares = await dStakeToken.previewDeposit(bobDeposit);
+    expect(previewShares).to.equal(expectedShares);
+
+    await expect(dStakeToken.connect(bob).deposit(bobDeposit, bob.address))
+      .to.emit(dStakeToken, "Deposit")
+      .withArgs(bob.address, bob.address, bobDeposit, previewShares);
+
+    const bobShares = await dStakeToken.balanceOf(bob.address);
+    expect(bobShares).to.equal(expectedShares);
+  });
+
   it("preserves the ERC4626 totalAssets invariant before and after new deposits", async function () {
     const initialDeposit = ethers.parseEther("100");
     await dStable.connect(alice).approve(dStakeToken, initialDeposit);
@@ -123,7 +149,7 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     expect(sharesForWithdraw).to.be.closeTo(previewDepositQuote, 1n);
   });
 
-  it("prevents front-run deposits from capturing the shortfall recovery", async function () {
+  it("socializes shortfall recovery pro-rata across all vault shares", async function () {
     const initialDeposit = ethers.parseEther("100");
     await dStable.connect(alice).approve(dStakeToken, initialDeposit);
     await dStakeToken.connect(alice).deposit(initialDeposit, alice.address);
@@ -144,12 +170,18 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     const redeemableWithShortfall = await dStakeToken.convertToAssets(bobShares);
     expect(redeemableWithShortfall).to.be.lt(bobDeposit);
 
+    const totalSharesAfterDeposit = await dStakeToken.totalSupply();
+
     // Governance clears the shortfall
     await dStakeToken.connect(owner).setSettlementShortfall(0);
 
     const redeemableAfterRecovery = await dStakeToken.convertToAssets(bobShares);
+    const expectedAfterRecovery =
+      redeemableWithShortfall + (shortfall * bobShares) / totalSharesAfterDeposit;
+
     const tolerance = 1_000_000_000_000_000n;
-    expect(redeemableAfterRecovery).to.be.closeTo(bobDeposit, tolerance);
+    expect(redeemableAfterRecovery).to.be.closeTo(expectedAfterRecovery, tolerance);
+    expect(redeemableAfterRecovery).to.be.gt(bobDeposit);
   });
 
   it("reverts when the shortfall exceeds gross assets", async function () {

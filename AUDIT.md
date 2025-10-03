@@ -12,20 +12,20 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ## Resolved
 
-- None
-
-## Open
-
 ### 1. Redeem double-charges withdrawal fee
 - **Severity**: High
 - **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:181`, `:286-295`
 - **Impact**: `redeem()` passes the fee-reduced preview into `_withdraw`, leading the router to reapply the withdrawal fee so redeemers receive roughly `(1 – feeBps/10_000)^2` of their claim while `previewRedeem` only advertises a single fee. The excess accrues to remaining holders.
 - **Reproduction**: 1) Configure a non-zero withdrawal fee via `setWithdrawalFee`. 2) Hold shares and call `previewRedeem(shares)` to observe the single-fee deduction. 3) Execute `redeem(shares, receiver, owner)` and note the emitted/returned amount equals `previewRedeem(shares) – fee(previewRedeem(shares))`, evidencing the second fee.
+- **Fix**: `contracts/vaults/dstake/DStakeTokenV2.sol` now passes the gross preview to `_withdraw`; regression coverage lives in `test/dstake/RedeemWithdrawalFee.test.ts`.
 
 ### 2. Deposits mispriced under settlement shortfall
 - **Severity**: Medium
 - **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:157-201`
 - **Impact**: `previewDeposit`/`previewMint` ignore `router.currentShortfall()`, so when governance records a deficit new deposits mint `assets * totalSupply / grossTotalAssets` shares but those shares redeem against `(gross – shortfall)` value, forcing newcomers to donate the logged shortfall to incumbents instead of socializing it via share price.
+- **Fix**: `previewDeposit`/`previewMint` now convert using `totalAssets()` (net of `currentShortfall()`), and `test/dstake/SettlementShortfall.test.ts` adds regression cases covering deposit quotes and shortfall recovery socialization.
+
+## Open
 
 ### 3. Deterministic withdraw selector strands liquidity
 - **Severity**: High
