@@ -1291,6 +1291,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   function _withdrawSharesFromVaultAtomically(address vault, uint256 shares) internal returns (uint256 receivedDStable) {
     VaultConfig memory config = _getVaultConfig(vault);
 
+    if (!_isVaultStatusEligible(config.status, OperationType.WITHDRAWAL)) {
+      revert VaultNotActive(vault);
+    }
+
     address adapter = config.adapter;
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 

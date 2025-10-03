@@ -427,6 +427,22 @@ describe("DStake Solver Mode Tests", function () {
       expect(await vault2.balanceOf(collateralVault.target)).to.equal(vault2BalanceBefore);
       expect(await vault3.balanceOf(collateralVault.target)).to.equal(vault3BalanceBefore);
     });
+
+    it("Should revert when withdrawing shares from a suspended vault", async function () {
+      const vault1Balance = await vault1.balanceOf(collateralVault.target);
+      const sharesToWithdraw = vault1Balance / 2n;
+      expect(sharesToWithdraw).to.be.gt(0n);
+
+      await router.emergencyPauseVault(vault1Address);
+
+      await expect(
+        router
+          .connect(alice)
+          .solverWithdrawShares([vault1Address], [sharesToWithdraw], ethers.parseEther("1500"), alice.address, alice.address)
+      )
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault1Address);
+    });
   });
 
   describe("Solver Mode: Atomic Failure Behavior", function () {
