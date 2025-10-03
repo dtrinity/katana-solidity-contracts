@@ -289,7 +289,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       revert ERC4626ExceedsMaxRedeem(shares, maxRedeemShares);
     }
 
-    uint256 grossAssets = convertToAssets(shares);
+    uint256 grossAssets = super.previewRedeem(shares);
     assets = _getNetAmountAfterFee(grossAssets);
     _withdraw(_msgSender(), receiver, owner, grossAssets, shares);
     return assets;
