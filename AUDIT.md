@@ -45,19 +45,19 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Have any share holder call `solverWithdrawShares([vault], [shareAmount], maxShares, receiver, owner)`. 3) Observe dStable returned despite the suspension, showing the pause was bypassed.
 - **Fix**: `_withdrawSharesFromVaultAtomically` now enforces `_isVaultStatusEligible` before moving shares, and `test/dstake/DStakeSolverMode.test.ts` adds a regression ensuring solver withdrawals revert once a vault is suspended.
 
-### 6. Share rebalances ignore paused vaults
+### 6. Share rebalances ignore paused vaults *(Resolved)*
 - **Severity**: High
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:780-848`
 - **Impact**: `_rebalanceStrategiesByShares` and the external-liquidity variant skipped vault status gating, so operators with `STRATEGY_REBALANCER_ROLE` could keep funding a `Suspended` strategy, undermining the pause quarantine.
 - **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Call `rebalanceStrategiesByShares` or `rebalanceStrategiesBySharesViaExternalLiquidity` targeting the suspended vault. 3) Observe the paused vault receiving new shares/assets despite the suspension.
-- **Fix**: Both rebalance flows now retrieve `VaultConfig` data and enforce `_isVaultStatusEligible` for withdrawal and deposit legs; regression coverage lives in `test/dstake/DStakeRouterV2.test.ts` ("rejects share rebalances into suspended vaults" and "rejects external-liquidity rebalances that target suspended vaults").
+- **Fix**: `_rebalanceStrategiesByShares` and the external-liquidity helper now fetch `VaultConfig` metadata for both legs and enforce `_isVaultStatusEligible` on withdrawal and deposit operations. Regression tests: `test/dstake/DStakeRouterV2.test.ts` cases “rejects share rebalances into suspended vaults” and “rejects external-liquidity rebalances that target suspended vaults”.
 
-### 7. sweepSurplus refills paused default vault
+### 7. sweepSurplus refills paused default vault *(Resolved)*
 - **Severity**: Medium
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:980-1012`
 - **Impact**: `sweepSurplus` blindly forwarded idle dStable into `defaultDepositStrategyShare`, so a suspended default vault was silently restocked the next time surplus was swept.
 - **Reproduction**: 1) Set a vault as `defaultDepositStrategyShare`. 2) Pause it with `emergencyPauseVault`. 3) Transfer dStable to the router and call `sweepSurplus`; the suspended vault received the funds.
-- **Fix**: `sweepSurplus` now confirms the default vault is deposit-eligible before forwarding funds; `test/dstake/DStakeRouterV2.test.ts` adds "refuses to sweep surplus into a suspended default vault" to lock this behavior in.
+- **Fix**: `sweepSurplus` now loads the default vault’s config and enforces deposit eligibility before forwarding funds; regression test `test/dstake/DStakeRouterV2.test.ts` “refuses to sweep surplus into a suspended default vault”.
 
 ## Open
 
