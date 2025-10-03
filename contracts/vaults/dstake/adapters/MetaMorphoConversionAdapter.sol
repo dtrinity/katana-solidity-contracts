@@ -219,16 +219,15 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
       revert AssetMismatch(address(metaMorphoVault), _strategyShare);
     }
 
-    // Use try-catch to handle potential revert from external vault
+    if (strategyShareAmount == 0) {
+      return 0;
+    }
+
+    // Surface vault illiquidity instead of masking it with stale conversion rates
     try metaMorphoVault.previewRedeem(strategyShareAmount) returns (uint256 assets) {
       return assets;
     } catch {
-      // If preview fails, use convertToAssets as fallback
-      try metaMorphoVault.convertToAssets(strategyShareAmount) returns (uint256 assets) {
-        return assets;
-      } catch {
-        revert ValuationUnavailable();
-      }
+      revert ValuationUnavailable();
     }
   }
 

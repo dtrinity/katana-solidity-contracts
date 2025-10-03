@@ -25,16 +25,25 @@ describe("MetaMorphoConversionAdapter - Valuation Handling", function () {
     await metaMorphoVault.deposit(depositAmount, admin.address);
   });
 
-  it("falls back to convertToAssets when previewRedeem reverts", async function () {
+  it("returns previewRedeem value when available", async function () {
     const [admin] = await ethers.getSigners();
-
     const shares = await metaMorphoVault.balanceOf(admin.address);
-    await metaMorphoVault.setPreviewRevertFlags(true, false);
 
-    const expectedValue = await metaMorphoVault.convertToAssets(shares);
+    const expectedValue = await metaMorphoVault.previewRedeem(shares);
     const actualValue = await adapter.strategyShareValueInDStable(metaMorphoVault.target, shares);
 
     expect(actualValue).to.equal(expectedValue);
+  });
+
+  it("reverts when previewRedeem fails even if convertToAssets succeeds", async function () {
+    const [admin] = await ethers.getSigners();
+    const shares = await metaMorphoVault.balanceOf(admin.address);
+
+    await metaMorphoVault.setPreviewRevertFlags(true, false);
+
+    await expect(
+      adapter.strategyShareValueInDStable(metaMorphoVault.target, shares)
+    ).to.be.revertedWithCustomError(adapter, "ValuationUnavailable");
   });
 
   it("reverts when both previewRedeem and convertToAssets revert", async function () {

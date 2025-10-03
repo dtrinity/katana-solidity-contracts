@@ -9,7 +9,8 @@ import {
   DStakeCollateralVaultV2,
   DStakeRouterV2,
   MetaMorphoConversionAdapter,
-  DStakeTokenV2
+  DStakeTokenV2,
+  IERC20
 } from "../../typechain-types";
 import { SDUSD_CONFIG, SDETH_CONFIG, DStakeFixtureConfig } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -222,28 +223,33 @@ describe("MetaMorpho Integration", function () {
         beforeEach(async function () {
           // Setup rewards in reward manager
           await rewardToken.mint(rewardManager.target, ethers.parseEther("100"));
-          
+
           // Setup MetaMorpho vault for deposits
           await dStable.connect(user).approve(metaMorphoVault.target, ethers.MaxUint256);
           await metaMorphoVault.connect(user).deposit(ethers.parseEther("1000"), user.address);
+
+          // Fund manager with dStable so authorized caller can compound
+          await dStable.connect(user).transfer(manager.address, ethers.parseEther("500"));
+          await dStable.connect(manager).approve(rewardManager.target, ethers.MaxUint256);
         });
-        
+
         it("should compound rewards into vault", async function () {
           const compoundAmount = ethers.parseEther("50");
-          await dStable.connect(user).approve(rewardManager.target, compoundAmount);
-          
-          const vaultSharesBefore = await metaMorphoVault.balanceOf(collateralVault.target);
-          
+
+          const defaultStrategyShare = await router.defaultDepositStrategyShare();
+          const defaultShareToken = await ethers.getContractAt<IERC20>("IERC20", defaultStrategyShare);
+          const vaultSharesBefore = await defaultShareToken.balanceOf(collateralVault.target);
+
           await expect(
-            rewardManager.connect(user).compoundRewards(
+            rewardManager.connect(manager).compoundRewards(
               compoundAmount,
               [rewardToken.target],
               user.address
             )
           ).to.emit(rewardManager, "RewardCompounded")
             .withArgs(dStable.target, compoundAmount, [rewardToken.target]);
-          
-          const vaultSharesAfter = await metaMorphoVault.balanceOf(collateralVault.target);
+
+          const vaultSharesAfter = await defaultShareToken.balanceOf(collateralVault.target);
           expect(vaultSharesAfter).to.be.gt(vaultSharesBefore);
         });
       });
