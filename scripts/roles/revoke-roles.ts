@@ -1,7 +1,7 @@
+import { SafeManager, SafeTransactionData } from "@dtrinity/shared-hardhat-tools";
+
 import { getConfig } from "../../config/config";
 import { scanRolesAndOwnership } from "./lib/scan";
-import { SafeManager } from "../../typescript/safe/SafeManager";
-import { SafeTransactionData } from "../../typescript/safe/types";
 
 async function main() {
   const hre = require("hardhat");

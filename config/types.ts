@@ -1,6 +1,5 @@
+import { SafeConfig } from "@dtrinity/shared-hardhat-tools";
 import { Address } from "hardhat-deploy/types";
-
-import { SafeConfig } from "../typescript/safe/types";
 import { DLendConfig } from "./dlend/types";
 
 export interface Config {
