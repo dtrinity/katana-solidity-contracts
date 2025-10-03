@@ -394,7 +394,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     emit StrategyDepositRouted(vaultArray, amountArray, assets);
   }
 
-  function _selectVaultForWithdrawal() internal view returns (address targetVault) {
+  function _selectVaultForWithdrawal(uint256 grossAssets) internal view returns (address targetVault) {
     (
       address[] memory activeVaults,
       uint256[] memory currentAllocations,
@@ -407,10 +407,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       activeVaults,
       currentAllocations,
       targetAllocations,
-      1
+      activeVaults.length
     );
 
-    targetVault = sortedVaults[0];
+    for (uint256 i = 0; i < sortedVaults.length; i++) {
+      if (_vaultCanSatisfyWithdrawal(sortedVaults[i], grossAssets)) {
+        return sortedVaults[i];
+      }
+    }
+
+    revert NoLiquidityAvailable();
   }
 
   function handleDeposit(
@@ -448,7 +454,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       return (0, 0);
     }
 
-    address targetVault = _selectVaultForWithdrawal();
+    address targetVault = _selectVaultForWithdrawal(grossAssets);
     uint256 grossWithdrawn = _withdrawFromVaultAtomically(targetVault, grossAssets);
 
     fee = _calculateFee(grossWithdrawn);
@@ -1232,6 +1238,23 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     IERC20(dStable).forceApprove(config.adapter, 0);
     return actualShares;
+  }
+
+  function _vaultCanSatisfyWithdrawal(address vault, uint256 dStableAmount) internal view returns (bool) {
+    if (dStableAmount == 0) {
+      return true;
+    }
+
+    try IERC4626(vault).previewWithdraw(dStableAmount) returns (uint256 strategyShareAmount) {
+      if (strategyShareAmount == 0) {
+        return false;
+      }
+
+      uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
+      return strategyShareAmount <= availableShares;
+    } catch {
+      return false;
+    }
   }
 
   function _withdrawFromVaultAtomically(address vault, uint256 dStableAmount) internal returns (uint256 receivedDStable) {
