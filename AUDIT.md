@@ -45,6 +45,13 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Have any share holder call `solverWithdrawShares([vault], [shareAmount], maxShares, receiver, owner)`. 3) Observe dStable returned despite the suspension, showing the pause was bypassed.
 - **Fix**: `_withdrawSharesFromVaultAtomically` now enforces `_isVaultStatusEligible` before moving shares, and `test/dstake/DStakeSolverMode.test.ts` adds a regression ensuring solver withdrawals revert once a vault is suspended.
 
+### 6. Fee-applied convertToAssets breaks ERC4626 invariants
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:181`
+- **Impact**: `convertToAssets` and `previewRedeem` applied withdrawal fees, so `convertToAssets(totalSupply())` undercounted `totalAssets()` and `convertToShares(convertToAssets(x)) < x`, misleading integrators that rely on ERC4626 conversions and understating vault equity by the fee percentage.
+- **Reproduction**: 1) Set a non-zero withdrawal fee (e.g., `setWithdrawalFee(1000)`). 2) Deposit to mint shares. 3) Observe `totalAssets()` versus `convertToAssets(totalSupply())`, or round-trip `convertToShares(convertToAssets(shares))` returning fewer shares, highlighting the invariant break.
+- **Fix**: `convertToAssets` now maps shares using net assets without applying withdrawal fees, while `previewRedeem` retains fee semantics. Regression coverage lives in `test/dstake/ConvertToAssetsInvariants.test.ts`.
+
 ### 6. Share rebalances ignore paused vaults *(Resolved)*
 - **Severity**: High
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:780-848`
@@ -61,23 +68,7 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ## Open
 
-### 6. Fee-applied convertToAssets breaks ERC4626 invariants
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeTokenV2.sol:181`
-- **Impact**: `convertToAssets` and `previewRedeem` apply `_getNetAmountAfterFee`, so with any withdrawal fee `convertToAssets(totalSupply())` undercounts `totalAssets()` and `convertToShares(convertToAssets(x)) < x`, misleading integrators that rely on ERC4626 conversions and understating vault equity by the fee percentage.
-- **Reproduction**: 1) Set a non-zero withdrawal fee (e.g., `setWithdrawalFee(1000)`). 2) Deposit to mint shares. 3) Observe `totalAssets()` versus `convertToAssets(totalSupply())`, or round-trip `convertToShares(convertToAssets(shares))` returning fewer shares, showing the invariant break.
-
-### 7. Share rebalances ignore paused vaults
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:780-848`
-- **Impact**: `_rebalanceStrategiesByShares` and the external-liquidity variant skip any vault-status gate, so after `emergencyPauseVault` a `STRATEGY_REBALANCER_ROLE` caller can keep routing liquidity into the suspended strategy, undermining quarantine.
-- **Reproduction**: 1) Pause a vault via `emergencyPauseVault`. 2) Call `rebalanceStrategiesByShares` (or `_rebalanceStrategiesWithExternalLiquidity`) from an active vault into the paused one. 3) Observe the paused vault receives new shares/assets despite being suspended.
-
-### 8. sweepSurplus refills paused default vault
-- **Severity**: Medium
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:980-1012`
-- **Impact**: `sweepSurplus` blindly deposits leftover dStable into `defaultDepositStrategyShare` without checking its status. If governance pauses that vault, the next surplus sweep silently restocks it, undoing the pause intent.
-- **Reproduction**: 1) Set a vault as `defaultDepositStrategyShare` and then pause it. 2) Accumulate idle dStable (fees or manual transfer) in the router. 3) Call `sweepSurplus`; funds are forwarded into the paused vault.
+_None at this time._
 
 ## Acknowledged (Won't Fix)
 

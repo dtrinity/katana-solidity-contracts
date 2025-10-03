@@ -179,7 +179,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   function convertToAssets(uint256 shares) public view virtual override returns (uint256) {
-    return previewRedeem(shares);
+    return _convertToAssetsUsingNet(shares, Math.Rounding.Floor);
   }
 
   function previewDeposit(uint256 assets) public view virtual override returns (uint256) {

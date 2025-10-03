@@ -698,6 +698,17 @@ DSTAKE_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         );
       });
 
+      it("preserves ERC4626 conversion invariants with a withdrawal fee", async () => {
+        const supply = await DStakeTokenV2.totalSupply();
+        const assets = await DStakeTokenV2.totalAssets();
+        expect(await DStakeTokenV2.convertToAssets(supply)).to.equal(assets);
+
+        const roundTrip = await DStakeTokenV2.convertToShares(
+          await DStakeTokenV2.convertToAssets(shares),
+        );
+        expect(roundTrip).to.be.closeTo(shares, 1n);
+      });
+
       it("maxWithdraw returns net amount after fee and allows full withdrawal", async () => {
         // The maximum a user can withdraw (net) should be 100 assets in this setup
         const netMax = await DStakeTokenV2.maxWithdraw(user1.address);
