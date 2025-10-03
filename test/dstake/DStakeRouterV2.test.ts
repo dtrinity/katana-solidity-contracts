@@ -586,6 +586,71 @@ describe("DStakeRouterV2", function () {
       expect(shareAllowance).to.equal(0n);
       expect(assetAllowance).to.equal(0n);
     });
+
+    it("rejects share rebalances into suspended vaults", async function () {
+      const depositAmount = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+      await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+      const fromBalance = await vault1.balanceOf(collateralVault.target);
+      expect(fromBalance).to.be.gt(0n);
+
+      await router.connect(owner).emergencyPauseVault(vault2Address);
+
+      const movement = fromBalance > 1n ? fromBalance / 2n : 1n;
+
+      await expect(
+        router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n)
+      )
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault2Address);
+    });
+
+    it("rejects external-liquidity rebalances that target suspended vaults", async function () {
+      const bootstrapDeposit = ethers.parseEther("250");
+      await dStable.connect(alice).approve(dStakeToken.target, bootstrapDeposit);
+      await dStakeToken.connect(alice).deposit(bootstrapDeposit, alice.address);
+
+      const operatorSeed = ethers.parseEther("100");
+      await dStable.connect(owner).mint(collateralExchanger.address, operatorSeed);
+      await dStable.connect(collateralExchanger).approve(vault1Address, operatorSeed);
+      await vault1.connect(collateralExchanger).deposit(operatorSeed, collateralExchanger.address);
+
+      const operatorShares = await vault1.balanceOf(collateralExchanger.address);
+      expect(operatorShares).to.be.gt(0n);
+
+      await vault1.connect(collateralExchanger).approve(await router.getAddress(), operatorShares);
+
+      await router.connect(owner).emergencyPauseVault(vault2Address);
+
+      const sharePortion = operatorShares > 1n ? operatorShares / 2n : 1n;
+
+      await expect(
+        router
+          .connect(collateralExchanger)
+          .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, sharePortion, 0n)
+      )
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault2Address);
+    });
+  });
+
+  describe("Surplus sweeping", function () {
+    it("refuses to sweep surplus into a suspended default vault", async function () {
+      await router.connect(owner).setDefaultDepositStrategyShare(vault1Address);
+      await router.connect(owner).emergencyPauseVault(vault1Address);
+
+      const routerAddress = await router.getAddress();
+      const surplus = ethers.parseEther("50");
+      await dStable.connect(owner).mint(owner.address, surplus);
+      await dStable.connect(owner).transfer(routerAddress, surplus);
+
+      await expect(router.connect(owner).sweepSurplus(0))
+        .to.be.revertedWithCustomError(router, "VaultNotActive")
+        .withArgs(vault1Address);
+    });
   });
 
   describe("External liquidity rebalancing", function () {
@@ -648,6 +713,12 @@ describe("DStakeRouterV2", function () {
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
 
         await router.connect(owner).addAdapter(shortfallShareAddress, shortfallAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: shortfallShareAddress,
+          adapter: shortfallAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active
+        });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
         const fromShareAmount = collateralBalance / 5n;
@@ -695,6 +766,12 @@ describe("DStakeRouterV2", function () {
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
 
         await router.connect(owner).addAdapter(shortfallShareAddress, shortfallAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: shortfallShareAddress,
+          adapter: shortfallAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active
+        });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
         const fromShareAmount = collateralBalance / 5n;

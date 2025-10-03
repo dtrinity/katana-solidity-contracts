@@ -803,6 +803,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
     if (toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
 
+    VaultConfig memory fromConfig = _getVaultConfig(fromStrategyShare);
+    if (!_isVaultStatusEligible(fromConfig.status, OperationType.WITHDRAWAL)) {
+      revert VaultNotActive(fromStrategyShare);
+    }
+
+    VaultConfig memory toConfig = _getVaultConfig(toStrategyShare);
+    if (!_isVaultStatusEligible(toConfig.status, OperationType.DEPOSIT)) {
+      revert VaultNotActive(toStrategyShare);
+    }
+
     IDStableConversionAdapterV2 fromAdapter = IDStableConversionAdapterV2(fromAdapterAddress);
     IDStableConversionAdapterV2 toAdapter = IDStableConversionAdapterV2(toAdapterAddress);
 
@@ -859,6 +869,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     if (locals.fromAdapterAddress == address(0)) revert AdapterNotFound(fromStrategyShare);
     if (locals.toAdapterAddress == address(0)) revert AdapterNotFound(toStrategyShare);
+
+    VaultConfig memory fromConfig = _getVaultConfig(fromStrategyShare);
+    if (!_isVaultStatusEligible(fromConfig.status, OperationType.WITHDRAWAL)) {
+      revert VaultNotActive(fromStrategyShare);
+    }
+
+    VaultConfig memory toConfig = _getVaultConfig(toStrategyShare);
+    if (!_isVaultStatusEligible(toConfig.status, OperationType.DEPOSIT)) {
+      revert VaultNotActive(toStrategyShare);
+    }
 
     locals.fromAdapter = IDStableConversionAdapterV2(locals.fromAdapterAddress);
     locals.toAdapter = IDStableConversionAdapterV2(locals.toAdapterAddress);
@@ -993,6 +1013,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
     address strategyShare = adapter.strategyShare();
+
+    VaultConfig memory config = _getVaultConfig(strategyShare);
+    if (!_isVaultStatusEligible(config.status, OperationType.DEPOSIT)) {
+      revert VaultNotActive(strategyShare);
+    }
 
     IERC20(dStable).forceApprove(adapterAddress, amountToSweep);
     (address mintedShare, ) = adapter.depositIntoStrategy(amountToSweep);
