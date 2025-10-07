@@ -9,6 +9,10 @@ SHARED_ENABLE_HELP ?= 1
 SHARED_ENABLE_SLITHER_TARGETS ?= 1
 SHARED_ENABLE_ROLES_TARGETS ?= 1
 
+ROLES_SCAN_ARGS ?=
+ROLES_TRANSFER_ARGS ?=
+ROLES_REVOKE_ARGS ?=
+
 shared_makefile := $(lastword $(MAKEFILE_LIST))
 SHARED_ROOT := $(abspath $(dir $(shared_makefile)))
 PROJECT_ROOT := $(abspath $(SHARED_ROOT)/..)
@@ -142,7 +146,7 @@ roles.scan: ## Scan contracts for role assignments and ownership (make roles.sca
 		echo "Must provide 'governance' argument."; \
 		exit 1; \
 	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)"
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(manifest),--manifest "$(manifest)",) $(ROLES_SCAN_ARGS)
 
 roles.transfer: ## Transfer roles from deployer to governance (make roles.transfer network=network deployer=address governance=address [--yes])
 	@if [ "$(network)" = "" ]; then \
@@ -157,7 +161,7 @@ roles.transfer: ## Transfer roles from deployer to governance (make roles.transf
 		echo "Must provide 'governance' argument."; \
 		exit 1; \
 	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(yes),--yes,)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(manifest),--manifest "$(manifest)",) $(if $(yes),--yes,) $(ROLES_TRANSFER_ARGS)
 
 roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network=network deployer=address governance=address safe_address=address chain_id=number)
 	@if [ "$(network)" = "" ]; then \
@@ -180,7 +184,7 @@ roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network
 		echo "Must provide 'chain_id' argument."; \
 		exit 1; \
 	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" --safe-address "$(safe_address)" --chain-id "$(chain_id)"
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" --safe-address "$(safe_address)" --chain-id "$(chain_id)" $(if $(manifest),--manifest "$(manifest)",) $(ROLES_REVOKE_ARGS)
 endif
 
 .PHONY: \
