@@ -163,7 +163,7 @@ roles.transfer: ## Transfer roles from deployer to governance (make roles.transf
 	fi
 	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(manifest),--manifest "$(manifest)",) $(if $(yes),--yes,) $(ROLES_TRANSFER_ARGS)
 
-roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network=network deployer=address governance=address safe_address=address chain_id=number)
+roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network=network deployer=address governance=address [manifest=path] [safe_address=address] [chain_id=number])
 	@if [ "$(network)" = "" ]; then \
 		echo "Must provide 'network' argument."; \
 		exit 1; \
@@ -176,15 +176,15 @@ roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network
 		echo "Must provide 'governance' argument."; \
 		exit 1; \
 	fi
-	@if [ "$(safe_address)" = "" ]; then \
+	@if [ "$(manifest)" = "" ] && [ "$(safe_address)" = "" ]; then \
 		echo "Must provide 'safe_address' argument."; \
 		exit 1; \
 	fi
-	@if [ "$(chain_id)" = "" ]; then \
+	@if [ "$(manifest)" = "" ] && [ "$(chain_id)" = "" ]; then \
 		echo "Must provide 'chain_id' argument."; \
 		exit 1; \
 	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" --safe-address "$(safe_address)" --chain-id "$(chain_id)" $(if $(manifest),--manifest "$(manifest)",) $(ROLES_REVOKE_ARGS)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(safe_address),--safe-address "$(safe_address)",) $(if $(chain_id),--chain-id "$(chain_id)",) $(if $(manifest),--manifest "$(manifest)",) $(ROLES_REVOKE_ARGS)
 endif
 
 .PHONY: \
