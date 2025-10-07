@@ -8,7 +8,6 @@ import "dotenv/config";
 
 import { extendEnvironment, HardhatUserConfig } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
-import { Wallet } from "ethers";
 
 import { getEnvPrivateKeys } from "./typescript/hardhat/named-accounts";
 
@@ -64,32 +63,6 @@ if (process.env.MOCHA_REPORTER) {
     }
   }
 }
-
-const KATANA_MAINNET_GOVERNANCE = "0xE83c188a7BE46B90715C757A06cF917175f30262";
-const KATANA_MAINNET_DEPLOYER = "0x0f5e3D9AEe7Ab5fDa909Af1ef147D98a7f4B3022";
-const KATANA_TESTNET_DEPLOYER = "0xd2f775Ff2cD41bfe43C7A8c016eD10393553fe44";
-
-const katanaTestnetAccounts = getEnvPrivateKeys("katana_testnet");
-const katanaMainnetAccounts = getEnvPrivateKeys("katana_mainnet");
-
-const deriveAccountAddress = (accounts: string[]): string | undefined => {
-  for (const pk of accounts) {
-    if (!pk) continue;
-    const normalized = pk.toLowerCase();
-    if (normalized === "0x" || /^0x0+$/.test(normalized)) {
-      continue;
-    }
-    try {
-      return new Wallet(pk).address;
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-};
-
-const katanaTestnetDeployerAddress = deriveAccountAddress(katanaTestnetAccounts) ?? KATANA_TESTNET_DEPLOYER;
-const katanaMainnetDeployerAddress = deriveAccountAddress(katanaMainnetAccounts) ?? KATANA_MAINNET_DEPLOYER;
 
 const config: HardhatUserConfig = {
   //
@@ -185,22 +158,14 @@ const config: HardhatUserConfig = {
       chainId: 737373,
       deploy: ["deploy-mocks", "deploy"],
       saveDeployments: true,
-      accounts: katanaTestnetAccounts,
-      roles: {
-        deployer: katanaTestnetDeployerAddress,
-        governance: katanaTestnetDeployerAddress,
-      },
+      accounts: getEnvPrivateKeys("katana_testnet"),
     },
     katana_mainnet: {
       url: `https://rpc.katana.network/`,
       chainId: 747474,
       deploy: ["deploy"], // NOTE: DO NOT DEPLOY mocks
       saveDeployments: true,
-      accounts: katanaMainnetAccounts,
-      roles: {
-        deployer: katanaMainnetDeployerAddress,
-        governance: KATANA_MAINNET_GOVERNANCE,
-      },
+      accounts: getEnvPrivateKeys("katana_mainnet"),
     },
   },
   namedAccounts: {

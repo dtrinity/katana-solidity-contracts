@@ -13,8 +13,14 @@ ROLES_DRY_RUN ?=
 ROLES_DEPLOYMENTS_DIR ?=
 ROLES_HARDHAT_CONFIG ?=
 
+MANIFEST_DEPLOYER := $(shell node -e "const fs=require('fs');const path=require('path');try{const m=JSON.parse(fs.readFileSync(path.resolve('$(ROLES_MANIFEST)'),'utf8'));if(m.deployer){process.stdout.write(m.deployer);}}catch(e){}")
+MANIFEST_GOVERNANCE := $(shell node -e "const fs=require('fs');const path=require('path');try{const m=JSON.parse(fs.readFileSync(path.resolve('$(ROLES_MANIFEST)'),'utf8'));if(m.governance){process.stdout.write(m.governance);}}catch(e){}")
+
+ROLES_DEPLOYER ?= $(MANIFEST_DEPLOYER)
+ROLES_GOVERNANCE ?= $(MANIFEST_GOVERNANCE)
+
 roles.scan: ## Scan contracts for role assignments using the shared manifest helpers
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DEPLOYER)),--deployer "$(ROLES_DEPLOYER)",) $(if $(strip $(ROLES_GOVERNANCE)),--governance "$(ROLES_GOVERNANCE)",) $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",)
 
 roles.transfer: ## Transfer governance ownership/default admin roles using the shared manifest
 	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
