@@ -1,9 +1,6 @@
 # Make 'help' the default target
 .DEFAULT_GOAL := help
-
-SHARED_ENABLE_HELP := 0
 SHARED_ENABLE_SLITHER_TARGETS := 0
-SHARED_ENABLE_ROLES_TARGETS := 0
 
 include .shared/Makefile
 
@@ -11,31 +8,19 @@ override TS_NODE := TS_NODE_TRANSPILE_ONLY=1 TS_NODE_PROJECT=$(PROJECT_ROOT)/tsc
 
 ROLES_NETWORK ?= katana_mainnet
 ROLES_MANIFEST ?= manifests/katana-mainnet-roles.json
-ROLES_JSON_OUTPUT ?=
-ROLES_DRIFT_CHECK ?= false
-ROLES_DRY_RUN ?=
-ROLES_DEPLOYMENTS_DIR ?=
-ROLES_HARDHAT_CONFIG ?=
+ROLES_SCAN_ARGS ?= --drift-check
+ROLES_TRANSFER_ARGS ?=
+ROLES_REVOKE_ARGS ?=
 
 MANIFEST_DEPLOYER := $(shell node -e "const fs=require('fs');const path=require('path');try{const m=JSON.parse(fs.readFileSync(path.resolve('$(ROLES_MANIFEST)'),'utf8'));if(m.deployer){process.stdout.write(m.deployer);}}catch(e){}")
 MANIFEST_GOVERNANCE := $(shell node -e "const fs=require('fs');const path=require('path');try{const m=JSON.parse(fs.readFileSync(path.resolve('$(ROLES_MANIFEST)'),'utf8'));if(m.governance){process.stdout.write(m.governance);}}catch(e){}")
 
-ROLES_DEPLOYER ?= $(MANIFEST_DEPLOYER)
-ROLES_GOVERNANCE ?= $(MANIFEST_GOVERNANCE)
+network ?= $(ROLES_NETWORK)
+manifest ?= $(ROLES_MANIFEST)
+deployer ?= $(MANIFEST_DEPLOYER)
+governance ?= $(MANIFEST_GOVERNANCE)
 
-roles.scan: ## Scan contracts for role assignments using the shared manifest helpers
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DEPLOYER)),--deployer "$(ROLES_DEPLOYER)",) $(if $(strip $(ROLES_GOVERNANCE)),--governance "$(ROLES_GOVERNANCE)",) $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",)
-
-roles.transfer: ## Transfer governance ownership/default admin roles using the shared manifest
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
-
-roles.revoke: ## Prepare Safe revoke batch for default admin roles (requires Safe overrides)
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
-
-help: ## Show this help menu
-	@echo "Usage:"
-	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
-
+# Shared targets follow
 #############
 ## Linting ##
 #############
