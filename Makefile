@@ -3,6 +3,8 @@
 
 include .shared/Makefile
 
+override TS_NODE := TS_NODE_TRANSPILE_ONLY=1 TS_NODE_PROJECT=$(PROJECT_ROOT)/tsconfig.shared.json $(YARN) ts-node --project $(PROJECT_ROOT)/tsconfig.shared.json
+
 ROLES_NETWORK ?= katana_mainnet
 ROLES_MANIFEST ?= manifests/katana-mainnet-roles.json
 ROLES_JSON_OUTPUT ?=
@@ -12,7 +14,7 @@ ROLES_DEPLOYMENTS_DIR ?=
 ROLES_HARDHAT_CONFIG ?=
 
 roles.scan: ## Scan contracts for role assignments using the shared manifest helpers
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",)
 
 roles.transfer: ## Transfer governance ownership/default admin roles using the shared manifest
 	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)

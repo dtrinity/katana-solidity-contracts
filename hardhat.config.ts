@@ -66,6 +66,8 @@ if (process.env.MOCHA_REPORTER) {
 }
 
 const KATANA_MAINNET_GOVERNANCE = "0xE83c188a7BE46B90715C757A06cF917175f30262";
+const KATANA_MAINNET_DEPLOYER = "0x0f5e3D9AEe7Ab5fDa909Af1ef147D98a7f4B3022";
+const KATANA_TESTNET_DEPLOYER = "0xd2f775Ff2cD41bfe43C7A8c016eD10393553fe44";
 
 const katanaTestnetAccounts = getEnvPrivateKeys("katana_testnet");
 const katanaMainnetAccounts = getEnvPrivateKeys("katana_mainnet");
@@ -86,8 +88,8 @@ const deriveAccountAddress = (accounts: string[]): string | undefined => {
   return undefined;
 };
 
-const katanaTestnetDeployerAddress = deriveAccountAddress(katanaTestnetAccounts);
-const katanaMainnetDeployerAddress = deriveAccountAddress(katanaMainnetAccounts);
+const katanaTestnetDeployerAddress = deriveAccountAddress(katanaTestnetAccounts) ?? KATANA_TESTNET_DEPLOYER;
+const katanaMainnetDeployerAddress = deriveAccountAddress(katanaMainnetAccounts) ?? KATANA_MAINNET_DEPLOYER;
 
 const config: HardhatUserConfig = {
   //
