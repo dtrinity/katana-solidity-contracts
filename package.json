@@ -8,6 +8,9 @@
     "gas-estimate": "npx tsx scripts/mainnet-gas-estimation.ts",
     "gas-estimate:help": "npx tsx scripts/mainnet-gas-estimation.ts --help"
   },
+  "dependencies": {
+    "@dtrinity/shared-hardhat-tools": "portal:.shared"
+  },
   "devDependencies": {
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.2.0",

@@ -1,6 +1,25 @@
 # Make 'help' the default target
 .DEFAULT_GOAL := help
 
+include .shared/Makefile
+
+ROLES_NETWORK ?= katana_mainnet
+ROLES_MANIFEST ?= manifests/katana-mainnet-roles.json
+ROLES_JSON_OUTPUT ?=
+ROLES_DRIFT_CHECK ?= false
+ROLES_DRY_RUN ?=
+ROLES_DEPLOYMENTS_DIR ?=
+ROLES_HARDHAT_CONFIG ?=
+
+roles.scan: ## Scan contracts for role assignments using the shared manifest helpers
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_DRIFT_CHECK)),--drift-check,) $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_DEPLOYMENTS_DIR)),--deployments-dir "$(ROLES_DEPLOYMENTS_DIR)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
+
+roles.transfer: ## Transfer governance ownership/default admin roles using the shared manifest
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
+
+roles.revoke: ## Prepare Safe revoke batch for default admin roles (requires Safe overrides)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(ROLES_NETWORK)" --manifest "$(ROLES_MANIFEST)" $(if $(strip $(ROLES_JSON_OUTPUT)),--json-output "$(ROLES_JSON_OUTPUT)",) $(if $(strip $(ROLES_HARDHAT_CONFIG)),--hardhat-config "$(ROLES_HARDHAT_CONFIG)",) $(if $(strip $(ROLES_DRY_RUN)),--dry-run-only,)
+
 help: ## Show this help menu
 	@echo "Usage:"
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -154,4 +173,3 @@ clean: ## When renaming directories or files, run this to clean up
 	@echo "Cleaned solidity cache and artifacts. Remember to recompile."
 
 .PHONY: help compile test deploy clean slither slither.check slither.focused mythril mythril.focused mythril.deep mythril.fast mythril.force mythril.summary audit
-
