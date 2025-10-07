@@ -1,6 +1,10 @@
 # Make 'help' the default target
 .DEFAULT_GOAL := help
 
+SHARED_ENABLE_HELP := 0
+SHARED_ENABLE_SLITHER_TARGETS := 0
+SHARED_ENABLE_ROLES_TARGETS := 0
+
 include .shared/Makefile
 
 override TS_NODE := TS_NODE_TRANSPILE_ONLY=1 TS_NODE_PROJECT=$(PROJECT_ROOT)/tsconfig.shared.json $(YARN) ts-node --project $(PROJECT_ROOT)/tsconfig.shared.json
