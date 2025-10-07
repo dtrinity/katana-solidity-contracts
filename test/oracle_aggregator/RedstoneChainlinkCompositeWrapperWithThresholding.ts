@@ -59,6 +59,12 @@ async function runTestsForCurrency(
       const fixture = await getOracleAggregatorFixture(currency);
       fixtureResult = await fixture();
 
+      // Check if there are any composite oracle assets configured for this currency
+      const compositeAssetKeys = Object.keys(fixtureResult.assets.redstoneCompositeAssets);
+      if (compositeAssetKeys.length === 0) {
+        this.skip();
+      }
+
       // Get contract instances from the fixture
       redstoneChainlinkCompositeWrapperWithThresholding =
         fixtureResult.contracts
@@ -99,6 +105,13 @@ async function runTestsForCurrency(
 
     describe("Asset pricing with composite thresholding", () => {
       it("should correctly price composite assets", async function () {
+        const compositeAssetKeys = Object.keys(fixtureResult.assets.redstoneCompositeAssets);
+        
+        // Skip this test if no composite assets are configured for this currency
+        if (compositeAssetKeys.length === 0) {
+          this.skip();
+        }
+
         for (const [address, asset] of Object.entries(
           fixtureResult.assets.redstoneCompositeAssets,
         )) {

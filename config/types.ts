@@ -39,6 +39,7 @@ export interface Config {
     [key: string]: DStakeInstanceConfig; // e.g., sdUSD, sdETH
   };
   readonly vesting?: VestingConfig;
+  readonly morpho?: MorphoConfig;
 }
 
 // Configuration for mocking infrastructure on local and test networks
@@ -208,12 +209,22 @@ export interface IReserveParams extends IReserveBorrowParams, IReserveCollateral
 // --- dStake Types ---
 
 export interface DStakeAdapterConfig {
-  readonly vaultAsset: Address; // Address of the vault asset (e.g., wddUSD)
+  readonly strategyShare: Address; // Address of the strategy share token (e.g., wddUSD)
   readonly adapterContract: string; // Contract name for deployment (e.g., dLendConversionAdapter)
 }
 
+export interface DStakeIdleVaultConfig {
+  readonly name?: string; // Optional name override for the idle vault token
+  readonly symbol?: string; // Optional symbol override for the idle vault token
+  readonly admin?: Address; // Optional admin override; defaults to the instance initialAdmin
+  readonly rewardManager?: Address; // Optional reward manager override; defaults to admin
+  readonly emissionStart?: number; // Optional initial emission start timestamp
+  readonly emissionEnd?: number; // Optional initial emission end timestamp
+  readonly emissionPerSecond?: string; // Optional initial emission rate (string to avoid precision issues)
+}
+
 export interface DLendRewardManagerConfig {
-  readonly managedVaultAsset: Address; // Address of the StaticATokenLM wrapper this manager handles (e.g. wddUSD)
+  readonly managedStrategyShare: Address; // Address of the StaticATokenLM wrapper this manager handles (e.g. wddUSD)
   readonly dLendAssetToClaimFor: Address; // Address of the underlying aToken in dLEND (e.g. aDUSD)
   readonly dLendRewardsController: Address; // Address of the dLEND RewardsController
   readonly treasury: Address; // Address for treasury fees
@@ -226,16 +237,17 @@ export interface DLendRewardManagerConfig {
 
 export interface DStakeInstanceConfig {
   readonly dStable: Address; // Address of the underlying stable token (e.g., dUSD, dETH)
-  readonly name: string; // Name for DStakeToken (e.g., "Staked dUSD")
-  readonly symbol: string; // Symbol for DStakeToken (e.g., "sdUSD")
+  readonly name: string; // Name for DStakeTokenV2 (e.g., "Staked dUSD")
+  readonly symbol: string; // Symbol for DStakeTokenV2 (e.g., "sdUSD")
   readonly initialAdmin: Address;
   readonly initialFeeManager: Address;
   readonly initialWithdrawalFeeBps: number;
-  readonly adapters: DStakeAdapterConfig[]; // List of supported adapters/vault assets
-  readonly defaultDepositVaultAsset: Address; // Initial default vault asset for deposits
+  readonly adapters: DStakeAdapterConfig[]; // List of supported adapters/strategy shares
+  readonly defaultDepositStrategyShare: Address; // Initial default strategy share for deposits
   readonly collateralExchangers: Address[]; // List of allowed exchanger addresses
-  readonly collateralVault?: Address; // The DStakeCollateralVault for this instance (needed for adapter deployment)
+  readonly collateralVault?: Address; // The DStakeCollateralVaultV2 for this instance (needed for adapter deployment)
   readonly dLendRewardManager?: DLendRewardManagerConfig; // Added for dLend rewards
+  readonly idleVault?: DStakeIdleVaultConfig; // Optional idle vault configuration
 }
 
 export interface VestingConfig {
@@ -274,4 +286,23 @@ export interface ChainlinkCompositeAggregatorConfig {
   readonly fixedPriceInBase1: bigint; // Fixed price for sourceFeed1 when threshold is exceeded (e.g., 100000000n for 1.00)
   readonly lowerThresholdInBase2: bigint; // Lower threshold for sourceFeed2 (e.g., 98000000n for 0.98)
   readonly fixedPriceInBase2: bigint; // Fixed price for sourceFeed2 when threshold is exceeded (e.g., 100000000n for 1.00)
+}
+
+// --- Morpho Types ---
+
+export interface MorphoMarketConfig {
+  readonly name: string; // Human-readable name for the market
+  readonly symbol: string; // Symbol for the vault token
+  readonly loanToken: Address; // The token being supplied/borrowed (e.g., dUSD)
+  readonly collateralToken: Address; // The collateral token (can be zero address for pure supply)
+  readonly oracle: Address; // Oracle address for the market
+  readonly irm: Address; // Interest rate model address
+  readonly lltv: number; // Loan-to-value ratio (in basis points or as configured by Morpho)
+}
+
+export interface MorphoConfig {
+  readonly morphoAddress: Address; // Address of the Morpho Blue contract
+  readonly markets: {
+    [key: string]: MorphoMarketConfig; // e.g., "dUSD_market"
+  };
 }

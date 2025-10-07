@@ -4,13 +4,10 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { ERC20 } from "../../typechain-types";
 import { IERC20 } from "../../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20";
+import { resolveRoleSigner, ensureRoleGranted } from "./utils/roleHelpers";
 import {
   DETH_A_TOKEN_WRAPPER_ID,
   DUSD_A_TOKEN_WRAPPER_ID,
-  EMISSION_MANAGER_ID,
-  INCENTIVES_PROXY_ID,
-  POOL_ADDRESSES_PROVIDER_ID,
-  PULL_REWARDS_TRANSFER_STRATEGY_ID,
   SDETH_COLLATERAL_VAULT_ID,
   SDETH_DSTAKE_TOKEN_ID,
   SDETH_ROUTER_ID,
@@ -23,11 +20,11 @@ import { DETH_CONFIG, DStableFixtureConfig, DUSD_CONFIG } from "../dstable/fixtu
 
 export interface DStakeFixtureConfig {
   dStableSymbol: "dUSD" | "dETH";
-  DStakeTokenSymbol: string;
-  DStakeTokenContractId: string;
+  DStakeTokenV2Symbol: string;
+  DStakeTokenV2ContractId: string;
   collateralVaultContractId: string;
   routerContractId: string;
-  defaultVaultAssetSymbol: string;
+  defaultStrategyShareSymbol: string;
   name?: string;
   underlyingDStableConfig: DStableFixtureConfig;
   deploymentTags: string[];
@@ -35,11 +32,11 @@ export interface DStakeFixtureConfig {
 
 export const SDUSD_CONFIG: DStakeFixtureConfig = {
   dStableSymbol: "dUSD",
-  DStakeTokenSymbol: "sdUSD",
-  DStakeTokenContractId: SDUSD_DSTAKE_TOKEN_ID,
+  DStakeTokenV2Symbol: "sdUSD",
+  DStakeTokenV2ContractId: SDUSD_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDUSD_COLLATERAL_VAULT_ID,
   routerContractId: SDUSD_ROUTER_ID,
-  defaultVaultAssetSymbol: "wddUSD",
+  defaultStrategyShareSymbol: "wddUSD",
   underlyingDStableConfig: DUSD_CONFIG,
   deploymentTags: [
     "local-setup", // mock tokens and oracles
@@ -54,11 +51,11 @@ export const SDUSD_CONFIG: DStakeFixtureConfig = {
 
 export const SDETH_CONFIG: DStakeFixtureConfig = {
   dStableSymbol: "dETH",
-  DStakeTokenSymbol: "sdETH",
-  DStakeTokenContractId: SDETH_DSTAKE_TOKEN_ID,
+  DStakeTokenV2Symbol: "sdETH",
+  DStakeTokenV2ContractId: SDETH_DSTAKE_TOKEN_ID,
   collateralVaultContractId: SDETH_COLLATERAL_VAULT_ID,
   routerContractId: SDETH_ROUTER_ID,
-  defaultVaultAssetSymbol: "wdETH",
+  defaultStrategyShareSymbol: "wdETH",
   underlyingDStableConfig: DETH_CONFIG,
   deploymentTags: ["local-setup", "oracle", "deth", "dETH-aTokenWrapper", "dlend", "dStake"],
 };
@@ -86,167 +83,150 @@ async function fetchDStakeComponents(
   config: DStakeFixtureConfig
 ) {
   const { deployments, getNamedAccounts, ethers, globalHre } = hreElements;
-  const { deployer } = await getNamedAccounts();
+  const namedAccounts = await getNamedAccounts();
+  const deployer = namedAccounts.deployer;
+  const governance = namedAccounts.governance;
   const deployerSigner = await ethers.getSigner(deployer);
 
   const { contract: dStableToken, tokenInfo: dStableInfo } = await getTokenContractForSymbol(globalHre, deployer, config.dStableSymbol);
 
-  const DStakeToken = await ethers.getContractAt("DStakeToken", (await deployments.get(config.DStakeTokenContractId)).address);
+  const dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
+  const collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
+  const routerDeployment = await deployments.get(config.routerContractId);
 
-  const collateralVault = await ethers.getContractAt(
-    "DStakeCollateralVault",
-    (await deployments.get(config.collateralVaultContractId)).address
+  const DStakeTokenV2 = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
+  const collateralVault = await ethers.getContractAt("DStakeCollateralVaultV2", collateralVaultDeployment.address);
+  const router = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
+
+  const signers = await ethers.getSigners();
+  const testOwner = signers[0];
+
+  const routerAdminRole = await router.DEFAULT_ADMIN_ROLE();
+  const routerAdminSigner = await resolveRoleSigner(
+    router,
+    routerAdminRole,
+    [
+      testOwner.address,
+      deployerSigner.address,
+      governance,
+      routerDeployment.receipt?.from,
+    ],
+    deployerSigner,
   );
 
-  const router = await ethers.getContractAt("DStakeRouterDLend", (await deployments.get(config.routerContractId)).address);
+  await ensureRoleGranted(router, routerAdminRole, routerAdminSigner, routerAdminSigner);
+  await ensureRoleGranted(router, routerAdminRole, testOwner, routerAdminSigner);
 
-  const wrappedATokenAddress = (await deployments.get(config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID))
-    .address;
-  const wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", wrappedATokenAddress);
+  const configManagerRole = await router.CONFIG_MANAGER_ROLE();
+  const adapterManagerRole = await router.ADAPTER_MANAGER_ROLE();
+  const vaultManagerRole = await router.VAULT_MANAGER_ROLE();
 
-  const vaultAssetAddress = wrappedATokenAddress;
-  let adapterAddress;
-  let adapter;
-  adapterAddress = await router.vaultAssetToAdapter(vaultAssetAddress);
+  await ensureRoleGranted(router, configManagerRole, testOwner, routerAdminSigner);
+  await ensureRoleGranted(router, adapterManagerRole, testOwner, routerAdminSigner);
+  await ensureRoleGranted(router, vaultManagerRole, testOwner, routerAdminSigner);
 
-  if (adapterAddress !== ethers.ZeroAddress) {
-    adapter = await ethers.getContractAt("IDStableConversionAdapter", adapterAddress);
-  } else {
-    adapter = null;
+  let strategyShareAddress = await router.defaultDepositStrategyShare();
+  if (strategyShareAddress === ethers.ZeroAddress) {
+    const expectedDeploymentId =
+      config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID;
+    const wrapperDeployment = await deployments.getOrNull(expectedDeploymentId);
+    if (!wrapperDeployment) {
+      throw new Error(
+        `Router missing default deposit strategy share and expected deployment ${expectedDeploymentId} is not available`,
+      );
+    }
+    strategyShareAddress = wrapperDeployment.address;
+  }
+  const wrappedAToken = await ethers.getContractAt(
+    "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
+    strategyShareAddress,
+  );
+  const adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
+  if (adapterAddress === ethers.ZeroAddress) {
+    throw new Error(`Adapter missing for strategy share ${strategyShareAddress}`);
+  }
+  const adapter = await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress);
+
+  const collateralAdminRole = await collateralVault.DEFAULT_ADMIN_ROLE();
+  const collateralAdminSigner = await resolveRoleSigner(
+    collateralVault,
+    collateralAdminRole,
+    [
+      testOwner.address,
+      deployerSigner.address,
+      governance,
+      collateralVaultDeployment.receipt?.from,
+    ],
+    deployerSigner,
+  );
+
+  await ensureRoleGranted(collateralVault, collateralAdminRole, testOwner, collateralAdminSigner);
+
+  const routerRole = await collateralVault.ROUTER_ROLE();
+  const routerAddress = await router.getAddress();
+  if ((await collateralVault.router()).toLowerCase() !== routerAddress.toLowerCase()) {
+    await collateralVault.connect(testOwner).setRouter(routerAddress);
+  }
+  if (!(await collateralVault.hasRole(routerRole, routerAddress))) {
+    await collateralVault.connect(testOwner).grantRole(routerRole, routerAddress);
+  }
+  if (!(await collateralVault.hasRole(routerRole, testOwner.address))) {
+    await collateralVault.connect(testOwner).grantRole(routerRole, testOwner.address);
+  }
+
+  const supportedShares = await collateralVault.getSupportedStrategyShares();
+  if (!supportedShares.includes(strategyShareAddress)) {
+    await collateralVault.connect(testOwner).addSupportedStrategyShare(strategyShareAddress);
+  }
+
+  let activeVaults: string[] = [];
+  try {
+    activeVaults = await router.getActiveVaultsForDeposits();
+  } catch {
+    activeVaults = [];
+  }
+
+  if (activeVaults.length === 0) {
+    if (!(await router.hasRole(adapterManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(adapterManagerRole, testOwner.address);
+    }
+    if (!(await router.hasRole(configManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(configManagerRole, testOwner.address);
+    }
+    if (!(await router.hasRole(vaultManagerRole, testOwner.address))) {
+      await router.connect(routerAdminSigner).grantRole(vaultManagerRole, testOwner.address);
+    }
+
+    if (!(await router.vaultExists(strategyShareAddress))) {
+      await router
+        .connect(testOwner)
+        .addVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
+    } else {
+      await router
+        .connect(testOwner)
+        .updateVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
+    }
+
+    await router.connect(testOwner).setDefaultDepositStrategyShare(strategyShareAddress);
   }
 
   return {
     config,
-    DStakeToken,
+    DStakeTokenV2,
     collateralVault,
     router,
     dStableToken: dStableToken as unknown as ERC20,
     dStableInfo,
-    vaultAssetToken: wrappedAToken as unknown as IERC20,
-    vaultAssetAddress,
+    strategyShareToken: wrappedAToken as unknown as IERC20,
+    strategyShareAddress: strategyShareAddress,
     adapter,
     adapterAddress,
     deployer: deployerSigner,
   };
 }
 
-// Main fixture setup function to be called from tests
-/**
- *
- * @param hreElements
- * @param hreElements.deployments
- * @param hreElements.ethers
- * @param hreElements.getNamedAccounts
- * @param hreElements.globalHre
- * @param config
- * @param rewardTokenSymbol
- * @param rewardAmount
- * @param emissionPerSecondSetting
- * @param distributionDuration
- */
-export async function executeSetupDLendRewards(
-  hreElements: {
-    deployments: HardhatRuntimeEnvironment["deployments"];
-    ethers: HardhatRuntimeEnvironment["ethers"];
-    getNamedAccounts: HardhatRuntimeEnvironment["getNamedAccounts"];
-    globalHre: HardhatRuntimeEnvironment; // For helpers
-  },
-  config: DStakeFixtureConfig,
-  rewardTokenSymbol: string,
-  rewardAmount: BigNumberish,
-  emissionPerSecondSetting?: BigNumberish, // Optional, with default below
-  distributionDuration: number = 3600
-) {
-  const { deployments, ethers, getNamedAccounts, globalHre } = hreElements;
-
-  // Combine all necessary tags for a single deployment run
-  const allDeploymentTags = [
-    ...config.deploymentTags, // from SDUSD_CONFIG (includes local-setup, oracles, dStable, dlend, dStake)
-    "dlend-static-wrapper-factory", // ensure static wrapper factory runs before static wrappers
-    "dStakeRewards", // Tag for DStakeRewardManagerDLend deployment script and its dependencies
-    // Add "dlend-static-wrapper-factory" if it's not reliably covered by dStake->dStakeAdapters dependency chain
-    // However, the current setup should have dStake depend on dStakeAdapters, which depends on StaticATokenFactory
-  ];
-
-  // Single fixture execution for all deployments
-  await deployments.fixture(allDeploymentTags);
-
-  // Fetch base dStake components (now that all deployments are done)
-  const dStakeBase = await fetchDStakeComponents(hreElements, config);
-  const { deployer: signer } = dStakeBase; // deployer is an Ethers Signer
-
-  // Get DStakeRewardManagerDLend related contracts
-  const rewardManagerDeployment = await deployments.get(`DStakeRewardManagerDLend_${config.DStakeTokenSymbol}`);
-  const rewardManager = await ethers.getContractAt("DStakeRewardManagerDLend", rewardManagerDeployment.address);
-
-  const targetStaticATokenWrapper = await rewardManager.targetStaticATokenWrapper();
-  const dLendAssetToClaimFor = await rewardManager.dLendAssetToClaimFor();
-
-  const { contract: rewardToken, tokenInfo: rewardTokenInfo } = await getTokenContractForSymbol(
-    globalHre,
-    signer.address,
-    rewardTokenSymbol
-  );
-
-  // Get EmissionManager and RewardsController instances
-  const emissionManagerDeployment = await deployments.get(EMISSION_MANAGER_ID);
-  const emissionManager = (await ethers.getContractAt("EmissionManager", emissionManagerDeployment.address)) as unknown as {
-    connect: (signer: any) => {
-      setEmissionAdmin: (reward: string, admin: string) => Promise<any>;
-      configureAssets: (configs: any[]) => Promise<any>;
-    };
-    setEmissionAdmin: (reward: string, admin: string) => Promise<any>;
-    configureAssets: (configs: any[]) => Promise<any>;
-  };
-  const incentivesProxy = await deployments.get(INCENTIVES_PROXY_ID);
-  const rewardsController = await ethers.getContractAt("IRewardsController", incentivesProxy.address);
-
-  // For configureAssets, deployer (owner of EmissionManager) must set itself as emission admin for the reward token first
-  await emissionManager.connect(signer).setEmissionAdmin(rewardTokenInfo.address, signer.address);
-
-  const transferStrategyAddress = (await deployments.get(PULL_REWARDS_TRANSFER_STRATEGY_ID)).address;
-  const block = (await ethers.provider.getBlock("latest"))!;
-  const distributionEnd = block.timestamp + distributionDuration;
-  const poolAddressesProviderDeployment = await deployments.get(POOL_ADDRESSES_PROVIDER_ID);
-  const poolAddressesProvider = await ethers.getContractAt("PoolAddressesProvider", poolAddressesProviderDeployment.address);
-  const rewardOracle = await poolAddressesProvider.getPriceOracle();
-
-  const emissionPerSecond = emissionPerSecondSetting ?? ethers.parseUnits("1", rewardTokenInfo.decimals ?? 18);
-
-  // Call configureAssets via EmissionManager, now that signer is emissionAdmin for the rewardToken
-  await emissionManager.connect(signer).configureAssets([
-    {
-      asset: dLendAssetToClaimFor,
-      reward: rewardTokenInfo.address,
-      transferStrategy: transferStrategyAddress,
-      rewardOracle,
-      emissionPerSecond,
-      distributionEnd,
-      totalSupply: 0, // This is usually fetched or calculated, 0 for new setup
-    },
-  ]);
-
-  // Cast to ERC20 for token operations
-  const rewardTokenERC20 = rewardToken as unknown as ERC20;
-
-  // Fund the rewards vault for PullRewardsTransferStrategy and approve
-  const pullStrategy = await ethers.getContractAt("IPullRewardsTransferStrategy", transferStrategyAddress);
-  const rewardsVault = await pullStrategy.getRewardsVault();
-  // Transfer reward tokens to the vault address
-  await rewardTokenERC20.connect(signer).transfer(rewardsVault, rewardAmount);
-  // Approve the PullRewardsTransferStrategy to pull rewards from the vault
-  const vaultSigner = await ethers.getSigner(rewardsVault);
-  await rewardTokenERC20.connect(vaultSigner).approve(transferStrategyAddress, rewardAmount);
-
-  return {
-    ...dStakeBase,
-    rewardManager,
-    rewardsController,
-    rewardToken,
-    targetStaticATokenWrapper,
-    dLendAssetToClaimFor,
-  };
-}
+// Note: dLEND reward setup functions have been removed as dLEND support is deprecated.
+// Use MetaMorpho reward management instead.
 
 export const createDStakeFixture = (config: DStakeFixtureConfig) => {
   return deployments.createFixture(async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
@@ -267,38 +247,5 @@ export const createDStakeFixture = (config: DStakeFixtureConfig) => {
   });
 };
 
-export const setupDLendRewardsFixture = (
-  config: DStakeFixtureConfig,
-  rewardTokenSymbol: string,
-  rewardAmount: BigNumberish,
-  emissionPerSecond?: BigNumberish,
-  distributionDuration: number = 3600
-) =>
-  deployments.createFixture(async (hreFixtureEnv: HardhatRuntimeEnvironment) => {
-    // Execute DStake rewards setup, which includes its own deployments.fixture(allDeploymentTags)
-    // Don't run all deployments to avoid interference from RedeemerWithFees
-    return executeSetupDLendRewards(
-      {
-        deployments: hreFixtureEnv.deployments,
-        ethers: hreFixtureEnv.ethers,
-        getNamedAccounts: hreFixtureEnv.getNamedAccounts,
-        globalHre: hreFixtureEnv,
-      },
-      config,
-      rewardTokenSymbol,
-      rewardAmount,
-      emissionPerSecond,
-      distributionDuration
-    );
-  });
-
-// Pre-bound SDUSD rewards fixture for tests
-export const SDUSDRewardsFixture = setupDLendRewardsFixture(
-  SDUSD_CONFIG,
-  "sfrxUSD",
-  ethers.parseUnits("100", 6), // total reward amount
-  ethers.parseUnits("1", 6) // emission per second (1 token/sec in 6-decimals)
-);
-
-// Pre-bound SDS rewards fixture for table-driven tests
-export const SDSRewardsFixture = setupDLendRewardsFixture(SDETH_CONFIG, "stETH", ethers.parseUnits("100", 18));
+// Note: dLEND reward fixtures have been removed.
+// Use MetaMorpho-specific test fixtures from MetaMorpho test files instead.

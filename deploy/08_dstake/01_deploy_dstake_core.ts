@@ -50,9 +50,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing adapters array for dSTAKE instance ${instanceKey}`);
     }
 
-    if (!instanceConfig.defaultDepositVaultAsset || instanceConfig.defaultDepositVaultAsset === ethers.ZeroAddress) {
+    if (!instanceConfig.defaultDepositStrategyShare || instanceConfig.defaultDepositStrategyShare === ethers.ZeroAddress) {
       console.log(
-        `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing defaultDepositVaultAsset (likely due to dlend infrastructure not being deployed)`
+        `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing defaultDepositStrategyShare (likely due to dlend infrastructure not being deployed)`
       );
       continue;
     }
@@ -65,21 +65,20 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // All configs are valid, proceed with deployment
   for (const instanceKey in config.dStake) {
     const instanceConfig = config.dStake[instanceKey] as DStakeInstanceConfig;
-    const DStakeTokenDeploymentName = `DStakeToken_${instanceKey}`;
+    const DStakeTokenV2DeploymentName = `DStakeTokenV2_${instanceKey}`;
 
     // If dSTAKE core already exists on this network, skip re-deployment (idempotent on mainnet)
-    const existingTokenImpl = await deployments.getOrNull(`${DStakeTokenDeploymentName}_Implementation`);
-    const existingVault = await deployments.getOrNull(`DStakeCollateralVault_${instanceKey}`);
-    const existingRouter = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
+    const existingTokenImpl = await deployments.getOrNull(`${DStakeTokenV2DeploymentName}_Implementation`);
+    const existingVault = await deployments.getOrNull(`DStakeCollateralVaultV2_${instanceKey}`);
 
-    if (existingTokenImpl || existingVault || existingRouter) {
+    if (existingTokenImpl || existingVault) {
       console.log(`dSTAKE core for ${instanceKey} already deployed. Skipping core deployment.`);
       continue;
     }
 
-    const DStakeTokenDeployment = await deploy(DStakeTokenDeploymentName, {
+    const DStakeTokenV2Deployment = await deploy(DStakeTokenV2DeploymentName, {
       from: deployer,
-      contract: "DStakeToken",
+      contract: "DStakeTokenV2",
       proxy: {
         // OZ v5 TransparentUpgradeableProxy mints a dedicated ProxyAdmin internally per proxy.
         // We therefore avoid viaAdminContract and just set the initial owner for that ProxyAdmin here.
@@ -101,24 +100,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       log: false,
     });
 
-    const collateralVaultDeploymentName = `DStakeCollateralVault_${instanceKey}`;
-    const collateralVaultDeployment = await deploy(collateralVaultDeploymentName, {
+    const collateralVaultDeploymentName = `DStakeCollateralVaultV2_${instanceKey}`;
+    await deploy(collateralVaultDeploymentName, {
       from: deployer,
-      contract: "DStakeCollateralVault",
-      args: [DStakeTokenDeployment.address, instanceConfig.dStable],
+      contract: "DStakeCollateralVaultV2",
+      args: [DStakeTokenV2Deployment.address, instanceConfig.dStable],
       log: false,
     });
-
-    const routerDeploymentName = `DStakeRouter_${instanceKey}`;
-    const _routerDeployment = await deploy(routerDeploymentName, {
-      from: deployer,
-      contract: "DStakeRouterDLend",
-      args: [DStakeTokenDeployment.address, collateralVaultDeployment.address],
-      log: false,
-    });
-
-    // NOTE: Governance permissions will be granted in the post-deployment
-    // role-migration script. No additional role grants are necessary here.
   }
 
   console.log(`🥩 ${__filename.split("/").slice(-2).join("/")}: ✅`);
@@ -140,10 +128,10 @@ func.skip = async (hre: HardhatRuntimeEnvironment): Promise<boolean> => {
   if (!config.dStake) return true;
 
   for (const instanceKey in config.dStake) {
-    const name = `DStakeToken_${instanceKey}`;
+    const name = `DStakeTokenV2_${instanceKey}`;
     const proxy = await deployments.getOrNull(name);
     const impl = await deployments.getOrNull(`${name}_Implementation`);
-    const vault = await deployments.getOrNull(`DStakeCollateralVault_${instanceKey}`);
+    const vault = await deployments.getOrNull(`DStakeCollateralVaultV2_${instanceKey}`);
     const router = await deployments.getOrNull(`DStakeRouter_${instanceKey}`);
 
     // If any required piece is missing, allow the script to run

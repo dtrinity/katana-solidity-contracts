@@ -91,7 +91,10 @@ export interface OracleAggregatorFixtureResult {
  */
 export async function getOracleAggregatorFixture(currency: string) {
   return deployments.createFixture(
-    async (): Promise<OracleAggregatorFixtureResult> => {
+    async ({ deployments }): Promise<OracleAggregatorFixtureResult> => {
+      // Run deployments to ensure oracle aggregators and wrappers are deployed
+      await deployments.fixture(["oracle-aggregator"]);
+      
       // Get the current network configuration
       const config = await getConfig(hre);
       const oracleConfig = config.oracleAggregators[currency];
@@ -133,7 +136,7 @@ export async function getOracleAggregatorFixture(currency: string) {
         throw new Error(`Unsupported currency: ${currency}. Only USD, S, and ETH are supported.`);
       }
 
-      // Check if deployments exist, throw informative error if not
+      // Get deployments - they should exist now after running fixture
       let wrapperDeployment, wrapperWithThresholdingDeployment, compositeWrapperWithThresholdingDeployment;
       let api3WrapperDeployment, api3WrapperWithThresholdingDeployment, api3CompositeWrapperWithThresholdingDeployment;
       

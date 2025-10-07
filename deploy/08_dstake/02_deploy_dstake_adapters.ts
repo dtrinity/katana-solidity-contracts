@@ -8,7 +8,7 @@ import { POOL_ADDRESSES_PROVIDER_ID } from "../../typescript/deploy-ids";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployments, getNamedAccounts } = hre;
-  const { deploy } = deployments;
+  const { deploy, getOrNull } = deployments;
   const { deployer } = await getNamedAccounts();
 
   const config = await getConfig(hre);
@@ -40,20 +40,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       throw new Error(`Missing symbol for dSTAKE instance ${instanceKey}`);
     }
 
-    // Check if any adapter has missing vaultAsset
-    let hasInvalidAdapter = false;
+    let hasDeployableAdapter = false;
 
     for (const adapterConfig of instanceConfig.adapters) {
       if (!adapterConfig.adapterContract) {
         throw new Error(`Missing adapterContract for adapter in dSTAKE instance ${instanceKey}`);
       }
 
-      if (!adapterConfig.vaultAsset || adapterConfig.vaultAsset === ethers.ZeroAddress) {
+      if (!adapterConfig.strategyShare || adapterConfig.strategyShare === ethers.ZeroAddress) {
         console.log(
-          `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing vaultAsset for adapter ${adapterConfig.adapterContract} (likely due to dlend infrastructure not being deployed)`
+          `⚠️  Strategy share missing for adapter ${adapterConfig.adapterContract} in ${instanceKey} (deployment will be skipped for this adapter)`
         );
-        hasInvalidAdapter = true;
-        break;
+        continue;
       }
 
       // dLendConversionAdapter requires dLendAddressesProvider
@@ -61,12 +59,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         console.log(
           `⚠️  Skipping dSTAKE instance ${instanceKey}: dLend PoolAddressesProvider not found for ${adapterConfig.adapterContract}`
         );
-        hasInvalidAdapter = true;
-        break;
+        continue;
       }
+
+      hasDeployableAdapter = true;
     }
 
-    if (!hasInvalidAdapter) {
+    if (hasDeployableAdapter) {
       validInstances.push(instanceKey);
     }
   }
@@ -77,7 +76,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const dStableSymbol = instanceConfig.symbol;
 
     // We need references to the router and collateral vault
-    const collateralVaultDeploymentName = `DStakeCollateralVault_${instanceKey}`;
+    const collateralVaultDeploymentName = `DStakeCollateralVaultV2_${instanceKey}`;
 
     // Get the collateral vault address from deployment
     const collateralVault = await deployments.getOrNull(collateralVaultDeploymentName);
@@ -88,24 +87,64 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
 
     for (const adapterConfig of instanceConfig.adapters) {
-      const { adapterContract, vaultAsset } = adapterConfig;
+      const { adapterContract } = adapterConfig;
+      let { strategyShare } = adapterConfig;
 
-      if (adapterContract === "WrappedDLendConversionAdapter") {
-        const deploymentName = `${adapterContract}_${dStableSymbol}`;
-        // Avoid accidental redeployments on live networks by skipping if already deployed
-        const existingAdapter = await deployments.getOrNull(deploymentName);
-
-        if (existingAdapter) {
-          console.log(`    ${deploymentName} already exists at ${existingAdapter.address}. Skipping deployment.`);
-          continue;
+      if (!strategyShare || strategyShare === ethers.ZeroAddress) {
+        if (adapterContract === "GenericERC4626ConversionAdapter") {
+          const idleVaultDeployment = await getOrNull(`DStakeIdleVault_${instanceKey}`);
+          if (idleVaultDeployment) {
+            strategyShare = idleVaultDeployment.address;
+          }
         }
+      }
+
+      if (!strategyShare || strategyShare === ethers.ZeroAddress) {
+        console.log(
+          `    ⚠️  Skipping ${instanceKey}: Missing strategyShare for adapter ${adapterContract} (likely due to prerequisite deployments not being available)`
+        );
+        continue;
+      }
+
+      const deploymentName = `${adapterContract}_${dStableSymbol}`;
+      const existingAdapter = await getOrNull(deploymentName);
+
+      if (existingAdapter) {
+        console.log(`    ${deploymentName} already exists at ${existingAdapter.address}. Skipping deployment.`);
+        continue;
+      }
+
+      if (adapterContract === "MetaMorphoConversionAdapter") {
         await deploy(deploymentName, {
           from: deployer,
           contract: adapterContract,
-          args: [instanceConfig.dStable, vaultAsset, collateralVault.address],
+          args: [instanceConfig.dStable, strategyShare, collateralVault.address, deployer],
           log: true,
         });
+        continue;
       }
+
+      if (adapterContract === "GenericERC4626ConversionAdapter") {
+        await deploy(deploymentName, {
+          from: deployer,
+          contract: adapterContract,
+          args: [instanceConfig.dStable, strategyShare, collateralVault.address],
+          log: true,
+        });
+        continue;
+      }
+
+      if (adapterContract === "WrappedDLendConversionAdapter") {
+        await deploy(deploymentName, {
+          from: deployer,
+          contract: adapterContract,
+          args: [instanceConfig.dStable, strategyShare, collateralVault.address],
+          log: true,
+        });
+        continue;
+      }
+
+      console.log(`    ⚠️  Adapter ${adapterContract} is not recognised by the deployment script. Skipping.`);
     }
   }
 
@@ -114,7 +153,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.tags = ["dStakeAdapters", "dStake"];
-func.dependencies = ["dStakeCore", "dLendCore", "dUSD-aTokenWrapper", "dS-aTokenWrapper"];
+func.dependencies = ["dStakeCore", "dStakeIdleVaults", "dLendCore", "dUSD-aTokenWrapper", "dS-aTokenWrapper"];
 
 // Ensure one-shot execution.
 func.id = "deploy_dstake_adapters";

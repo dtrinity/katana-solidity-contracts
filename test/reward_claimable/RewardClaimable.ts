@@ -30,6 +30,7 @@ describe("RewardClaimable", function () {
   let exchangeAsset: RewardClaimableMockERC20;
   let rewardToken1: RewardClaimableMockERC20;
   let rewardToken2: RewardClaimableMockERC20;
+  let REWARDS_MANAGER_ROLE: string;
 
   // Constants
   const MAX_TREASURY_FEE_BPS = 30 * ONE_PERCENT_BPS; // 30% max fee
@@ -73,6 +74,8 @@ describe("RewardClaimable", function () {
       await targetPool.getAddress(),
       await fakeRewardPool.getAddress(),
     )) as unknown as MockRewardClaimableVault;
+
+    REWARDS_MANAGER_ROLE = await mockVault.REWARDS_MANAGER_ROLE();
 
     // Set up the vault with reward tokens emission amounts (3 and 2)
     await mockVault.addRewardToken(
@@ -389,6 +392,10 @@ describe("RewardClaimable", function () {
     });
 
     describe("Should only allow to compound when reaching the exchange threshold", async function () {
+      beforeEach(async function () {
+        await mockVault.grantRole(REWARDS_MANAGER_ROLE, await user.getAddress());
+      });
+
       it("Should revert if below threshold", async function () {
         await mockVault
           .connect(admin)
@@ -440,6 +447,25 @@ describe("RewardClaimable", function () {
   });
 
   describe("compoundRewards", function () {
+    beforeEach(async function () {
+      await mockVault.grantRole(REWARDS_MANAGER_ROLE, await user.getAddress());
+    });
+
+    it("Should revert when caller lacks rewards manager role", async function () {
+      await mockVault.revokeRole(REWARDS_MANAGER_ROLE, await user.getAddress());
+      const amountToCompound = DEFAULT_EXCHANGE_THRESHOLD;
+
+      await expect(
+        mockVault
+          .connect(user)
+          .compoundRewards(
+            amountToCompound,
+            [await rewardToken1.getAddress()],
+            await user.getAddress(),
+          ),
+      ).to.be.revertedWithCustomError(mockVault, "AccessControlUnauthorizedAccount");
+    });
+
     it("Compound with 10% treasury fee", async function () {
       // Setup treasury fee
       const treasuryFeeBps = 10 * ONE_PERCENT_BPS; // 10%

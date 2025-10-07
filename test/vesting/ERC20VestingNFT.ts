@@ -21,7 +21,7 @@ const createVestingFixture = deployments.createFixture(
     const user2Signer = await ethers.getSigner(user2);
 
     // Deploy mock dSTAKE token for testing
-    const mockDStakeToken = await deployments.deploy("MockDStakeToken", {
+    const mockDStakeTokenV2 = await deployments.deploy("MockDStakeTokenV2", {
       from: deployer,
       contract: "TestMintableERC20",
       args: ["Mock dSTAKE Token", "dSTAKE", 18],
@@ -30,7 +30,7 @@ const createVestingFixture = deployments.createFixture(
 
     const dstakeToken = (await ethers.getContractAt(
       "TestMintableERC20",
-      mockDStakeToken.address,
+      mockDStakeTokenV2.address,
     )) as TestMintableERC20;
 
     // 6 months in seconds
@@ -46,7 +46,7 @@ const createVestingFixture = deployments.createFixture(
         args: [
           "Test dSTAKE Vesting NFT",
           "TEST-dVEST",
-          mockDStakeToken.address,
+          mockDStakeTokenV2.address,
           VESTING_PERIOD,
           MAX_TOTAL_SUPPLY,
           0,
