@@ -70,6 +70,9 @@ contract WrappedDLendConversionAdapter is IDStableConversionAdapterV2 {
     // 3. Deposit dStable into the StaticATokenLM wrapper, minting wrappedDLendToken to collateralVault
     strategyShareAmount = IERC4626(address(wrappedDLendToken)).deposit(dStableAmount, collateralVault);
 
+    // 4. Reset approval to adhere to allowance hygiene expectations
+    IERC20(dStable).forceApprove(address(wrappedDLendToken), 0);
+
     return (address(wrappedDLendToken), strategyShareAmount);
   }
 

@@ -508,7 +508,7 @@ describe("DStakeRouterV2", function () {
       expect(toBalanceAfter).to.equal(toBalanceBefore);
     });
 
-    it("surfaces valuation errors when removing an adapter with live balances", async function () {
+    it("enforces suspension before adapter removal and removes the vault from valuations", async function () {
       const depositAmount = ethers.parseEther("250");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
@@ -516,18 +516,24 @@ describe("DStakeRouterV2", function () {
       const vault1Balance = await vault1.balanceOf(collateralVault.target);
       expect(vault1Balance).to.be.gt(0n);
 
+      const totalBefore = await dStakeToken.totalAssets();
+
+      await expect(router.connect(owner).removeAdapter(vault1Address)).to.be.revertedWithCustomError(
+        router,
+        "VaultMustBeSuspended"
+      );
+
+      await router.connect(owner).suspendVaultForRemoval(vault1Address);
       await router.connect(owner).removeAdapter(vault1Address);
       expect(await router.strategyShareToAdapter(vault1Address)).to.equal(ethers.ZeroAddress);
 
-      await expect(dStakeToken.totalAssets()).to.be.revertedWithCustomError(
-        collateralVault,
-        "AdapterValuationUnavailable"
-      );
+      const totalAfter = await dStakeToken.totalAssets();
+      const vaultValueAfter = await collateralVault.totalValueInDStable();
+      const supportedAfter = await collateralVault.getSupportedStrategyShares();
 
-      await expect(collateralVault.totalValueInDStable()).to.be.revertedWithCustomError(
-        collateralVault,
-        "AdapterValuationUnavailable"
-      );
+      expect(totalAfter).to.equal(vaultValueAfter);
+      expect(totalAfter).to.be.lt(totalBefore);
+      expect(supportedAfter).to.not.include(vault1Address);
     });
   });
 
@@ -2675,8 +2681,14 @@ describe("DStakeRouterV2", function () {
         );
         await gasBombAdapter.waitForDeployment();
 
+        await router.connect(owner).suspendVaultForRemoval(vault1Address);
         await router.connect(owner).removeAdapter(vault1Address);
-        await router.connect(owner).addAdapter(vault1Address, await gasBombAdapter.getAddress());
+        const gasBombAdapterAddress = await gasBombAdapter.getAddress();
+        await router.connect(owner).addAdapter(vault1Address, gasBombAdapterAddress);
+        await router
+          .connect(owner)
+          .updateVaultConfig(vault1Address, gasBombAdapterAddress, 500000, VaultStatus.Active);
+        await router.connect(owner).setDefaultDepositStrategyShare(vault1Address);
 
         await expect(
           router

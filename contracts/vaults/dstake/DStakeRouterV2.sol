@@ -33,13 +33,7 @@ interface IDStakeTokenV2Minimal {
 
   function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external;
 
-  function burnFromRouter(
-    address initiator,
-    address receiver,
-    address owner,
-    uint256 netAssets,
-    uint256 shares
-  ) external;
+  function burnFromRouter(address initiator, address receiver, address owner, uint256 netAssets, uint256 shares) external;
 }
 
 /**
@@ -85,6 +79,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   error SettlementShortfallTooHigh(uint256 shortfall, uint256 managedAssets);
   error UnauthorizedConfigCaller();
   error InvalidWithdrawalFee(uint256 feeBps, uint256 maxFeeBps);
+  error VaultMustBeSuspended(address vault);
+  error VaultTargetNotZero(address vault, uint256 targetBps);
 
   // --- Roles ---
   bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -173,6 +169,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   );
   event AdapterSet(address indexed strategyShare, address adapterAddress);
   event AdapterRemoved(address indexed strategyShare, address adapterAddress);
+  event AdapterReplaced(address indexed strategyShare, address oldAdapter, address newAdapter);
   event DefaultDepositStrategyShareSet(address indexed strategyShare);
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusSwept(uint256 amount, address vaultAsset);
@@ -215,7 +212,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     _grantRole(VAULT_MANAGER_ROLE, msg.sender);
     _grantRole(PAUSER_ROLE, msg.sender);
     _grantRole(DSTAKE_TOKEN_ROLE, _dStakeToken);
-
   }
 
   // --- Core Router Functions ---
@@ -304,7 +300,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _hasActiveVaultFor(OperationType op) internal view returns (bool) {
-    (address[] memory activeVaults,,) = _getActiveVaultsAndAllocations(op);
+    (address[] memory activeVaults, , ) = _getActiveVaultsAndAllocations(op);
     return activeVaults.length > 0;
   }
 
@@ -366,6 +362,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (account != dStakeToken && !hasRole(CONFIG_MANAGER_ROLE, account)) {
       revert UnauthorizedConfigCaller();
     }
+  }
+
+  function _clearDefaultDepositStrategyShare() internal {
+    if (defaultDepositStrategyShare == address(0)) {
+      return;
+    }
+    defaultDepositStrategyShare = address(0);
+    emit DefaultDepositStrategyShareSet(address(0));
   }
 
   function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
@@ -441,14 +445,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     address /*owner*/,
     uint256 grossAssets,
     uint256 expectedNetAssets
-  )
-    external
-    override
-    onlyRole(DSTAKE_TOKEN_ROLE)
-    nonReentrant
-    whenNotPaused
-    returns (uint256 netAssets, uint256 fee)
-  {
+  ) external override onlyRole(DSTAKE_TOKEN_ROLE) nonReentrant whenNotPaused returns (uint256 netAssets, uint256 fee) {
     if (receiver == address(0)) revert ReceiverZero();
     if (grossAssets == 0) {
       return (0, 0);
@@ -573,13 +570,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 maxShares,
     address receiver,
     address owner
-  )
-    external
-    override
-    nonReentrant
-    whenNotPaused
-    returns (uint256 netAssets, uint256 fee, uint256 sharesBurned)
-  {
+  ) external override nonReentrant whenNotPaused returns (uint256 netAssets, uint256 fee, uint256 sharesBurned) {
     if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != assets.length) revert ArrayLengthMismatch();
@@ -642,13 +633,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 maxShares,
     address receiver,
     address owner
-  )
-    external
-    override
-    nonReentrant
-    whenNotPaused
-    returns (uint256 netAssets, uint256 fee, uint256 sharesBurned)
-  {
+  ) external override nonReentrant whenNotPaused returns (uint256 netAssets, uint256 fee, uint256 sharesBurned) {
     if (receiver == address(0)) revert ReceiverZero();
     if (vaults.length == 0) revert EmptyArrays();
     if (vaults.length != strategyShares.length) revert ArrayLengthMismatch();
@@ -692,13 +677,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     return (netAssets, fee, sharesBurned);
   }
 
-  function reinvestFees()
-    external
-    override
-    nonReentrant
-    whenNotPaused
-    returns (uint256 amountReinvested, uint256 incentivePaid)
-  {
+  function reinvestFees() external override nonReentrant whenNotPaused returns (uint256 amountReinvested, uint256 incentivePaid) {
     uint256 balance = IERC20(dStable).balanceOf(address(this));
     if (balance == 0) {
       return (0, 0);
@@ -907,11 +886,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     // Validate actual conversion result by measuring the share shortfall in dStable units and comparing to tolerance
     if (resultingToShareAmount < minToShareAmount) {
       uint256 shareShortfall = minToShareAmount - resultingToShareAmount;
-      uint256 shortfallValue = shareShortfall.mulDiv(
-        locals.dStableValueIn,
-        locals.calculatedToStrategyShareAmount,
-        Math.Rounding.Ceil
-      );
+      uint256 shortfallValue = shareShortfall.mulDiv(locals.dStableValueIn, locals.calculatedToStrategyShareAmount, Math.Rounding.Ceil);
 
       if (shortfallValue > dustTolerance) {
         revert SlippageCheckFailed(toStrategyShare, resultingToShareAmount, minToShareAmount);
@@ -970,6 +945,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
     _strategyShareToAdapter[strategyShare] = adapterAddress;
 
+    if (vaultExists[strategyShare]) {
+      vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;
+    }
+
     try collateralVault.addSupportedStrategyShare(strategyShare) {} catch {}
 
     emit AdapterSet(strategyShare, adapterAddress);
@@ -985,8 +964,22 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       return;
     }
 
+    if (adapterAddress == address(0)) {
+      if (currentAdapter != address(0)) {
+        _removeAdapter(strategyShare);
+      }
+      return;
+    }
+
     if (currentAdapter != address(0)) {
-      _removeAdapter(strategyShare);
+      emit AdapterReplaced(strategyShare, currentAdapter, adapterAddress);
+      _strategyShareToAdapter[strategyShare] = adapterAddress;
+      if (vaultExists[strategyShare]) {
+        vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;
+      }
+      try collateralVault.addSupportedStrategyShare(strategyShare) {} catch {}
+      emit AdapterSet(strategyShare, adapterAddress);
+      return;
     }
 
     _addAdapter(strategyShare, adapterAddress);
@@ -994,8 +987,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function setDefaultDepositStrategyShare(address strategyShare) external onlyRole(CONFIG_MANAGER_ROLE) {
     if (_strategyShareToAdapter[strategyShare] == address(0)) revert AdapterNotFound(strategyShare);
+    if (vaultExists[strategyShare]) {
+      VaultConfig memory config = _getVaultConfig(strategyShare);
+      if (!_isVaultStatusEligible(config.status, OperationType.DEPOSIT)) {
+        revert VaultNotActive(strategyShare);
+      }
+    }
     defaultDepositStrategyShare = strategyShare;
     emit DefaultDepositStrategyShareSet(strategyShare);
+  }
+
+  function clearDefaultDepositStrategyShare() external onlyRole(CONFIG_MANAGER_ROLE) {
+    _clearDefaultDepositStrategyShare();
   }
 
   function setDustTolerance(uint256 _dustTolerance) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -1133,6 +1136,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     _removeVault(vault);
   }
 
+  function suspendVaultForRemoval(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
+    _suspendVaultForRemoval(vault);
+  }
+
   /**
    * @notice Marks a vault inactive without altering its stored `targetBps`.
    * @dev This does NOT change totals or perform normalization. The inactive vault is
@@ -1145,6 +1152,31 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 index = vaultToIndex[vault];
     vaultConfigs[index].status = VaultStatus.Suspended;
     emit VaultConfigUpdated(vault, vaultConfigs[index].adapter, vaultConfigs[index].targetBps, VaultStatus.Suspended);
+  }
+
+  function _suspendVaultForRemoval(address vault) internal {
+    if (!vaultExists[vault]) revert VaultNotFound(vault);
+    uint256 index = vaultToIndex[vault];
+    VaultConfig storage config = vaultConfigs[index];
+
+    bool mutated;
+    if (config.status != VaultStatus.Suspended) {
+      config.status = VaultStatus.Suspended;
+      mutated = true;
+    }
+
+    if (config.targetBps != 0) {
+      config.targetBps = 0;
+      mutated = true;
+    }
+
+    if (defaultDepositStrategyShare == vault) {
+      _clearDefaultDepositStrategyShare();
+    }
+
+    if (mutated) {
+      emit VaultConfigUpdated(vault, config.adapter, config.targetBps, VaultStatus.Suspended);
+    }
   }
 
   function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -1237,17 +1269,19 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert VaultNotActive(vault);
     }
 
-    IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(config.adapter);
+    address adapterAddress = _strategyShareToAdapter[vault];
+    if (adapterAddress == address(0)) revert AdapterNotFound(vault);
+    IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
 
     (address vaultExpected, uint256 expectedShares) = adapter.previewDepositIntoStrategy(dStableAmount);
-    if (vaultExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultExpected);
+    if (vaultExpected != vault) revert AdapterAssetMismatch(adapterAddress, vault, vaultExpected);
 
     uint256 beforeBal = IERC20(vault).balanceOf(address(collateralVault));
 
-    IERC20(dStable).forceApprove(config.adapter, dStableAmount);
+    IERC20(dStable).forceApprove(adapterAddress, dStableAmount);
     (address actualVault, uint256 reportedShares) = adapter.depositIntoStrategy(dStableAmount);
     if (actualVault != vault) {
-      revert AdapterAssetMismatch(config.adapter, vault, actualVault);
+      revert AdapterAssetMismatch(adapterAddress, vault, actualVault);
     }
 
     uint256 afterBal = IERC20(vault).balanceOf(address(collateralVault));
@@ -1261,7 +1295,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert AdapterSharesMismatch(actualShares, reportedShares);
     }
 
-    IERC20(dStable).forceApprove(config.adapter, 0);
+    IERC20(dStable).forceApprove(adapterAddress, 0);
     return actualShares;
   }
 
@@ -1288,7 +1322,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert VaultNotActive(vault);
     }
 
-    address adapter = config.adapter;
+    address adapter = _strategyShareToAdapter[vault];
+    if (adapter == address(0)) revert AdapterNotFound(vault);
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
     // Determine how many strategy shares correspond to the requested dStable amount
@@ -1320,7 +1355,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       revert VaultNotActive(vault);
     }
 
-    address adapter = config.adapter;
+    address adapter = _strategyShareToAdapter[vault];
+    if (adapter == address(0)) revert AdapterNotFound(vault);
     IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
     uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
@@ -1393,6 +1429,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
   function _isVaultEligibleForOperation(VaultConfig memory config, OperationType operationType) internal pure returns (bool) {
     if (!_isVaultStatusEligible(config.status, operationType)) {
+      return false;
+    }
+
+    if (config.adapter == address(0)) {
       return false;
     }
 
@@ -1534,6 +1574,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     uint256 indexToRemove = vaultToIndex[vault];
     uint256 lastIndex = vaultConfigs.length - 1;
 
+    _suspendVaultForRemoval(vault);
+
+    if (_strategyShareToAdapter[vault] != address(0)) {
+      _removeAdapter(vault);
+    }
+
     if (indexToRemove != lastIndex) {
       VaultConfig memory lastConfig = vaultConfigs[lastIndex];
       vaultConfigs[indexToRemove] = lastConfig;
@@ -1544,19 +1590,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     delete vaultToIndex[vault];
     delete vaultExists[vault];
 
-    if (_strategyShareToAdapter[vault] != address(0)) {
-      _removeAdapter(vault);
-    }
-
     emit VaultConfigRemoved(vault);
   }
 
   function _clearVaultConfigs() internal {
     for (uint256 i = 0; i < vaultConfigs.length; i++) {
       address vault = vaultConfigs[i].strategyVault;
+      _suspendVaultForRemoval(vault);
+      _removeAdapter(vault);
       delete vaultToIndex[vault];
       delete vaultExists[vault];
-      _removeAdapter(vault);
     }
     delete vaultConfigs;
   }
@@ -1567,11 +1610,28 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       return false;
     }
 
+    if (vaultExists[strategyShare]) {
+      VaultConfig storage config = vaultConfigs[vaultToIndex[strategyShare]];
+      if (config.status != VaultStatus.Suspended) {
+        revert VaultMustBeSuspended(strategyShare);
+      }
+      if (config.targetBps != 0) {
+        revert VaultTargetNotZero(strategyShare, config.targetBps);
+      }
+    }
+
+    // Drop support in the collateral vault even if the position still holds dust so it stops affecting TVL.
+    // Important in cases where the strategyShare is paused or otherwise non-transferrable
+    collateralVault.removeSupportedStrategyShare(strategyShare);
+
+    if (defaultDepositStrategyShare == strategyShare) {
+      _clearDefaultDepositStrategyShare();
+    }
+
     delete _strategyShareToAdapter[strategyShare];
 
-    // Preserve valuation coverage when collateral is still held by keeping the share registered.
-    if (IERC20(strategyShare).balanceOf(address(collateralVault)) == 0) {
-      try collateralVault.removeSupportedStrategyShare(strategyShare) {} catch {}
+    if (vaultExists[strategyShare]) {
+      vaultConfigs[vaultToIndex[strategyShare]].adapter = address(0);
     }
 
     emit AdapterRemoved(strategyShare, adapterAddress);

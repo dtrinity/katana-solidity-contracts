@@ -253,7 +253,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
       revert AdapterNotSetForDefaultAsset();
     }
 
-    // Approve router to spend dStable
+    // Approve adapter to spend dStable
     IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
     // Check collateral vault balance before conversion
@@ -263,6 +263,9 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
     (address returnedStrategyShare, uint256 strategyShareAmount) = IDStableConversionAdapterV2(adapter).depositIntoStrategy(
       exchangeAmountIn
     );
+
+    // Clear any remaining approval now that the transfer has completed
+    IERC20(exchangeAsset).forceApprove(adapter, 0);
 
     // Verify the adapter returned the expected strategy share
     if (returnedStrategyShare != defaultStrategyShare) {
@@ -278,9 +281,6 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
     // Emit event for tracking (use actualReceived for accuracy)
     emit ExchangeAssetProcessed(defaultStrategyShare, actualReceived, exchangeAmountIn);
-
-    // Clear any remaining approval
-    IERC20(exchangeAsset).forceApprove(adapter, 0);
   }
 
   /**
