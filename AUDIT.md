@@ -12,19 +12,7 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 
 ## Open
 
-### 1. External rebalance bypasses value slippage checks
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:868`, `contracts/vaults/dstake/DStakeRouterV2.sol:913`
-- **Impact**: `rebalanceStrategiesBySharesViaExternalLiquidity` only enforces a share-count floor, so a compromised `STRATEGY_REBALANCER_ROLE` (or a griefing operator) can withdraw healthy shares and redeposit them into an adapter that returns worthless tokens while still satisfying `minToShareAmount`. The collateral vault keeps the devalued position and the original strategy loses all dStable backing.
-- **Reproduction**: 1) Assign the role to a test account. 2) Call `rebalanceStrategiesBySharesViaExternalLiquidity` with `minToShareAmount = 0`, moving funds from a healthy vault into a deliberately broken adapter that mints dust shares. 3) Transaction succeeds and the system now holds near-zero-value shares in place of the original liquidity.
-- **Fix recommendation**: Mirror the value-based guard used in `_rebalanceStrategiesByShares` by checking `toAdapter.previewWithdrawFromStrategy(resultingToShareAmount)` against `locals.dStableValueIn`, allowing a `dustTolerance` buffer. Revert if the minted shares represent materially less value than withdrawn, even when the share count threshold passes.
-
-### 2. Adapter swap skips strategy-share validation
-- **Severity**: High
-- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1006`, `contracts/vaults/dstake/DStakeRouterV2.sol:1304`
-- **Impact**: `_syncAdapter` replaces an active adapter without verifying `adapter.strategyShare()` matches the vault’s registered share. A misconfigured upgrade silently pairs the vault with an incompatible adapter, causing deposits/withdrawals to revert or mis-handle tokens. Users are locked out until governance notices and corrects the mapping.
-- **Reproduction**: 1) Add a vault with a valid adapter. 2) Call `updateVaultConfig` or `setVaultConfigs` with a replacement adapter that targets a different share address. 3) Subsequent deposits start reverting at the `AdapterAssetMismatch` check; withdrawals revert once they pull real shares into the wrong adapter.
-- **Fix recommendation**: Inside `_syncAdapter`, when `currentAdapter != address(0)` ensure the new adapter’s `strategyShare()` equals the vault address. Revert on mismatch so operators must remove the old adapter (triggering the existing validation) or provide a correctly bound adapter in one call.
+- No active findings.
 
 ## Resolved
 
@@ -86,6 +74,16 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Severity**: Medium
 - **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:646`, `contracts/vaults/dstake/DStakeRouterV2.sol:701`, `test/dstake/DStakeSolverMode.test.ts:821`
 - **Fix**: Clamps solver withdraw payouts to the caller’s requested net assets, rolling any rounding surplus into the fee bucket so share burns, user transfers, and router balances stay consistent. Regression coverage: `Solver Mode: Fee Application Tests` (“Should clamp solverWithdrawAssets payout…”).
+
+### 9. External rebalance bypasses value slippage checks *(Resolved)*
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:878-944`, `test/dstake/DStakeRouterV2.test.ts:750-911`
+- **Fix**: `rebalanceStrategiesBySharesViaExternalLiquidity` now mirrors the internal rebalance guard by valuing the minted shares with `previewWithdrawFromStrategy`, translating share shortfalls into dStable terms, and requiring the outcome to clear `dustTolerance` before emitting `StrategySharesExchanged`. Regression coverage exercises both failure and dust-tolerant paths.
+
+### 10. Adapter swap skips strategy-share validation *(Resolved)*
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1011-1036`, `test/dstake/DStakeRouterV2.test.ts:1321-1333`
+- **Fix**: `_syncAdapter` now checks `adapter.strategyShare()` whenever replacing a live adapter and reverts with `AdapterAssetMismatch` on mismatched vaults, preventing silent misbindings during `setVaultConfigs`/`updateVaultConfig`. Existing router tests assert the mismatch revert.
 
 ## Acknowledged (Won't Fix)
 
