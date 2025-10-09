@@ -915,6 +915,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (actualToStrategyShare != toStrategyShare)
       revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
+    {
+      uint256 previewValue = locals.toAdapter.previewWithdrawFromStrategy(resultingToShareAmount);
+      uint256 dustAdjusted = locals.dStableValueIn > dustTolerance ? locals.dStableValueIn - dustTolerance : 0;
+      if (previewValue < dustAdjusted) {
+        revert SlippageCheckFailed(dStable, previewValue, dustAdjusted);
+      }
+    }
+
     // Validate actual conversion result by measuring the share shortfall in dStable units and comparing to tolerance
     if (resultingToShareAmount < minToShareAmount) {
       uint256 shareShortfall = minToShareAmount - resultingToShareAmount;

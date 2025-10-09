@@ -858,6 +858,119 @@ describe("DStakeRouterV2", function () {
         expect(resultingShareBalance).to.be.gt(0n);
       });
     });
+
+    describe("value preview safeguards", function () {
+      it("reverts when the destination adapter previews substantially less value than withdrawn", async function () {
+        const depositAmount = ethers.parseEther("500");
+        await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+        await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+        const DevaluedShare = await ethers.getContractFactory("TestMintableERC20");
+        const devaluedShare = await DevaluedShare.deploy("Devalue Share", "DVAL", 6);
+        await devaluedShare.waitForDeployment();
+        const devaluedShareAddress = await devaluedShare.getAddress();
+
+        const MockDevaluingAdapter = await ethers.getContractFactory("MockDevaluingAdapter");
+        // Adapter reports only 1% of share value on withdraw preview
+        const valueFactorBps = 100;
+        const dStableAddress = await dStable.getAddress();
+        const devaluingAdapter = await MockDevaluingAdapter.deploy(
+          dStableAddress,
+          collateralVault.target,
+          devaluedShareAddress,
+          valueFactorBps
+        );
+        await devaluingAdapter.waitForDeployment();
+        const devaluingAdapterAddress = await devaluingAdapter.getAddress();
+
+        await router.connect(owner).addAdapter(devaluedShareAddress, devaluingAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: devaluedShareAddress,
+          adapter: devaluingAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active
+        });
+
+        const collateralBalance = await vault1.balanceOf(collateralVault.target);
+        const fromShareAmount = collateralBalance / 4n;
+        expect(fromShareAmount).to.be.gt(0n);
+
+        const previewDStable = await adapter1.previewWithdrawFromStrategy(fromShareAmount);
+        expect(previewDStable).to.be.gt(0n);
+
+        const minToShareAmount = previewDStable;
+        await router.connect(owner).setDustTolerance(1n);
+
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesBySharesViaExternalLiquidity(
+              vault1Address,
+              devaluedShareAddress,
+              fromShareAmount,
+              minToShareAmount
+            )
+        ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
+      });
+
+      it("allows execution once dust tolerance covers the previewed value loss", async function () {
+        const depositAmount = ethers.parseEther("500");
+        await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+        await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+        const DevaluedShare = await ethers.getContractFactory("TestMintableERC20");
+        const devaluedShare = await DevaluedShare.deploy("Devalue Share", "DVAL", 6);
+        await devaluedShare.waitForDeployment();
+        const devaluedShareAddress = await devaluedShare.getAddress();
+
+        const MockDevaluingAdapter = await ethers.getContractFactory("MockDevaluingAdapter");
+        // Adapter reports 90% of share value on withdraw preview
+        const valueFactorBps = 9000;
+        const dStableAddress = await dStable.getAddress();
+        const devaluingAdapter = await MockDevaluingAdapter.deploy(
+          dStableAddress,
+          collateralVault.target,
+          devaluedShareAddress,
+          valueFactorBps
+        );
+        await devaluingAdapter.waitForDeployment();
+        const devaluingAdapterAddress = await devaluingAdapter.getAddress();
+
+        await router.connect(owner).addAdapter(devaluedShareAddress, devaluingAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: devaluedShareAddress,
+          adapter: devaluingAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active
+        });
+
+        const collateralBalance = await vault1.balanceOf(collateralVault.target);
+        const fromShareAmount = collateralBalance / 4n;
+        expect(fromShareAmount).to.be.gt(0n);
+
+        const previewDStable = await adapter1.previewWithdrawFromStrategy(fromShareAmount);
+        expect(previewDStable).to.be.gt(0n);
+
+        const minToShareAmount = previewDStable;
+        const previewValue = (previewDStable * BigInt(valueFactorBps)) / BigInt(10_000);
+        const toleratedLoss = previewDStable - previewValue;
+        await router.connect(owner).setDustTolerance(toleratedLoss + 1n);
+
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesBySharesViaExternalLiquidity(
+              vault1Address,
+              devaluedShareAddress,
+              fromShareAmount,
+              minToShareAmount
+            )
+        ).to.not.be.reverted;
+
+        const resultingShareBalance = await devaluedShare.balanceOf(collateralVault.target);
+        expect(resultingShareBalance).to.be.gt(0n);
+      });
+    });
   });
 
   describe("Vault Eligibility Safeguards", function () {

@@ -10,6 +10,29 @@
 
 Updates capture the most recent review cycle. Items are grouped by current status so we can focus the next pass efficiently.
 
+## Open
+
+### 1. Solver withdraw rounding exploit
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:600`, `contracts/vaults/dstake/DStakeRouterV2.sol:639`, `contracts/vaults/dstake/DStakeTokenV2.sol:193`
+- **Impact**: `solverWithdrawAssets` converts each requested net amount to a gross per-vault withdrawal, but it only burns shares for the aggregated net. Splitting a withdrawal across many vault entries makes the router distribute more dStable than the burned shares cover because `_calculateFee` floors rounding dust to zero. An attacker can loop the flow to siphon value from remaining LPs.
+- **Reproduction**: 1) Configure a non-zero withdrawal fee. 2) Fund two strategies and grant solver permissions to the attacker. 3) Call `solverWithdrawAssets` with `assets = [1 wei, 1 wei]` (or any finely sliced set) so total gross > aggregated gross. 4) Observe that the router pays out more dStable than `previewWithdraw` predicts while burning the same number of shares, creating free value.
+- **Fix recommendation**: Recompute the net amount from the actual `grossWithdrawn` (`uint256 actualNet = _getNetAmount(grossWithdrawn)`) and require it to match the caller’s requested total before burning shares. Use `actualNet` for both `_token().burnFromRouter` and the user payout, ensuring fees/rounding are applied once at the system level. Optionally, collapse per-vault gross calculations to a single aggregate to eliminate multi-rounding altogether.
+
+### 2. External rebalance bypasses value slippage checks
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:868`, `contracts/vaults/dstake/DStakeRouterV2.sol:913`
+- **Impact**: `rebalanceStrategiesBySharesViaExternalLiquidity` only enforces a share-count floor, so a compromised `STRATEGY_REBALANCER_ROLE` (or a griefing operator) can withdraw healthy shares and redeposit them into an adapter that returns worthless tokens while still satisfying `minToShareAmount`. The collateral vault keeps the devalued position and the original strategy loses all dStable backing.
+- **Reproduction**: 1) Assign the role to a test account. 2) Call `rebalanceStrategiesBySharesViaExternalLiquidity` with `minToShareAmount = 0`, moving funds from a healthy vault into a deliberately broken adapter that mints dust shares. 3) Transaction succeeds and the system now holds near-zero-value shares in place of the original liquidity.
+- **Fix recommendation**: Mirror the value-based guard used in `_rebalanceStrategiesByShares` by checking `toAdapter.previewWithdrawFromStrategy(resultingToShareAmount)` against `locals.dStableValueIn`, allowing a `dustTolerance` buffer. Revert if the minted shares represent materially less value than withdrawn, even when the share count threshold passes.
+
+### 3. Adapter swap skips strategy-share validation
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1006`, `contracts/vaults/dstake/DStakeRouterV2.sol:1304`
+- **Impact**: `_syncAdapter` replaces an active adapter without verifying `adapter.strategyShare()` matches the vault’s registered share. A misconfigured upgrade silently pairs the vault with an incompatible adapter, causing deposits/withdrawals to revert or mis-handle tokens. Users are locked out until governance notices and corrects the mapping.
+- **Reproduction**: 1) Add a vault with a valid adapter. 2) Call `updateVaultConfig` or `setVaultConfigs` with a replacement adapter that targets a different share address. 3) Subsequent deposits start reverting at the `AdapterAssetMismatch` check; withdrawals revert once they pull real shares into the wrong adapter.
+- **Fix recommendation**: Inside `_syncAdapter`, when `currentAdapter != address(0)` ensure the new adapter’s `strategyShare()` equals the vault address. Revert on mismatch so operators must remove the old adapter (triggering the existing validation) or provide a correctly bound adapter in one call.
+
 ## Resolved
 
 ### 1. Redeem double-charges withdrawal fee
