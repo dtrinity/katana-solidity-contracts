@@ -1022,6 +1022,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     if (currentAdapter != address(0)) {
+      address adapterStrategyShare = IDStableConversionAdapterV2(adapterAddress).strategyShare();
+      if (adapterStrategyShare != strategyShare) {
+        revert AdapterAssetMismatch(adapterAddress, strategyShare, adapterStrategyShare);
+      }
+
       _strategyShareToAdapter[strategyShare] = adapterAddress;
       if (vaultExists[strategyShare]) {
         vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;

@@ -1318,6 +1318,19 @@ describe("DStakeRouterV2", function () {
       expect(activeVaults).to.not.include(vault1.target);
     });
 
+    it("Should revert when updating vault config with adapter targeting different share", async function () {
+      await expect(
+        router.updateVaultConfig(
+          vault1.target,
+          adapter2.target,
+          500000,
+          VaultStatus.Active
+        )
+      )
+        .to.be.revertedWithCustomError(router, "AdapterAssetMismatch")
+        .withArgs(adapter2.target, vault1.target, vault2.target);
+    });
+
     it("Should allow admin to remove an active vault with a single call", async function () {
       const initialVaultCount = await router.getVaultCount();
       expect(initialVaultCount).to.equal(3);
