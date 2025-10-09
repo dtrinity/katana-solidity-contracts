@@ -148,22 +148,7 @@ roles.scan: ## Scan contracts for role assignments and ownership (make roles.sca
 	fi
 	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/scan-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(manifest),--manifest "$(manifest)",) $(ROLES_SCAN_ARGS)
 
-roles.transfer: ## Transfer roles from deployer to governance (make roles.transfer network=network deployer=address governance=address [--yes])
-	@if [ "$(network)" = "" ]; then \
-		echo "Must provide 'network' argument."; \
-		exit 1; \
-	fi
-	@if [ "$(deployer)" = "" ]; then \
-		echo "Must provide 'deployer' argument."; \
-		exit 1; \
-	fi
-	@if [ "$(governance)" = "" ]; then \
-		echo "Must provide 'governance' argument."; \
-		exit 1; \
-	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(network)" --deployer "$(deployer)" --governance "$(governance)" $(if $(manifest),--manifest "$(manifest)",) $(if $(yes),--yes,) $(ROLES_TRANSFER_ARGS)
-
-roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network=network [manifest=path] [safe_address=address] [chain_id=number])
+roles.transfer: ## Transfer roles from deployer to governance (make roles.transfer network=network manifest=path [--yes])
 	@if [ "$(network)" = "" ]; then \
 		echo "Must provide 'network' argument."; \
 		exit 1; \
@@ -172,15 +157,18 @@ roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network
 		echo "Must provide 'manifest' argument."; \
 		exit 1; \
 	fi
-	@if [ "$(manifest)" = "" ] && [ "$(safe_address)" = "" ]; then \
-		echo "Must provide 'safe_address' argument."; \
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/transfer-roles.ts --network "$(network)" --manifest "$(manifest)" $(if $(yes),--yes,) $(ROLES_TRANSFER_ARGS)
+
+roles.revoke: ## Revoke deployer roles via Safe batch (make roles.revoke network=network manifest=path)
+	@if [ "$(network)" = "" ]; then \
+		echo "Must provide 'network' argument."; \
 		exit 1; \
 	fi
-	@if [ "$(manifest)" = "" ] && [ "$(chain_id)" = "" ]; then \
-		echo "Must provide 'chain_id' argument."; \
+	@if [ "$(manifest)" = "" ]; then \
+		echo "Must provide 'manifest' argument."; \
 		exit 1; \
 	fi
-	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts $(if $(network),--network "$(network)",) $(if $(manifest),--manifest "$(manifest)",) $(if $(safe_address),--safe-address "$(safe_address)",) $(if $(chain_id),--chain-id "$(chain_id)",) $(ROLES_REVOKE_ARGS)
+	@$(TS_NODE) $(SHARED_ROOT)/scripts/roles/revoke-roles.ts --network "$(network)" --manifest "$(manifest)" $(ROLES_REVOKE_ARGS)
 endif
 
 .PHONY: \
