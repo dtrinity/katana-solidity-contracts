@@ -1,5 +1,7 @@
 # Shared Hardhat Tools
 
+> Vendored from `shared-hardhat-tools` commit 77b29fb878b5b921975155890464315589f87bcb.
+
 Centralized development tools and security guardrails for dTrinity Hardhat projects. This package provides shared configurations, scripts, and workflows that can be integrated into network-specific repositories using git subtree.
 
 ## Features
