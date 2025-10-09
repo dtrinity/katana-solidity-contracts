@@ -812,6 +812,70 @@ describe("DStake Solver Mode Tests", function () {
       expect(netVsRequestDiff).to.be.lte(maxPositiveTolerance);
     });
 
+    it("Should clamp solverWithdrawAssets payout to the requested net when rounding inflates gross", async function () {
+      const withdrawalFeeBps = await dStakeToken.withdrawalFeeBps();
+      expect(withdrawalFeeBps).to.equal(1000); // 0.1%
+      const BASIS_POINTS = 1_000_000n;
+
+      const fragmentCount = 100;
+      const tinyNet = 1000n; // ensures solver rounding produces a positive surplus per fragment
+      const vaults = Array.from({ length: fragmentCount }, () => vault1Address);
+      const requestedAssets = Array.from({ length: fragmentCount }, () => tinyNet);
+      const totalRequestedAssets = tinyNet * BigInt(fragmentCount);
+
+      const grossRequests = requestedAssets.map((netAmount) => {
+        if (netAmount === 0n) return 0n;
+        const denominator = BASIS_POINTS - BigInt(withdrawalFeeBps);
+        const numerator = netAmount * BASIS_POINTS;
+        let grossAmount = (numerator + denominator - 1n) / denominator;
+        if (grossAmount > 0n) {
+          const feeAtLowerGross = ((grossAmount - 1n) * BigInt(withdrawalFeeBps)) / BASIS_POINTS;
+          const alternativeNet = (grossAmount - 1n) - feeAtLowerGross;
+          if (alternativeNet >= netAmount) {
+            grossAmount -= 1n;
+          }
+        }
+        return grossAmount;
+      });
+      const expectedGross = grossRequests.reduce((acc, amount) => acc + amount, 0n);
+
+      const totalAssetsBefore = await dStakeToken.totalAssets();
+      const totalSharesBefore = await dStakeToken.totalSupply();
+      const expectedShares = (expectedGross * totalSharesBefore + totalAssetsBefore - 1n) / totalAssetsBefore;
+      const maxShares = expectedShares;
+
+      const routerBalanceBefore = await dStable.balanceOf(routerAddress);
+      const aliceBalanceBefore = await dStable.balanceOf(alice.address);
+      const sharesBefore = await dStakeToken.balanceOf(alice.address);
+
+      await router
+        .connect(alice)
+        .solverWithdrawAssets(vaults, requestedAssets, maxShares, alice.address, alice.address);
+
+      const routerBalanceAfter = await dStable.balanceOf(routerAddress);
+      const aliceBalanceAfter = await dStable.balanceOf(alice.address);
+      const sharesAfter = await dStakeToken.balanceOf(alice.address);
+
+      const feesRetained = routerBalanceAfter - routerBalanceBefore;
+      const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+
+      const grossWithdrawn = feesRetained + aliceReceived;
+      const sharesBurned = sharesBefore - sharesAfter;
+
+      // Clamp ensures the solver only receives the total requested net
+      expect(aliceReceived).to.equal(totalRequestedAssets);
+
+      // Any rounding surplus is converted into additional fee
+      expect(feesRetained + aliceReceived).to.equal(grossWithdrawn);
+      expect(feesRetained).to.equal(grossWithdrawn - totalRequestedAssets);
+      expect(feesRetained).to.be.gt(0n);
+
+      // Shares burned should still align with previewed expectations (within small tolerance)
+      const roundingTolerance = 3n;
+      const shareDiff = sharesBurned >= expectedShares ? sharesBurned - expectedShares : expectedShares - sharesBurned;
+      expect(shareDiff).to.be.lte(roundingTolerance);
+    });
+
     it("Should apply withdrawal fees exactly once in standard withdraw", async function () {
       const BASIS_POINTS = 1_000_000n;
       const withdrawalFeeBps = BigInt(await dStakeToken.withdrawalFeeBps());
@@ -903,13 +967,17 @@ describe("DStake Solver Mode Tests", function () {
 
       // Calculate actual gross withdrawn and expected fee
       const grossWithdrawn = aliceReceived + feesRetained;
-      const expectedFee = (grossWithdrawn * withdrawalFeeBps) / 1000000n; // 0.1% of gross
+      const minimalFee = (grossWithdrawn * withdrawalFeeBps) / 1000000n; // floor as in contract
+      const previewNet = totalExpectedGross - (totalExpectedGross * withdrawalFeeBps) / 1000000n;
 
-      // Verify fee calculation is correct (within 1 wei tolerance for rounding)
-      expect(feesRetained).to.be.closeTo(expectedFee, 1);
+      // Fee must be at least the floor amount (any rounding surplus is accounted for separately)
+      expect(feesRetained).to.be.gte(minimalFee);
 
-      // Verify alice received net amount after fee
-      expect(aliceReceived).to.equal(grossWithdrawn - feesRetained);
+      // Net amount is clamped to the requested preview
+      expect(aliceReceived).to.equal(previewNet);
+
+      // Invariant: gross = net + fee
+      expect(aliceReceived + feesRetained).to.equal(grossWithdrawn);
 
       // Verify shares were burned appropriately
       const roundingTolerance = 2n;
@@ -993,14 +1061,15 @@ describe("DStake Solver Mode Tests", function () {
 
       const feesRetained = routerBalanceAfter - routerBalanceBefore;
       const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
+      const grossWithdrawn = feesRetained + aliceReceived;
 
-      // With zero fees, no fees should be retained
-      expect(feesRetained).to.equal(0);
+      // With zero configured fee, the solver should receive exactly the requested net amount
+      expect(aliceReceived).to.equal(totalAssets);
 
-      // Alice should receive approximately the full gross amount
-      expect(aliceReceived).to.be.closeTo(totalAssets, ethers.parseEther("50"));
+      // Any rounding surplus stays on the router as retained balance
+      expect(feesRetained).to.equal(grossWithdrawn - totalAssets);
 
-      // WithdrawalFee event should NOT be emitted when fee is zero
+      // WithdrawalFee event should NOT be emitted when fee is zero (no additional assertions needed)
     });
 
     it("Should handle maximum fee scenarios correctly in solver withdrawals", async function () {
@@ -1024,17 +1093,14 @@ describe("DStake Solver Mode Tests", function () {
       const feesRetained = routerBalanceAfter - routerBalanceBefore;
       const aliceReceived = aliceBalanceAfter - aliceBalanceBefore;
       const grossWithdrawn = aliceReceived + feesRetained;
+      const minimalFee = (grossWithdrawn * maxFee) / 1000000n;
 
-      // Calculate expected fee at maximum rate
-      const expectedFeeRate = maxFee; // 10000 bps = 1%
-      const calculatedFeeRate = (feesRetained * 1000000n) / grossWithdrawn;
+      // Net payout is clamped to the requested amount even with max fee
+      expect(aliceReceived).to.equal(assets[0]);
 
-      // Verify fee is applied at maximum rate
-      expect(calculatedFeeRate).to.be.closeTo(expectedFeeRate, 100);
-
-      // Verify fee amount is reasonable (1% of gross)
-      const expectedFeeAmount = (grossWithdrawn * expectedFeeRate) / 1000000n;
-      expect(feesRetained).to.be.closeTo(expectedFeeAmount, 1);
+      // Router keeps the full rounding surplus on top of the minimum fee
+      expect(feesRetained).to.equal(grossWithdrawn - assets[0]);
+      expect(feesRetained).to.be.gte(minimalFee);
 
       // Verify the withdrawal still functions correctly even with maximum fees
       expect(aliceReceived).to.be.gt(0);

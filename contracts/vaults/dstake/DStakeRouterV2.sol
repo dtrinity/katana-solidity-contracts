@@ -649,6 +649,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (netAssets < totalNetAssets) {
       revert WithdrawalShortfall(totalNetAssets, netAssets);
     }
+    if (netAssets > totalNetAssets) {
+      uint256 roundingSurplus = netAssets - totalNetAssets;
+      fee += roundingSurplus;
+      netAssets = totalNetAssets;
+    }
 
     _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
 
@@ -698,6 +703,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     if (netAssets < totalNetAssets) {
       revert WithdrawalShortfall(totalNetAssets, netAssets);
+    }
+    if (netAssets > totalNetAssets) {
+      uint256 roundingSurplus = netAssets - totalNetAssets;
+      fee += roundingSurplus;
+      netAssets = totalNetAssets;
     }
 
     _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
