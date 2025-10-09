@@ -1154,6 +1154,29 @@ describe("DStakeRouterV2", function () {
       expect(activeVaults).to.not.include(vault1.target);
     });
 
+    it("Should allow admin to remove an active vault with a single call", async function () {
+      const initialVaultCount = await router.getVaultCount();
+      expect(initialVaultCount).to.equal(3);
+
+      const supportedBefore = await collateralVault.getSupportedStrategyShares();
+      expect(supportedBefore).to.include(vault3.target);
+
+      const tx = await router.removeVault(vault3.target);
+
+      await expect(tx)
+        .to.emit(router, "VaultConfigUpdated")
+        .withArgs(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
+      await expect(tx).to.emit(router, "AdapterRemoved").withArgs(vault3.target, adapter3.target);
+      await expect(tx).to.emit(router, "VaultConfigRemoved").withArgs(vault3.target);
+
+      await expect(router.getVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+      expect(await router.strategyShareToAdapter(vault3.target)).to.equal(ethers.ZeroAddress);
+
+      const supportedAfter = await collateralVault.getSupportedStrategyShares();
+      expect(supportedAfter).to.not.include(vault3.target);
+      expect(await router.getVaultCount()).to.equal(initialVaultCount - 1n);
+    });
+
     it("Should allow admin to remove vault configuration", async function () {
       // First configure to make vault3 inactive and zero allocation, but keep it in the list
       await router.updateVaultConfig(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
