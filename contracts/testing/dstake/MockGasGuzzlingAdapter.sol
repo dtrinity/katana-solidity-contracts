@@ -25,13 +25,7 @@ contract MockGasGuzzlingAdapter is IDStableConversionAdapterV2 {
 
   error GasBomb();
 
-  constructor(
-    address _dStable,
-    address _collateralVault,
-    address _strategyShareToken,
-    uint256 _gasFloor,
-    uint256 _burnIterations
-  ) {
+  constructor(address _dStable, address _collateralVault, address _strategyShareToken, uint256 _gasFloor, uint256 _burnIterations) {
     dStable = _dStable;
     collateralVault = _collateralVault;
     strategyShareToken = _strategyShareToken;

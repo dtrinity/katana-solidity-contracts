@@ -295,13 +295,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     return assets;
   }
 
-  function _withdraw(
-    address caller,
-    address receiver,
-    address owner,
-    uint256 assets,
-    uint256 shares
-  ) internal virtual override {
+  function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares) internal virtual override {
     if (caller != owner) {
       _spendAllowance(owner, caller, shares);
     }
@@ -401,13 +395,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     emit Deposit(initiator, receiver, assets, shares);
   }
 
-  function burnFromRouter(
-    address initiator,
-    address receiver,
-    address owner,
-    uint256 netAssets,
-    uint256 shares
-  ) external {
+  function burnFromRouter(address initiator, address receiver, address owner, uint256 netAssets, uint256 shares) external {
     if (_msgSender() != address(router)) {
       revert RouterOnly();
     }

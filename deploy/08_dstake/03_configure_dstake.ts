@@ -98,9 +98,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       console.log(
         `    ⚙️ Aligning router + collateral vault for ${DStakeTokenV2DeploymentName} to (${routerDeployment.address}, ${collateralVaultDeployment.address})`
       );
-      await dstakeToken
-        .connect(deployerSigner)
-        .migrateCore(routerDeployment.address, collateralVaultDeployment.address);
+      await dstakeToken.connect(deployerSigner).migrateCore(routerDeployment.address, collateralVaultDeployment.address);
     }
     const currentFee = await dstakeToken.withdrawalFeeBps();
 

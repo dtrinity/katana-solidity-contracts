@@ -66,7 +66,9 @@ contract GenericERC4626ConversionAdapter is IDStableConversionAdapterV2 {
     }
   }
 
-  function previewDepositIntoStrategy(uint256 stableAmount) external view override returns (address shareToken, uint256 strategyShareAmount) {
+  function previewDepositIntoStrategy(
+    uint256 stableAmount
+  ) external view override returns (address shareToken, uint256 strategyShareAmount) {
     shareToken = address(vault);
     strategyShareAmount = vault.previewDeposit(stableAmount);
   }
@@ -75,7 +77,10 @@ contract GenericERC4626ConversionAdapter is IDStableConversionAdapterV2 {
     stableAmount = vault.previewRedeem(strategyShareAmount);
   }
 
-  function strategyShareValueInDStable(address _strategyShare, uint256 strategyShareAmount) external view override returns (uint256 stableValue) {
+  function strategyShareValueInDStable(
+    address _strategyShare,
+    uint256 strategyShareAmount
+  ) external view override returns (uint256 stableValue) {
     if (_strategyShare != address(vault)) {
       revert IncorrectStrategyShare(address(vault), _strategyShare);
     }
