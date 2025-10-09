@@ -169,7 +169,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   );
   event AdapterSet(address indexed strategyShare, address adapterAddress);
   event AdapterRemoved(address indexed strategyShare, address adapterAddress);
-  event AdapterReplaced(address indexed strategyShare, address oldAdapter, address newAdapter);
   event DefaultDepositStrategyShareSet(address indexed strategyShare);
   event DustToleranceSet(uint256 newDustTolerance);
   event SurplusSwept(uint256 amount, address vaultAsset);
@@ -194,6 +193,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   event VaultConfigRemoved(address indexed vault);
   event StrategiesRebalanced(address indexed fromVault, address indexed toVault, uint256 amount, address indexed initiator);
   event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
+
   constructor(address _dStakeToken, address _collateralVault) {
     if (_dStakeToken == address(0) || _collateralVault == address(0)) {
       revert ZeroAddress();
@@ -972,7 +972,6 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     if (currentAdapter != address(0)) {
-      emit AdapterReplaced(strategyShare, currentAdapter, adapterAddress);
       _strategyShareToAdapter[strategyShare] = adapterAddress;
       if (vaultExists[strategyShare]) {
         vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;
