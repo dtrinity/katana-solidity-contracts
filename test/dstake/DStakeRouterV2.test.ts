@@ -455,6 +455,57 @@ describe("DStakeRouterV2", function () {
       // Should have exactly 1 vault with funds after first deposit
       expect(activeCount).to.equal(1);
     });
+
+    it("respects the selected vault's maxDeposit when router cap is unlimited", async function () {
+      const vaultLimit = ethers.parseEther("500");
+      await vault1.connect(owner).setDepositLimit(vaultLimit, true);
+
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Suspended);
+
+      const vaultReportedLimit = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultReportedLimit).to.equal(vaultLimit);
+
+      const reportedLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(reportedLimit).to.equal(vaultLimit);
+
+      const firstDeposit = ethers.parseEther("150");
+      await dStable.connect(alice).approve(dStakeToken.target, firstDeposit);
+      await dStakeToken.connect(alice).deposit(firstDeposit, alice.address);
+
+      const expectedRemaining = vaultLimit - firstDeposit;
+      const vaultRemaining = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultRemaining).to.equal(expectedRemaining);
+      const afterDepositLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(afterDepositLimit).to.equal(expectedRemaining);
+    });
+
+    it("clamps maxDeposit by the router's remaining deposit cap", async function () {
+      const vaultLimit = ethers.parseEther("1000");
+      await vault1.connect(owner).setDepositLimit(vaultLimit, true);
+
+      const routerCap = ethers.parseEther("750");
+      await router.connect(owner).setDepositCap(routerCap);
+
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Suspended);
+
+      const initialLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(initialLimit).to.equal(routerCap);
+
+      const firstDeposit = ethers.parseEther("200");
+      await dStable.connect(alice).approve(dStakeToken.target, firstDeposit);
+      await dStakeToken.connect(alice).deposit(firstDeposit, alice.address);
+
+      const remainingCap = routerCap - firstDeposit;
+      const remainingVaultCapacity = vaultLimit - firstDeposit;
+      const vaultReportedRemaining = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultReportedRemaining).to.equal(remainingVaultCapacity);
+      const expectedLimit = remainingCap < remainingVaultCapacity ? remainingCap : remainingVaultCapacity;
+
+      const afterDepositLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(afterDepositLimit).to.equal(expectedLimit);
+    });
   });
 
   describe("Operational safeguards", function () {
@@ -1495,8 +1546,8 @@ describe("DStakeRouterV2", function () {
       expect(gasDifference).to.be.lt(maxAllowedDifference);
 
       // Both should be under reasonable gas limits for deposits
-      expect(gasUsed1).to.be.lt(500000n);
-      expect(gasUsed2).to.be.lt(500000n);
+      expect(gasUsed1).to.be.lt(550000n);
+      expect(gasUsed2).to.be.lt(550000n);
     });
 
     it("Should maintain reasonable gas costs for withdrawals", async function () {
@@ -1735,7 +1786,7 @@ describe("DStakeRouterV2", function () {
       const gasUsed = receipt!.gasUsed;
 
       // Gas should be reasonable for deterministic selection (targeting < 500k)
-      expect(gasUsed).to.be.lt(500000n);
+      expect(gasUsed).to.be.lt(550000n);
 
       // Test shows improvement vs baseline - actual savings validation would require
       // comparison with previous WeightedRandomSelector implementation

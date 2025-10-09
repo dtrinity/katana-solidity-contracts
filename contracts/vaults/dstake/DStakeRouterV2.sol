@@ -249,11 +249,24 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     if (!_hasActiveVaultFor(OperationType.DEPOSIT)) {
       return 0;
     }
-    if (depositCap == 0) {
-      return type(uint256).max;
+
+    address targetVault = _selectAutoDepositVault();
+    uint256 vaultLimit = _vaultDepositLimit(targetVault);
+    if (vaultLimit == 0) {
+      return 0;
     }
+
+    if (depositCap == 0) {
+      return vaultLimit;
+    }
+
     uint256 managed = totalManagedAssets();
-    return depositCap > managed ? depositCap - managed : 0;
+    if (depositCap <= managed) {
+      return 0;
+    }
+
+    uint256 capRemaining = depositCap - managed;
+    return capRemaining < vaultLimit ? capRemaining : vaultLimit;
   }
 
   function maxMint(address) public view override returns (uint256) {
@@ -372,7 +385,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     emit DefaultDepositStrategyShareSet(address(0));
   }
 
-  function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
+  function _selectAutoDepositVault() internal view returns (address targetVault) {
     (
       address[] memory activeVaults,
       uint256[] memory currentAllocations,
@@ -388,7 +401,26 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
       1
     );
 
-    targetVault = sortedVaults[0];
+    return sortedVaults[0];
+  }
+
+  function _vaultDepositLimit(address vault) internal view returns (uint256) {
+    if (vault == address(0)) {
+      return 0;
+    }
+    if (_strategyShareToAdapter[vault] == address(0)) {
+      return 0;
+    }
+
+    try IERC4626(vault).maxDeposit(address(collateralVault)) returns (uint256 limit) {
+      return limit;
+    } catch {
+      return type(uint256).max;
+    }
+  }
+
+  function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
+    targetVault = _selectAutoDepositVault();
     _depositToVaultAtomically(targetVault, assets);
 
     address[] memory vaultArray = new address[](1);
