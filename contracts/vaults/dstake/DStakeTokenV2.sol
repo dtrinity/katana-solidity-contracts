@@ -39,6 +39,13 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   event RouterSet(address indexed newRouter);
   event CollateralVaultSet(address indexed newCollateralVault);
 
+  modifier onlyRouter() {
+    if (_msgSender() != address(router)) {
+      revert RouterOnly();
+    }
+    _;
+  }
+
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
     _disableInitializers();
@@ -351,10 +358,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   // --- Router hooks ---
-  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external {
-    if (_msgSender() != address(router)) {
-      revert RouterOnly();
-    }
+  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external onlyRouter {
     if (shares == 0) {
       revert ZeroShares();
     }
@@ -362,10 +366,13 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     emit Deposit(initiator, receiver, assets, shares);
   }
 
-  function burnFromRouter(address initiator, address receiver, address owner, uint256 netAssets, uint256 shares) external {
-    if (_msgSender() != address(router)) {
-      revert RouterOnly();
-    }
+  function burnFromRouter(
+    address initiator,
+    address receiver,
+    address owner,
+    uint256 netAssets,
+    uint256 shares
+  ) external onlyRouter {
     if (shares == 0) {
       revert ZeroShares();
     }
