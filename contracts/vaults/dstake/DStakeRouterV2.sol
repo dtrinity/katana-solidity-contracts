@@ -15,6 +15,7 @@ import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.
 import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
+import { WithdrawalFeeMath } from "../../common/WithdrawalFeeMath.sol";
 
 interface IDStakeTokenV2Minimal {
   function asset() external view returns (address);
@@ -318,10 +319,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _calculateFee(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0) {
-      return 0;
-    }
-    return Math.mulDiv(grossAmount, _withdrawalFeeBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+    return WithdrawalFeeMath.calculateWithdrawalFee(grossAmount, _withdrawalFeeBps);
   }
 
   function _enforceDepositCap(uint256 additionalAssets) internal view {
@@ -335,40 +333,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
   }
 
   function _getNetAmount(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0 || _withdrawalFeeBps == 0) {
-      return grossAmount;
-    }
-    uint256 fee = _calculateFee(grossAmount);
-    if (fee >= grossAmount) {
-      return 0;
-    }
-    return grossAmount - fee;
+    return WithdrawalFeeMath.netAfterFee(grossAmount, _withdrawalFeeBps);
   }
 
   function _getGrossAmountForNet(uint256 netAmount) internal view returns (uint256) {
-    if (netAmount == 0) {
-      return 0;
-    }
-
-    if (_withdrawalFeeBps == 0) {
-      return netAmount;
-    }
-
-    uint256 grossAmount = Math.mulDiv(
-      netAmount,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - _withdrawalFeeBps,
-      Math.Rounding.Ceil
-    );
-
-    if (grossAmount > 0) {
-      uint256 alternativeNet = _getNetAmount(grossAmount - 1);
-      if (alternativeNet >= netAmount) {
-        grossAmount -= 1;
-      }
-    }
-
-    return grossAmount;
+    return WithdrawalFeeMath.grossFromNet(netAmount, _withdrawalFeeBps);
   }
 
   function _requireConfigOrToken(address account) internal view {

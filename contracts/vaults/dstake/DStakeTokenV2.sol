@@ -9,6 +9,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { IDStakeRouterV2 } from "./interfaces/IDStakeRouterV2.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
+import { WithdrawalFeeMath } from "../../common/WithdrawalFeeMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -87,56 +88,15 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   function _calculateWithdrawalFee(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0) {
-      return 0;
-    }
-
-    uint256 feeBps = withdrawalFeeBps();
-    if (feeBps == 0) {
-      return 0;
-    }
-
-    return Math.mulDiv(grossAmount, feeBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+    return WithdrawalFeeMath.calculateWithdrawalFee(grossAmount, withdrawalFeeBps());
   }
 
   function _getNetAmountAfterFee(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0) {
-      return 0;
-    }
-
-    uint256 fee = _calculateWithdrawalFee(grossAmount);
-    if (fee >= grossAmount) {
-      return 0;
-    }
-
-    return grossAmount - fee;
+    return WithdrawalFeeMath.netAfterFee(grossAmount, withdrawalFeeBps());
   }
 
   function _getGrossAmountRequiredForNet(uint256 netAmount) internal view returns (uint256) {
-    if (netAmount == 0) {
-      return 0;
-    }
-
-    uint256 feeBps = withdrawalFeeBps();
-    if (feeBps == 0) {
-      return netAmount;
-    }
-
-    uint256 grossAmount = Math.mulDiv(
-      netAmount,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - feeBps,
-      Math.Rounding.Ceil
-    );
-
-    if (grossAmount > 0) {
-      uint256 alternativeNet = _getNetAmountAfterFee(grossAmount - 1);
-      if (alternativeNet >= netAmount) {
-        grossAmount -= 1;
-      }
-    }
-
-    return grossAmount;
+    return WithdrawalFeeMath.grossFromNet(netAmount, withdrawalFeeBps());
   }
 
   // --- Accounting ---
