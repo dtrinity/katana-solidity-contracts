@@ -233,9 +233,6 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     shares = previewWithdraw(assets);
-    if (shares == 0 && assets > 0) {
-      revert ZeroShares();
-    }
 
     uint256 maxRedeemShares = maxRedeem(owner);
     if (shares > maxRedeemShares) {
@@ -264,10 +261,16 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       _spendAllowance(owner, caller, shares);
     }
 
-    if (assets == 0 || shares == 0) {
-      if (shares > 0) {
-        _burn(owner, shares);
+    if (shares == 0) {
+      if (assets > 0) {
+        revert ZeroShares();
       }
+      emit Withdraw(caller, receiver, owner, 0, 0);
+      return;
+    }
+
+    if (assets == 0) {
+      _burn(owner, shares);
       emit Withdraw(caller, receiver, owner, 0, shares);
       return;
     }
