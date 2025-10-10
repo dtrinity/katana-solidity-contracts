@@ -70,11 +70,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       const idleVault = await ethers.getContractAt("DStakeIdleVault", deployment.address, await ethers.getSigner(deployer));
 
       try {
-        await idleVault.setEmissionSchedule(
-          idleConfig.emissionStart,
-          idleConfig.emissionEnd,
-          BigInt(idleConfig.emissionPerSecond)
-        );
+        await idleVault.setEmissionSchedule(idleConfig.emissionStart, idleConfig.emissionEnd, BigInt(idleConfig.emissionPerSecond));
         console.log(`    ⚙️ Set initial emission schedule for ${instanceKey}`);
       } catch (error) {
         console.warn(`    ⚠️ Unable to set emission schedule for ${instanceKey}:`, error);

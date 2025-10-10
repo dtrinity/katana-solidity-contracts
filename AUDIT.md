@@ -10,6 +10,10 @@
 
 Updates capture the most recent review cycle. Items are grouped by current status so we can focus the next pass efficiently.
 
+## Open
+
+- No active findings.
+
 ## Resolved
 
 ### 1. Redeem double-charges withdrawal fee
@@ -66,9 +70,20 @@ Updates capture the most recent review cycle. Items are grouped by current statu
 - **Reproduction**: 1) Set a vault as `defaultDepositStrategyShare`. 2) Pause it with `emergencyPauseVault`. 3) Transfer dStable to the router and call `sweepSurplus`; the suspended vault received the funds.
 - **Fix**: `sweepSurplus` now loads the default vault’s config and enforces deposit eligibility before forwarding funds; regression test `test/dstake/DStakeRouterV2.test.ts` “refuses to sweep surplus into a suspended default vault”.
 
-## Open
+### 8. Solver withdraw rounding exploit *(Resolved)*
+- **Severity**: Medium
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:646`, `contracts/vaults/dstake/DStakeRouterV2.sol:701`, `test/dstake/DStakeSolverMode.test.ts:821`
+- **Fix**: Clamps solver withdraw payouts to the caller’s requested net assets, rolling any rounding surplus into the fee bucket so share burns, user transfers, and router balances stay consistent. Regression coverage: `Solver Mode: Fee Application Tests` (“Should clamp solverWithdrawAssets payout…”).
 
-_None at this time._
+### 9. External rebalance bypasses value slippage checks *(Resolved)*
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:878-944`, `test/dstake/DStakeRouterV2.test.ts:750-911`
+- **Fix**: `rebalanceStrategiesBySharesViaExternalLiquidity` now mirrors the internal rebalance guard by valuing the minted shares with `previewWithdrawFromStrategy`, translating share shortfalls into dStable terms, and requiring the outcome to clear `dustTolerance` before emitting `StrategySharesExchanged`. Regression coverage exercises both failure and dust-tolerant paths.
+
+### 10. Adapter swap skips strategy-share validation *(Resolved)*
+- **Severity**: High
+- **Component**: `contracts/vaults/dstake/DStakeRouterV2.sol:1011-1036`, `test/dstake/DStakeRouterV2.test.ts:1321-1333`
+- **Fix**: `_syncAdapter` now checks `adapter.strategyShare()` whenever replacing a live adapter and reverts with `AdapterAssetMismatch` on mismatched vaults, preventing silent misbindings during `setVaultConfigs`/`updateVaultConfig`. Existing router tests assert the mismatch revert.
 
 ## Acknowledged (Won't Fix)
 

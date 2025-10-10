@@ -9,6 +9,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.sol";
 import { IDStakeRouterV2 } from "./interfaces/IDStakeRouterV2.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
+import { WithdrawalFeeMath } from "../../common/WithdrawalFeeMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -38,6 +39,13 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   // --- Events ---
   event RouterSet(address indexed newRouter);
   event CollateralVaultSet(address indexed newCollateralVault);
+
+  modifier onlyRouter() {
+    if (_msgSender() != address(router)) {
+      revert RouterOnly();
+    }
+    _;
+  }
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -80,56 +88,15 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   function _calculateWithdrawalFee(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0) {
-      return 0;
-    }
-
-    uint256 feeBps = withdrawalFeeBps();
-    if (feeBps == 0) {
-      return 0;
-    }
-
-    return Math.mulDiv(grossAmount, feeBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+    return WithdrawalFeeMath.calculateWithdrawalFee(grossAmount, withdrawalFeeBps());
   }
 
   function _getNetAmountAfterFee(uint256 grossAmount) internal view returns (uint256) {
-    if (grossAmount == 0) {
-      return 0;
-    }
-
-    uint256 fee = _calculateWithdrawalFee(grossAmount);
-    if (fee >= grossAmount) {
-      return 0;
-    }
-
-    return grossAmount - fee;
+    return WithdrawalFeeMath.netAfterFee(grossAmount, withdrawalFeeBps());
   }
 
   function _getGrossAmountRequiredForNet(uint256 netAmount) internal view returns (uint256) {
-    if (netAmount == 0) {
-      return 0;
-    }
-
-    uint256 feeBps = withdrawalFeeBps();
-    if (feeBps == 0) {
-      return netAmount;
-    }
-
-    uint256 grossAmount = Math.mulDiv(
-      netAmount,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
-      BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - feeBps,
-      Math.Rounding.Ceil
-    );
-
-    if (grossAmount > 0) {
-      uint256 alternativeNet = _getNetAmountAfterFee(grossAmount - 1);
-      if (alternativeNet >= netAmount) {
-        grossAmount -= 1;
-      }
-    }
-
-    return grossAmount;
+    return WithdrawalFeeMath.grossFromNet(netAmount, withdrawalFeeBps());
   }
 
   // --- Accounting ---
@@ -152,42 +119,6 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
   function grossTotalAssets() public view returns (uint256) {
     return _grossTotalAssets();
-  }
-
-  function _convertToSharesUsingNet(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
-    if (assets == 0) {
-      return 0;
-    }
-
-    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 netAssets = totalAssets();
-    return Math.mulDiv(assets, supply, netAssets + 1, rounding);
-  }
-
-  function _convertToAssetsUsingNet(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
-    if (shares == 0) {
-      return 0;
-    }
-
-    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
-    uint256 netAssets = totalAssets();
-    return Math.mulDiv(shares, netAssets + 1, supply, rounding);
-  }
-
-  function convertToShares(uint256 assets) public view virtual override returns (uint256) {
-    return previewDeposit(assets);
-  }
-
-  function convertToAssets(uint256 shares) public view virtual override returns (uint256) {
-    return _convertToAssetsUsingNet(shares, Math.Rounding.Floor);
-  }
-
-  function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-    return _convertToSharesUsingNet(assets, Math.Rounding.Floor);
-  }
-
-  function previewMint(uint256 shares) public view virtual override returns (uint256) {
-    return _convertToAssetsUsingNet(shares, Math.Rounding.Ceil);
   }
 
   function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
@@ -269,9 +200,6 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     shares = previewWithdraw(assets);
-    if (shares == 0 && assets > 0) {
-      revert ZeroShares();
-    }
 
     uint256 maxRedeemShares = maxRedeem(owner);
     if (shares > maxRedeemShares) {
@@ -295,21 +223,21 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     return assets;
   }
 
-  function _withdraw(
-    address caller,
-    address receiver,
-    address owner,
-    uint256 assets,
-    uint256 shares
-  ) internal virtual override {
+  function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares) internal virtual override {
     if (caller != owner) {
       _spendAllowance(owner, caller, shares);
     }
 
-    if (assets == 0 || shares == 0) {
-      if (shares > 0) {
-        _burn(owner, shares);
+    if (shares == 0) {
+      if (assets > 0) {
+        revert ZeroShares();
       }
+      emit Withdraw(caller, receiver, owner, 0, 0);
+      return;
+    }
+
+    if (assets == 0) {
+      _burn(owner, shares);
       emit Withdraw(caller, receiver, owner, 0, shares);
       return;
     }
@@ -390,10 +318,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   // --- Router hooks ---
-  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external {
-    if (_msgSender() != address(router)) {
-      revert RouterOnly();
-    }
+  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external onlyRouter {
     if (shares == 0) {
       revert ZeroShares();
     }
@@ -407,10 +332,7 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     address owner,
     uint256 netAssets,
     uint256 shares
-  ) external {
-    if (_msgSender() != address(router)) {
-      revert RouterOnly();
-    }
+  ) external onlyRouter {
     if (shares == 0) {
       revert ZeroShares();
     }

@@ -10,6 +10,7 @@ import { resolveRoleSigner } from "./utils/roleHelpers";
 
 // Helper function to parse units
 const parseUnits = (value: string | number, decimals: number | bigint) => ethers.parseUnits(value.toString(), decimals);
+const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
 
 const COLLATERAL_TEST_CONFIGS = DSTAKE_CONFIGS.filter(
   (cfg: DStakeFixtureConfig) => cfg.dStableSymbol === "dUSD",
@@ -38,6 +39,8 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
     let strategyShareDecimals: number;
     let adapter: IDStableConversionAdapterV2 | null; // Adapter can be null
     let adapterAddress: string;
+    let initialTargetBps: bigint | null;
+    let initialVaultStatus: number | null;
 
     let DStakeTokenV2Address: string;
     let dStableTokenAddress: string;
@@ -66,6 +69,8 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       strategyShareAddress = out.strategyShareAddress;
       adapter = out.adapter as unknown as IDStableConversionAdapterV2 | null;
       adapterAddress = out.adapterAddress;
+      initialTargetBps = null;
+      initialVaultStatus = null;
 
       DStakeTokenV2Address = await DStakeTokenV2.getAddress();
       dStableTokenAddress = await dStableToken.getAddress();
@@ -106,7 +111,17 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       if (!(await router.hasRole(adapterManagerRole, user1.address))) {
         await router.connect(routerAdminSigner).grantRole(adapterManagerRole, user1.address);
       }
+      const vaultManagerRole = await router.VAULT_MANAGER_ROLE();
+      if (!(await router.hasRole(vaultManagerRole, user1.address))) {
+        await router.connect(routerAdminSigner).grantRole(vaultManagerRole, user1.address);
+      }
       routerSigner = user1;
+
+      if (await router.vaultExists(strategyShareAddress)) {
+        const configStruct = await router.getVaultConfig(strategyShareAddress);
+        initialTargetBps = BigInt(configStruct.targetBps);
+        initialVaultStatus = Number(configStruct.status);
+      }
 
       const collateralDeployment = await deployments.get(config.collateralVaultContractId);
       const adminSignerForVault = await resolveRoleSigner(
@@ -170,7 +185,51 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         adapter = (await ethers.getContractAt("IDStableConversionAdapterV2", adapterAddress)) as IDStableConversionAdapterV2;
       }
 
+      if (await router.vaultExists(strategyShareAddress)) {
+        const configStruct = await router.getVaultConfig(strategyShareAddress);
+        const desiredTarget = Number(initialTargetBps ?? BigInt(configStruct.targetBps));
+        const desiredStatus = initialVaultStatus ?? Number(configStruct.status);
+        const adapterMismatch = configStruct.adapter.toLowerCase() !== adapterAddress.toLowerCase();
+        const targetMismatch = BigInt(configStruct.targetBps) !== BigInt(desiredTarget);
+        const statusMismatch = configStruct.status !== desiredStatus;
+
+        if (adapterMismatch || targetMismatch || statusMismatch) {
+          await router
+            .connect(routerSigner)
+            .updateVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
+        }
+        if (initialTargetBps === null) {
+          initialTargetBps = BigInt(desiredTarget);
+        }
+        if (initialVaultStatus === null) {
+          initialVaultStatus = desiredStatus;
+        }
+      } else {
+        const desiredTarget = Number(initialTargetBps ?? ONE_HUNDRED_PERCENT_BPS);
+        const desiredStatus = initialVaultStatus ?? 0;
+        await router
+          .connect(routerSigner)
+          .addVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
+        if (initialTargetBps === null) {
+          initialTargetBps = BigInt(desiredTarget);
+        }
+        if (initialVaultStatus === null) {
+          initialVaultStatus = desiredStatus;
+        }
+      }
+
       return adapter;
+    };
+
+    const suspendVaultIfConfigured = async (strategyShare: string) => {
+      try {
+        await router.connect(routerSigner).suspendVaultForRemoval(strategyShare);
+      } catch (error: unknown) {
+        const message = (error as Error).message ?? "";
+        if (!message.includes("VaultNotFound")) {
+          throw error;
+        }
+      }
     };
 
     const mintAndDepositDStable = async (amount: bigint, depositor: SignerWithAddress = deployer) => {
@@ -318,6 +377,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
               .connect(routerSigner)
               .transferStrategyShares(strategyShareAddress, balance, deployer.address);
           }
+          await suspendVaultIfConfigured(strategyShareAddress);
           await router.connect(routerSigner).removeAdapter(strategyShareAddress);
         }
       });
@@ -343,6 +403,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const actualValue = await collateralVault.totalValueInDStable();
         expect(actualValue).to.equal(expectedValue);
 
+        await suspendVaultIfConfigured(strategyShareAddress);
         await router.connect(routerSigner).removeAdapter(strategyShareAddress);
       });
 
@@ -386,6 +447,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           .transferStrategyShares(strategyShareAddress, seeded, deployer.address);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
 
+        await suspendVaultIfConfigured(strategyShareAddress);
         await router.connect(routerSigner).removeAdapter(strategyShareAddress);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
       });
@@ -590,7 +652,8 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
               .transferStrategyShares(strategyShareAddress, existingBalance, deployer.address);
           }
 
-          await router.connect(routerSigner).removeAdapter(strategyShareAddress);
+        await suspendVaultIfConfigured(strategyShareAddress);
+        await router.connect(routerSigner).removeAdapter(strategyShareAddress);
           expect(await router.strategyShareToAdapter(strategyShareAddress)).to.equal(ZeroAddress);
 
           const seedAmount = parseUnits(25, dStableDecimals);

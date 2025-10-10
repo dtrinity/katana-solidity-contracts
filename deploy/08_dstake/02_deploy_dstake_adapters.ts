@@ -93,6 +93,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       if (!strategyShare || strategyShare === ethers.ZeroAddress) {
         if (adapterContract === "GenericERC4626ConversionAdapter") {
           const idleVaultDeployment = await getOrNull(`DStakeIdleVault_${instanceKey}`);
+
           if (idleVaultDeployment) {
             strategyShare = idleVaultDeployment.address;
           }

@@ -561,6 +561,14 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
     it("should handle adapter errors gracefully", async function () {
       // Remove the adapter to simulate an error
+      try {
+        await router.suspendVaultForRemoval(metaMorphoVault.target);
+      } catch (error: unknown) {
+        const message = (error as Error).message ?? "";
+        if (!message.includes("VaultNotFound")) {
+          throw error;
+        }
+      }
       await router.removeAdapter(metaMorphoVault.target);
 
       const compoundAmount = ethers.parseEther("50");
@@ -568,7 +576,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
       await expect(
         rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address)
-      ).to.be.revertedWithCustomError(rewardManager, "AdapterNotSetForDefaultAsset");
+      ).to.be.revertedWithCustomError(rewardManager, "DefaultDepositAssetNotSet");
     });
 
     it("should clear approvals after processing", async function () {

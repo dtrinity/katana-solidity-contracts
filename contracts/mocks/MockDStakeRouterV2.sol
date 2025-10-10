@@ -143,21 +143,11 @@ contract MockDStakeRouterV2 is IDStakeRouterV2, SupportsWithdrawalFee {
     return (netAssets, fee);
   }
 
-  function solverDepositAssets(
-    address[] calldata,
-    uint256[] calldata,
-    uint256,
-    address
-  ) external pure override returns (uint256) {
+  function solverDepositAssets(address[] calldata, uint256[] calldata, uint256, address) external pure override returns (uint256) {
     revert MockRouterNotImplemented();
   }
 
-  function solverDepositShares(
-    address[] calldata,
-    uint256[] calldata,
-    uint256,
-    address
-  ) external pure override returns (uint256) {
+  function solverDepositShares(address[] calldata, uint256[] calldata, uint256, address) external pure override returns (uint256) {
     revert MockRouterNotImplemented();
   }
 
