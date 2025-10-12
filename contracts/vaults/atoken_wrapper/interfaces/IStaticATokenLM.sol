@@ -5,6 +5,21 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IPool } from "../../../interfaces/dlend/core/interfaces/IPool.sol";
 import { IRewardsController } from "../../../interfaces/dlend/periphery/rewards/IRewardsController.sol";
 
+/**
+ * @dev SECURITY NOTE
+ *
+ * Static aToken wrappers can become unsafe if they let callers burn underlying aTokens without
+ * first burning the wrapper shares, because any later spike in the reserve index would overstate
+ * collateral value relative to the wrapper supply. To stay aligned with dSTAKE invariants:
+ *  - All withdrawals must burn (or transfer) wrapper shares before invoking `POOL.withdraw`.
+ *  - Adapters must mint newly acquired shares straight to the collateral vault and redeem them back
+ *    to dStable on exit—no wrapper balance should linger elsewhere.
+ *  - Valuation paths should rely on `rate()`/preview helpers so share supply and normalized income
+ *    stay in sync.
+ *
+ * Tests that assert these rules (e.g. `WrappedDLendInvariant.test.ts`) must accompany any new
+ * adapter to guard against regressions.
+ */
 interface IStaticATokenLM {
   struct SignatureParams {
     uint8 v;

@@ -7,6 +7,9 @@ pragma solidity ^0.8.20;
  *         and a specific yield-bearing or convertible ERC20 token (`strategy share`), as well as
  *         valuing that `strategy share` in terms of the stable asset.
  * @dev Implementations interact with specific protocols (lending pools, DEX LPs, wrappers, etc.).
+ * @dev SECURITY: adapters must mint strategy shares straight to the collateral vault, burn (or transfer out) those
+ *      shares before calling upstream withdraws, and rely on preview/rate helpers so wrapper supply cannot diverge from
+ *      the underlying balance. See `WrappedDLendInvariant.test.ts` for the regression harness new adapters should copy.
  */
 interface IDStableConversionAdapterV2 {
   /**

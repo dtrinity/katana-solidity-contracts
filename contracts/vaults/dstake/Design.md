@@ -27,6 +27,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - Adapters (`contracts/vaults/dstake/adapters/`)
   - Implement `IDStableConversionAdapterV2`. Each adapter knows how to convert dSTABLE ↔ specific strategy shares and report valuations in dSTABLE terms.
   - Must mint/burn strategy shares directly against the collateral vault. Examples: MetaMorpho, wrapped lending tokens.
+  - Security invariant: adapters must only mint shares to the collateral vault and burn/transfer them before upstream withdrawals. Use preview helpers so wrapper supply stays aligned; `WrappedDLendInvariant.test.ts` shows the regression harness future adapters should mirror.
 
 - Rewards (optional) (`contracts/vaults/dstake/rewards/`)
   - Strategy-specific helpers that periodically claim and compound incentive tokens back into dSTABLE or strategy shares.
