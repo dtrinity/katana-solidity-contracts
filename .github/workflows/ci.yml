@@ -6,32 +6,41 @@ on:
       - main
   pull_request:
 
+env:
+  NODE_VERSION: "20"
+
 jobs:
   lint:
-    name: Lint & Format
+    name: Lint & Guardrails
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: yarn
+      - uses: actions/checkout@v4
 
       - name: Enable Corepack
         run: corepack enable
 
-      - name: Install dependencies
-        run: yarn install --immutable
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Run Prettier & ESLint
-        run: yarn ts-node .shared/scripts/linting/run-all.ts
+      - name: Install dependencies
+        run: |
+          set -eo pipefail
+          corepack enable
+          yarn install --immutable
+
+      - name: Run shared linting suite
+        run: |
+          set -eo pipefail
+          node_modules/.bin/ts-node .shared/scripts/linting/run-all.ts
 
       - name: Run Solhint
-        run: yarn ts-node .shared/scripts/analysis/solhint.ts
+        run: |
+          set -eo pipefail
+          node_modules/.bin/ts-node .shared/scripts/analysis/solhint.ts
 
   tests:
     name: Hardhat Tests
@@ -39,20 +48,24 @@ jobs:
     needs: lint
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: yarn
+      - uses: actions/checkout@v4
 
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
       - name: Install dependencies
-        run: yarn install --immutable
+        run: |
+          set -eo pipefail
+          corepack enable
+          yarn install --immutable
 
       - name: Run Hardhat tests
-        run: yarn hardhat test
+        run: |
+          set -eo pipefail
+          node_modules/.bin/hardhat test
