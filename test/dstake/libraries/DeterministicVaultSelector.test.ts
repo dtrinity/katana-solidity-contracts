@@ -176,7 +176,7 @@ describe("DeterministicVaultSelector Library Tests", function () {
 
       await expect(harness.selectTopUnderallocated(vaults, currentBps, targetBps, 1)).to.be.revertedWithCustomError(
         harness,
-        "ArrayLengthMismatch"
+        "ArrayLengthMismatch",
       );
     });
 
@@ -187,7 +187,7 @@ describe("DeterministicVaultSelector Library Tests", function () {
 
       await expect(harness.selectTopUnderallocated(vaults, currentBps, targetBps, 3)).to.be.revertedWithCustomError(
         harness,
-        "InsufficientItems"
+        "InsufficientItems",
       );
     });
 
@@ -198,7 +198,7 @@ describe("DeterministicVaultSelector Library Tests", function () {
 
       await expect(harness.selectTopUnderallocated(vaults, currentBps, targetBps, 0)).to.be.revertedWithCustomError(
         harness,
-        "InvalidSelectionCount"
+        "InvalidSelectionCount",
       );
     });
 
@@ -209,7 +209,7 @@ describe("DeterministicVaultSelector Library Tests", function () {
 
       await expect(harness.selectTopUnderallocated(vaults, currentBps, targetBps, 1)).to.be.revertedWithCustomError(
         harness,
-        "NoItemsAvailable"
+        "NoItemsAvailable",
       );
     });
   });
@@ -356,7 +356,6 @@ describe("DeterministicVaultSelector Library Tests", function () {
 
       const tx4 = await harness.selectTopUnderallocated.populateTransaction(vaults4, currentBps4, targetBps4, 1);
       const gas4 = await deployer.estimateGas(tx4);
-
 
       // Gas increase should be reasonable (not exponential)
       const gasIncrease = gas4 - gas3;

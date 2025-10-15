@@ -80,7 +80,7 @@ async function fetchDStakeComponents(
     ethers: HardhatRuntimeEnvironment["ethers"];
     globalHre: HardhatRuntimeEnvironment; // For getTokenContractForSymbol
   },
-  config: DStakeFixtureConfig
+  config: DStakeFixtureConfig,
 ) {
   const { deployments, getNamedAccounts, ethers, globalHre } = hreElements;
   const namedAccounts = await getNamedAccounts();
@@ -105,12 +105,7 @@ async function fetchDStakeComponents(
   const routerAdminSigner = await resolveRoleSigner(
     router,
     routerAdminRole,
-    [
-      testOwner.address,
-      deployerSigner.address,
-      governance,
-      routerDeployment.receipt?.from,
-    ],
+    [testOwner.address, deployerSigner.address, governance, routerDeployment.receipt?.from],
     deployerSigner,
   );
 
@@ -127,20 +122,14 @@ async function fetchDStakeComponents(
 
   let strategyShareAddress = await router.defaultDepositStrategyShare();
   if (strategyShareAddress === ethers.ZeroAddress) {
-    const expectedDeploymentId =
-      config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID;
+    const expectedDeploymentId = config.dStableSymbol === "dUSD" ? DUSD_A_TOKEN_WRAPPER_ID : DETH_A_TOKEN_WRAPPER_ID;
     const wrapperDeployment = await deployments.getOrNull(expectedDeploymentId);
     if (!wrapperDeployment) {
-      throw new Error(
-        `Router missing default deposit strategy share and expected deployment ${expectedDeploymentId} is not available`,
-      );
+      throw new Error(`Router missing default deposit strategy share and expected deployment ${expectedDeploymentId} is not available`);
     }
     strategyShareAddress = wrapperDeployment.address;
   }
-  const wrappedAToken = await ethers.getContractAt(
-    "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
-    strategyShareAddress,
-  );
+  const wrappedAToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", strategyShareAddress);
   const adapterAddress = await router.strategyShareToAdapter(strategyShareAddress);
   if (adapterAddress === ethers.ZeroAddress) {
     throw new Error(`Adapter missing for strategy share ${strategyShareAddress}`);
@@ -151,12 +140,7 @@ async function fetchDStakeComponents(
   const collateralAdminSigner = await resolveRoleSigner(
     collateralVault,
     collateralAdminRole,
-    [
-      testOwner.address,
-      deployerSigner.address,
-      governance,
-      collateralVaultDeployment.receipt?.from,
-    ],
+    [testOwner.address, deployerSigner.address, governance, collateralVaultDeployment.receipt?.from],
     deployerSigner,
   );
 
@@ -198,13 +182,9 @@ async function fetchDStakeComponents(
     }
 
     if (!(await router.vaultExists(strategyShareAddress))) {
-      await router
-        .connect(testOwner)
-        .addVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
+      await router.connect(testOwner).addVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
     } else {
-      await router
-        .connect(testOwner)
-        .updateVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
+      await router.connect(testOwner).updateVaultConfig(strategyShareAddress, adapterAddress, 1_000_000, 0);
     }
 
     await router.connect(testOwner).setDefaultDepositStrategyShare(strategyShareAddress);
@@ -242,7 +222,7 @@ export const createDStakeFixture = (config: DStakeFixtureConfig) => {
         ethers: hreFixtureEnv.ethers,
         globalHre: hreFixtureEnv,
       },
-      config
+      config,
     );
   });
 };

@@ -82,12 +82,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const dstakeToken = await ethers.getContractAt(
       "DStakeTokenV2",
       dstakeTokenDeployment.address,
-      await ethers.getSigner(deployer) // Use deployer as signer for read calls
+      await ethers.getSigner(deployer), // Use deployer as signer for read calls
     );
     const collateralVault = await ethers.getContractAt(
       "DStakeCollateralVaultV2",
       collateralVaultDeployment.address,
-      await ethers.getSigner(deployer) // Use deployer as signer for read calls
+      await ethers.getSigner(deployer), // Use deployer as signer for read calls
     );
 
     // --- Configure DStakeTokenV2 ---
@@ -96,11 +96,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     if (currentRouter !== routerDeployment.address || currentVault !== collateralVaultDeployment.address) {
       console.log(
-        `    ⚙️ Aligning router + collateral vault for ${DStakeTokenV2DeploymentName} to (${routerDeployment.address}, ${collateralVaultDeployment.address})`
+        `    ⚙️ Aligning router + collateral vault for ${DStakeTokenV2DeploymentName} to (${routerDeployment.address}, ${collateralVaultDeployment.address})`,
       );
-      await dstakeToken
-        .connect(deployerSigner)
-        .migrateCore(routerDeployment.address, collateralVaultDeployment.address);
+      await dstakeToken.connect(deployerSigner).migrateCore(routerDeployment.address, collateralVaultDeployment.address);
     }
     const currentFee = await dstakeToken.withdrawalFeeBps();
 
@@ -149,11 +147,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         console.log(`    ➕ Added adapter ${adapterDeploymentName} for strategy share ${strategyShareAddress} to ${routerDeploymentName}`);
       } else if (existingAdapter !== adapterDeployment.address) {
         throw new Error(
-          `⚠️ Adapter for strategy share ${strategyShareAddress} in router is already set to ${existingAdapter} but config expects ${adapterDeployment.address}. Manual intervention may be required.`
+          `⚠️ Adapter for strategy share ${strategyShareAddress} in router is already set to ${existingAdapter} but config expects ${adapterDeployment.address}. Manual intervention may be required.`,
         );
       } else {
         console.log(
-          `    👍 Adapter ${adapterDeploymentName} for strategy share ${strategyShareAddress} already configured correctly in ${routerDeploymentName}`
+          `    👍 Adapter ${adapterDeploymentName} for strategy share ${strategyShareAddress} already configured correctly in ${routerDeploymentName}`,
         );
       }
     }

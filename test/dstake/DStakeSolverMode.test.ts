@@ -139,7 +139,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await expect(router.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
         router,
-        "SharesBelowMinimum"
+        "SharesBelowMinimum",
       );
     });
 
@@ -152,7 +152,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await expect(router.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
         router,
-        "ArrayLengthMismatch"
+        "ArrayLengthMismatch",
       );
     });
 
@@ -163,7 +163,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await expect(router.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
         router,
-        "EmptyArrays"
+        "EmptyArrays",
       );
     });
 
@@ -174,7 +174,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await expect(router.connect(alice).solverDepositAssets(vaults, assets, minShares, alice.address)).to.be.revertedWithCustomError(
         router,
-        "InvalidAmount"
+        "InvalidAmount",
       );
     });
 
@@ -189,7 +189,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(sharesQuote).to.be.lte(1n);
 
       await expect(
-        router.connect(bob).solverDepositAssets([vault1Address], [tinyDeposit], sharesQuote + 1n, bob.address)
+        router.connect(bob).solverDepositAssets([vault1Address], [tinyDeposit], sharesQuote + 1n, bob.address),
       ).to.be.revertedWithCustomError(router, "SharesBelowMinimum");
     });
   });
@@ -261,9 +261,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await dStable.connect(alice).approve(dStakeToken.target, expectedAssets);
 
-      await expect(
-        router.connect(alice).solverDepositShares([vault1Address], [requestedShares], 0, alice.address)
-      )
+      await expect(router.connect(alice).solverDepositShares([vault1Address], [requestedShares], 0, alice.address))
         .to.be.revertedWithCustomError(router, "SolverShareDepositShortfall")
         .withArgs(vault1Address, requestedShares, expectedMintedShares);
     });
@@ -281,7 +279,7 @@ describe("DStake Solver Mode Tests", function () {
       await dStable.connect(bob).approve(dStakeToken.target, requiredAssets);
 
       await expect(
-        router.connect(bob).solverDepositShares([vault1Address], [requestedShares], sharesQuote + 1n, bob.address)
+        router.connect(bob).solverDepositShares([vault1Address], [requestedShares], sharesQuote + 1n, bob.address),
       ).to.be.revertedWithCustomError(router, "SharesBelowMinimum");
     });
   });
@@ -342,7 +340,7 @@ describe("DStake Solver Mode Tests", function () {
       const maxShares = ethers.parseEther("100"); // Too low, should fail
 
       await expect(
-        router.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address)
+        router.connect(alice).solverWithdrawAssets(vaults, assets, maxShares, alice.address, alice.address),
       ).to.be.revertedWithCustomError(router, "SharesExceedMaxRedeem");
     });
 
@@ -438,7 +436,7 @@ describe("DStake Solver Mode Tests", function () {
       await expect(
         router
           .connect(alice)
-          .solverWithdrawShares([vault1Address], [sharesToWithdraw], ethers.parseEther("1500"), alice.address, alice.address)
+          .solverWithdrawShares([vault1Address], [sharesToWithdraw], ethers.parseEther("1500"), alice.address, alice.address),
       )
         .to.be.revertedWithCustomError(router, "VaultNotActive")
         .withArgs(vault1Address);
@@ -523,7 +521,7 @@ describe("DStake Solver Mode Tests", function () {
 
       await expect(router.connect(bob).solverDepositAssets(vaults, assets, 0, bob.address)).to.be.revertedWithCustomError(
         dStable,
-        "ERC20InsufficientAllowance"
+        "ERC20InsufficientAllowance",
       );
 
       // Restore allowance for downstream tests
@@ -646,7 +644,7 @@ describe("DStake Solver Mode Tests", function () {
       expect(totalSharesAfter2).to.equal(aliceShares1 + bobShares);
       expect(totalAssetsAfter2).to.be.closeTo(
         totalAssetsAfter1 + totalAssets2,
-        ethers.parseEther("10") // Allow small rounding differences
+        ethers.parseEther("10"), // Allow small rounding differences
       );
 
       // Verify share price is reasonable
@@ -1092,11 +1090,15 @@ describe("DStake Solver Mode Tests", function () {
 
       // Alice withdraws using shares
       const aliceWithdrawShares = [vault1Balance / 8n]; // 12.5% of vault1
-      await router.connect(alice).solverWithdrawShares([vault1Address], aliceWithdrawShares, ethers.parseEther("300"), alice.address, alice.address);
+      await router
+        .connect(alice)
+        .solverWithdrawShares([vault1Address], aliceWithdrawShares, ethers.parseEther("300"), alice.address, alice.address);
 
       // Bob withdraws using assets
       const bobWithdrawAssets = [ethers.parseEther("200"), ethers.parseEther("150")];
-      await router.connect(bob).solverWithdrawAssets([vault2Address, vault3Address], bobWithdrawAssets, ethers.parseEther("400"), bob.address, bob.address);
+      await router
+        .connect(bob)
+        .solverWithdrawAssets([vault2Address, vault3Address], bobWithdrawAssets, ethers.parseEther("400"), bob.address, bob.address);
 
       // Verify system integrity after mixed operations
       const finalTotalAssets = await dStakeToken.totalAssets();

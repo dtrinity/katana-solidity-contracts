@@ -96,7 +96,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         const rewardManagerContract = await ethers.getContractAt(
           "DStakeRewardManagerMetaMorpho",
           rewardManagerDeployment.address,
-          deployerSigner
+          deployerSigner,
         );
 
         const REWARDS_MANAGER_ROLE = await rewardManagerContract.REWARDS_MANAGER_ROLE();

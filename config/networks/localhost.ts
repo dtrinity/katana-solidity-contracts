@@ -298,9 +298,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositStrategyShare: emptyStringIfUndefined(
-          idleVaultSdUSDDeployment?.address || dLendATokenWrapperDUSDDeployment?.address
-        ),
+        defaultDepositStrategyShare: emptyStringIfUndefined(idleVaultSdUSDDeployment?.address || dLendATokenWrapperDUSDDeployment?.address),
         collateralVault: "DStakeCollateralVaultV2_sdUSD",
         collateralExchangers: [user1],
         idleVault: {
@@ -335,9 +333,7 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
             adapterContract: "WrappedDLendConversionAdapter",
           },
         ],
-        defaultDepositStrategyShare: emptyStringIfUndefined(
-          idleVaultSdETHDeployment?.address || dLendATokenWrapperDSDeployment?.address
-        ),
+        defaultDepositStrategyShare: emptyStringIfUndefined(idleVaultSdETHDeployment?.address || dLendATokenWrapperDSDeployment?.address),
         collateralVault: "DStakeCollateralVaultV2_sdETH",
         collateralExchangers: [user1],
         idleVault: {

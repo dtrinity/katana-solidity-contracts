@@ -21,7 +21,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const dUSDDeployment = await deployments.getOrNull(DUSD_TOKEN_ID);
   if (dUSDDeployment) {
     const dUSDContract = await hre.ethers.getContractAt("ERC20StablecoinUpgradeable", dUSDDeployment.address);
-    
+
     try {
       const hasRole = await dUSDContract.hasRole(MINTER_ROLE, deployer);
       if (!hasRole) {
@@ -29,7 +29,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         // We need to use the issuer to mint, or grant role directly if we have admin rights
         const DEFAULT_ADMIN_ROLE = await dUSDContract.DEFAULT_ADMIN_ROLE();
         const hasAdminRole = await dUSDContract.hasRole(DEFAULT_ADMIN_ROLE, deployer);
-        
+
         if (hasAdminRole) {
           await dUSDContract.grantRole(MINTER_ROLE, deployer);
           console.log("Granted MINTER_ROLE to deployer for dUSD testing");
@@ -52,14 +52,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const dETHDeployment = await deployments.getOrNull(DETH_TOKEN_ID);
   if (dETHDeployment) {
     const dETHContract = await hre.ethers.getContractAt("ERC20StablecoinUpgradeable", dETHDeployment.address);
-    
+
     try {
       const hasRole = await dETHContract.hasRole(MINTER_ROLE, deployer);
       if (!hasRole) {
         // Similar logic for dETH
         const DEFAULT_ADMIN_ROLE = await dETHContract.DEFAULT_ADMIN_ROLE();
         const hasAdminRole = await dETHContract.hasRole(DEFAULT_ADMIN_ROLE, deployer);
-        
+
         if (hasAdminRole) {
           await dETHContract.grantRole(MINTER_ROLE, deployer);
           console.log("Granted MINTER_ROLE to deployer for dETH testing");
@@ -79,7 +79,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   console.log("Test permissions setup completed for dUSD and dETH tokens");
-  
+
   // Note: DStakeRouter permissions are now handled in dSTAKE-specific test fixtures
   // to avoid global side effects that don't reflect reality
 };

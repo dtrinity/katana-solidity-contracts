@@ -52,7 +52,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     if (!instanceConfig.defaultDepositStrategyShare || instanceConfig.defaultDepositStrategyShare === ethers.ZeroAddress) {
       console.log(
-        `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing defaultDepositStrategyShare (likely due to dlend infrastructure not being deployed)`
+        `⚠️  Skipping dSTAKE instance ${instanceKey}: Missing defaultDepositStrategyShare (likely due to dlend infrastructure not being deployed)`,
       );
       continue;
     }

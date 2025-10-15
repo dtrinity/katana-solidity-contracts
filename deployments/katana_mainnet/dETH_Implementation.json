@@ -1057,9 +1057,7 @@
         "blockNumber": 10308750,
         "transactionHash": "0xfe9b3d04d3ec4a6d5ea329321be699fb6488576618aaca4cfe6b68b49a0b629f",
         "address": "0xAF3BB48f9b27ae41E8F4c33c77422B9367694CB8",
-        "topics": [
-          "0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2"
-        ],
+        "topics": ["0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2"],
         "data": "0x000000000000000000000000000000000000000000000000ffffffffffffffff",
         "logIndex": 1,
         "blockHash": "0x687e642ac755b5a8990a4cf9d2cc7ee24aac58736d48ec0d0cf67ea7dcbc966a"

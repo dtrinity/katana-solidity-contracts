@@ -5,12 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Overview
 
 **dTRINITY** is a DeFi protocol implementing two core financial primitives:
+
 - **dSTABLE**: Overcollateralized stablecoins (dETH, dUSD) with AMO mechanisms
 - **dSTAKE**: ERC4626 yield vaults that allocate dSTABLE assets across multiple strategies
 
 ## Essential Commands
 
 ### Build & Test
+
 ```bash
 # Compile contracts (uses Hardhat with Solidity 0.8.20/0.8.22)
 make compile
@@ -26,6 +28,7 @@ make clean
 ```
 
 ### Code Quality
+
 ```bash
 # Lint all code (Solidity + TypeScript)
 make lint
@@ -37,6 +40,7 @@ make audit          # Full audit (both tools)
 ```
 
 ### Deployment for local testing
+
 ```bash
 # Uses a temporary in-memory network
 make deploy
@@ -45,6 +49,7 @@ make deploy
 ## Architecture Key Points
 
 ### Contract Structure
+
 The protocol separates concerns into distinct subsystems:
 
 1. **dSTABLE System** (`/contracts/deth/`)
@@ -61,6 +66,7 @@ The protocol separates concerns into distinct subsystems:
    - Read contracts/vaults/dstake/dstake-design.md for more in-depth explainer
 
 ### Critical Design Patterns
+
 - **Upgradeability**: Core tokens use proxy patterns; infrastructure contracts are immutable
 - **Access Control**: Role-based permissions via OpenZeppelin AccessControl
 - **Oracle Integration**: Configurable price feeds through `OracleAggregatorV2`
@@ -68,6 +74,7 @@ The protocol separates concerns into distinct subsystems:
 - **Fee Management**: Multiple fee types (withdrawal, performance, management) with reinvestment
 
 ### Development Considerations
+
 - **Stack Deep Issues**: Complex contracts require `VIA_IR=true` compilation
 - **Testing Strategy**: Mock external protocols in `/contracts/mocks/` for isolated testing
 - **Gas Optimization**: Use `immutable` for deployment-time constants, minimize storage reads

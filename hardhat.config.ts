@@ -55,6 +55,7 @@ if (process.env.MOCHA_REPORTER) {
   mochaConfig.reporter = process.env.MOCHA_REPORTER;
 
   const rawOptions = process.env.MOCHA_REPORTER_OPTIONS;
+
   if (rawOptions) {
     try {
       mochaConfig.reporterOptions = JSON.parse(rawOptions);

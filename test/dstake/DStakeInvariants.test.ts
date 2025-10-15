@@ -178,11 +178,8 @@ describe("dSTAKE Invariants", function () {
       await expect(
         router
           .connect(dStakeTokenSigner)
-          .solverWithdrawAssets([targetVault], [depositAmount], ethers.MaxUint256, dStakeTokenAddress, dStakeTokenAddress)
-      ).to.be.revertedWithCustomError(
-        router,
-        "SlippageCheckFailed"
-      );
+          .solverWithdrawAssets([targetVault], [depositAmount], ethers.MaxUint256, dStakeTokenAddress, dStakeTokenAddress),
+      ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
     });
   });
 

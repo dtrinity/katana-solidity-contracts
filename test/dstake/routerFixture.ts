@@ -8,7 +8,7 @@ import {
   TestMintableERC20,
   DStakeCollateralVaultV2,
   MetaMorphoConversionAdapter,
-  DStakeTokenV2
+  DStakeTokenV2,
 } from "../../typechain-types";
 import { DStakeFixtureConfig, SDUSD_CONFIG } from "./fixture";
 import { getTokenContractForSymbol } from "../../typescript/token/utils";
@@ -17,7 +17,7 @@ import { resolveRoleSigner, ensureRoleGranted } from "./utils/roleHelpers";
 export const VaultStatus = {
   Active: 0,
   Suspended: 1,
-  Impaired: 2
+  Impaired: 2,
 } as const;
 
 export interface DStakeRouterV2FixtureResult {
@@ -59,37 +59,25 @@ const DEFAULT_DEPLOY_TAGS = [
   "mock-urd",
   "metamorpho-adapters",
   "mock-metamorpho-rewards",
-  "test-permissions"
+  "test-permissions",
 ];
 
-export const createDStakeRouterV2Fixture = (
-  config: DStakeFixtureConfig = SDUSD_CONFIG
-) => {
+export const createDStakeRouterV2Fixture = (config: DStakeFixtureConfig = SDUSD_CONFIG) => {
   return deployments.createFixture(async ({ deployments, ethers, getNamedAccounts }) => {
     await deployments.fixture();
     await deployments.fixture(DEFAULT_DEPLOY_TAGS);
 
     const { deployer } = await getNamedAccounts();
-    const [
-      ownerSigner,
-      aliceSigner,
-      bobSigner,
-      charlieSigner,
-      guardianSigner,
-      collateralExchangerSigner
-    ] = await ethers.getSigners();
+    const [ownerSigner, aliceSigner, bobSigner, charlieSigner, guardianSigner, collateralExchangerSigner] = await ethers.getSigners();
 
     const { contract: dStableBaseContract } = await getTokenContractForSymbol(
       { deployments, getNamedAccounts, ethers } as any,
       deployer,
-      config.dStableSymbol
+      config.dStableSymbol,
     );
 
     const dStableAddress = await dStableBaseContract.getAddress();
-    const dStableContract = await ethers.getContractAt(
-      "ERC20StablecoinUpgradeable",
-      dStableAddress
-    );
+    const dStableContract = await ethers.getContractAt("ERC20StablecoinUpgradeable", dStableAddress);
 
     const dStakeTokenDeployment = await deployments.get(config.DStakeTokenV2ContractId);
     const collateralVaultDeployment = await deployments.get(config.collateralVaultContractId);
@@ -109,36 +97,21 @@ export const createDStakeRouterV2Fixture = (
       from: deployer,
       args: [dStakeTokenAddress, collateralVaultAddress],
       log: false,
-      skipIfAlreadyDeployed: false
+      skipIfAlreadyDeployed: false,
     });
 
     const routerContract = await ethers.getContractAt("DStakeRouterV2", routerDeployment.address);
     const dStakeTokenContract = await ethers.getContractAt("DStakeTokenV2", dStakeTokenDeployment.address);
-    const collateralVaultContract = await ethers.getContractAt(
-      "DStakeCollateralVaultV2",
-      collateralVaultDeployment.address
-    );
+    const collateralVaultContract = await ethers.getContractAt("DStakeCollateralVaultV2", collateralVaultDeployment.address);
 
     const MockMetaMorphoFactory = await ethers.getContractFactory("MockMetaMorphoVault");
-    const vault1Contract = await MockMetaMorphoFactory.deploy(
-      dStableAddress,
-      "MetaMorpho Vault 1",
-      "MM1"
-    );
+    const vault1Contract = await MockMetaMorphoFactory.deploy(dStableAddress, "MetaMorpho Vault 1", "MM1");
     await vault1Contract.waitForDeployment();
 
-    const vault2Contract = await MockMetaMorphoFactory.deploy(
-      dStableAddress,
-      "MetaMorpho Vault 2",
-      "MM2"
-    );
+    const vault2Contract = await MockMetaMorphoFactory.deploy(dStableAddress, "MetaMorpho Vault 2", "MM2");
     await vault2Contract.waitForDeployment();
 
-    const vault3Contract = await MockMetaMorphoFactory.deploy(
-      dStableAddress,
-      "MetaMorpho Vault 3",
-      "MM3"
-    );
+    const vault3Contract = await MockMetaMorphoFactory.deploy(dStableAddress, "MetaMorpho Vault 3", "MM3");
     await vault3Contract.waitForDeployment();
 
     const vault1Address = await vault1Contract.getAddress();
@@ -150,7 +123,7 @@ export const createDStakeRouterV2Fixture = (
       dStableAddress,
       vault1Address,
       collateralVaultAddress,
-      ownerSigner.address
+      ownerSigner.address,
     );
     await adapter1Contract.waitForDeployment();
 
@@ -158,7 +131,7 @@ export const createDStakeRouterV2Fixture = (
       dStableAddress,
       vault2Address,
       collateralVaultAddress,
-      ownerSigner.address
+      ownerSigner.address,
     );
     await adapter2Contract.waitForDeployment();
 
@@ -166,7 +139,7 @@ export const createDStakeRouterV2Fixture = (
       dStableAddress,
       vault3Address,
       collateralVaultAddress,
-      ownerSigner.address
+      ownerSigner.address,
     );
     await adapter3Contract.waitForDeployment();
 
@@ -175,41 +148,34 @@ export const createDStakeRouterV2Fixture = (
     const adapter3Address = await adapter3Contract.getAddress();
 
     const urdDeployment = await deployments.get("MockUniversalRewardsDistributor");
-    const urdContract = await ethers.getContractAt(
-      "MockUniversalRewardsDistributor",
-      urdDeployment.address
-    );
+    const urdContract = await ethers.getContractAt("MockUniversalRewardsDistributor", urdDeployment.address);
 
     const vaultConfigs = [
       {
         strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 500000,
-        status: VaultStatus.Active
+        status: VaultStatus.Active,
       },
       {
         strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 300000,
-        status: VaultStatus.Active
+        status: VaultStatus.Active,
       },
       {
         strategyVault: vault3Address,
         adapter: adapter3Address,
         targetBps: 200000,
-        status: VaultStatus.Active
-      }
+        status: VaultStatus.Active,
+      },
     ];
 
     const routerAdminRole = await routerContract.DEFAULT_ADMIN_ROLE();
     const routerAdminSigner = await resolveRoleSigner(
       routerContract,
       routerAdminRole,
-      [
-        ownerSigner.address,
-        deployer,
-        routerDeployment.receipt?.from,
-      ],
+      [ownerSigner.address, deployer, routerDeployment.receipt?.from],
       ownerSigner,
     );
 
@@ -248,11 +214,7 @@ export const createDStakeRouterV2Fixture = (
     const collateralAdminSigner = await resolveRoleSigner(
       collateralVaultContract,
       DEFAULT_ADMIN_ROLE_VAULT,
-      [
-        ownerSigner.address,
-        deployer,
-        collateralVaultDeployment.receipt?.from,
-      ],
+      [ownerSigner.address, deployer, collateralVaultDeployment.receipt?.from],
       ownerSigner,
     );
 
@@ -270,9 +232,7 @@ export const createDStakeRouterV2Fixture = (
     let supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
     for (const configEntry of vaultConfigs) {
       if (!supportedAssets.includes(configEntry.strategyVault)) {
-        await routerContract
-          .connect(ownerSigner)
-          .addAdapter(configEntry.strategyVault, configEntry.adapter);
+        await routerContract.connect(ownerSigner).addAdapter(configEntry.strategyVault, configEntry.adapter);
         supportedAssets = await collateralVaultContract.getSupportedStrategyShares();
       }
     }
@@ -281,11 +241,7 @@ export const createDStakeRouterV2Fixture = (
     const tokenAdminSigner = await resolveRoleSigner(
       dStakeTokenContract,
       DEFAULT_ADMIN_ROLE_TOKEN,
-      [
-        ownerSigner.address,
-        deployer,
-        dStakeTokenDeployment.receipt?.from,
-      ],
+      [ownerSigner.address, deployer, dStakeTokenDeployment.receipt?.from],
       ownerSigner,
     );
 
@@ -299,9 +255,7 @@ export const createDStakeRouterV2Fixture = (
     const needsMigration = currentRouter !== desiredRouter || currentVault !== desiredVault;
 
     if (needsMigration) {
-      await dStakeTokenContract
-        .connect(ownerSigner)
-        .migrateCore(desiredRouter, desiredVault);
+      await dStakeTokenContract.connect(ownerSigner).migrateCore(desiredRouter, desiredVault);
     }
 
     const initialBalance = ethers.parseEther("100000");
@@ -332,7 +286,7 @@ export const createDStakeRouterV2Fixture = (
       vault3Address,
       adapter1Address,
       adapter2Address,
-      adapter3Address
+      adapter3Address,
     } as DStakeRouterV2FixtureResult;
   });
 };

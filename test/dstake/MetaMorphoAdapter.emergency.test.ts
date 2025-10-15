@@ -34,7 +34,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
 
       await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, amount)).to.be.revertedWithCustomError(
         adapter,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
 
@@ -44,7 +44,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
       // The adapter has no ETH, so this should fail
       await expect(adapter.connect(admin).emergencyWithdraw(ethers.ZeroAddress, amount)).to.be.revertedWithCustomError(
         adapter,
-        "VaultOperationFailed"
+        "VaultOperationFailed",
       );
     });
 
@@ -55,7 +55,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
 
       await expect(adapter.connect(user).emergencyWithdraw(ethers.ZeroAddress, 0)).to.be.revertedWithCustomError(
         adapter,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
   });
@@ -84,7 +84,7 @@ describe("MetaMorphoConversionAdapter - Emergency Withdraw", function () {
 
       await expect(adapter.connect(user).emergencyWithdraw(testToken.target, amount)).to.be.revertedWithCustomError(
         adapter,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
   });

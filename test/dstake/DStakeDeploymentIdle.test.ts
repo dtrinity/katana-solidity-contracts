@@ -4,14 +4,7 @@ import { deployments, ethers } from "hardhat";
 describe("dSTAKE deployment with idle vault", function () {
   beforeEach(async function () {
     await deployments.fixture(undefined, { keepExistingDeployments: false });
-    await deployments.fixture([
-      "local-setup",
-      "oracle",
-      "dusd",
-      "dUSD-aTokenWrapper",
-      "dlend",
-      "dStake"
-    ]);
+    await deployments.fixture(["local-setup", "oracle", "dusd", "dUSD-aTokenWrapper", "dlend", "dStake"]);
   });
 
   it("deploys the idle vault and wires the adapter", async function () {
