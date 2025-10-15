@@ -102,6 +102,7 @@ jobs:
             pnpm install --frozen-lockfile
           else
             npm ci
+          fi
 
       - name: Compile contracts
         run: |
@@ -134,6 +135,7 @@ jobs:
             pnpm install --frozen-lockfile
           else
             npm ci
+          fi
 
       - name: Execute tests
         run: |
