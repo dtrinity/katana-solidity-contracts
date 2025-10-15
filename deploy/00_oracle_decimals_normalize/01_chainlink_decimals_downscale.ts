@@ -37,7 +37,7 @@ const deployChainlinkDecimalDownscaler: DeployFunction = async function (hre: Ha
   try {
     const sourceFeed = await ethers.getContractAt(
       "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol:AggregatorV3Interface",
-      yUSDFeedAddress
+      yUSDFeedAddress,
     );
     const sourceDecimals = await sourceFeed.decimals();
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env ts-node
 
-import { Command } from 'commander';
-import fs from 'fs';
-import path from 'path';
+import { Command } from "commander";
+import fs from "fs";
+import path from "path";
 
-import { logger } from '../../lib/logger';
-import { findProjectRoot } from '../../lib/utils';
+import { logger } from "../../lib/logger";
+import { findProjectRoot } from "../../lib/utils";
 
 type DeployIdEntry = {
   constantName: string;
@@ -21,15 +21,15 @@ type Finding = {
 };
 
 const DEFAULT_DEPLOY_ID_CANDIDATES = [
-  'typescript/deploy-ids.ts',
-  'deploy/deploy-ids.ts',
-  'deployments/deploy-ids.ts',
-  'scripts/deploy-ids.ts'
+  "typescript/deploy-ids.ts",
+  "deploy/deploy-ids.ts",
+  "deployments/deploy-ids.ts",
+  "scripts/deploy-ids.ts",
 ];
 
-const DEFAULT_DEPLOY_DIR_CANDIDATES = ['deploy', 'deployments'];
+const DEFAULT_DEPLOY_DIR_CANDIDATES = ["deploy", "deployments"];
 
-const DIRECTORY_EXCLUDES = new Set(['node_modules', '.git', '.shared', 'artifacts', 'cache', 'out']);
+const DIRECTORY_EXCLUDES = new Set(["node_modules", ".git", ".shared", "artifacts", "cache", "out"]);
 
 function resolveDeployIdsPath(projectRoot: string, explicitPath?: string): string {
   const candidatePaths = explicitPath ? [explicitPath] : DEFAULT_DEPLOY_ID_CANDIDATES;
@@ -41,18 +41,18 @@ function resolveDeployIdsPath(projectRoot: string, explicitPath?: string): strin
     }
   }
 
-  const display = explicitPath ? explicitPath : DEFAULT_DEPLOY_ID_CANDIDATES.join(', ');
+  const display = explicitPath ? explicitPath : DEFAULT_DEPLOY_ID_CANDIDATES.join(", ");
   throw new Error(`Could not find deploy IDs file. Looked for: ${display}`);
 }
 
 function resolveDeployRoots(projectRoot: string, explicitRoots?: string[]): string[] {
   const roots = explicitRoots && explicitRoots.length > 0 ? explicitRoots : DEFAULT_DEPLOY_DIR_CANDIDATES;
   const resolved = roots
-    .map(root => (path.isAbsolute(root) ? root : path.join(projectRoot, root)))
-    .filter(rootPath => fs.existsSync(rootPath) && fs.statSync(rootPath).isDirectory());
+    .map((root) => (path.isAbsolute(root) ? root : path.join(projectRoot, root)))
+    .filter((rootPath) => fs.existsSync(rootPath) && fs.statSync(rootPath).isDirectory());
 
   if (resolved.length === 0) {
-    const display = roots.join(', ');
+    const display = roots.join(", ");
     throw new Error(`No deploy directories found. Looked for: ${display}`);
   }
 
@@ -60,7 +60,7 @@ function resolveDeployRoots(projectRoot: string, explicitRoots?: string[]): stri
 }
 
 function loadDeployIds(deployIdsPath: string): DeployIdEntry[] {
-  const fileContent = fs.readFileSync(deployIdsPath, 'utf8');
+  const fileContent = fs.readFileSync(deployIdsPath, "utf8");
   const deployIdRegex = /export const ([A-Z0-9_]+)\s*=\s*["'`]([^"'`]+)["'`]/g;
   const entries: DeployIdEntry[] = [];
 
@@ -80,19 +80,19 @@ function loadDeployIds(deployIdsPath: string): DeployIdEntry[] {
 }
 
 function removeBlockComments(line: string, inBlockComment: boolean): { text: string; inBlockComment: boolean } {
-  let text = '';
+  let text = "";
   let index = 0;
   let insideComment = inBlockComment;
 
   while (index < line.length) {
-    if (!insideComment && line.startsWith('/*', index)) {
+    if (!insideComment && line.startsWith("/*", index)) {
       insideComment = true;
       index += 2;
       continue;
     }
 
     if (insideComment) {
-      const end = line.indexOf('*/', index);
+      const end = line.indexOf("*/", index);
       if (end === -1) {
         return { text, inBlockComment: true };
       }
@@ -109,18 +109,18 @@ function removeBlockComments(line: string, inBlockComment: boolean): { text: str
 }
 
 function shouldConsiderLine(line: string): boolean {
-  const relevantTokens = ['deployments', 'func', 'module.exports'];
-  return relevantTokens.some(token => line.includes(token));
+  const relevantTokens = ["deployments", "func", "module.exports"];
+  return relevantTokens.some((token) => line.includes(token));
 }
 
 function shouldSkipDueToContext(line: string): boolean {
-  if (line.includes('contract:')) return true;
-  if (line.includes('getContractAt(')) return true;
-  if (line.includes('getContractFactory(')) return true;
-  if (line.includes('ethers.getContractAt')) return true;
-  if (line.includes('func.dependencies')) return true;
-  if (line.includes('func.tags')) return true;
-  if (line.includes('func.id')) return true;
+  if (line.includes("contract:")) return true;
+  if (line.includes("getContractAt(")) return true;
+  if (line.includes("getContractFactory(")) return true;
+  if (line.includes("ethers.getContractAt")) return true;
+  if (line.includes("func.dependencies")) return true;
+  if (line.includes("func.tags")) return true;
+  if (line.includes("func.id")) return true;
   return false;
 }
 
@@ -143,7 +143,7 @@ function collectDeployScriptPaths(rootPaths: string[], extensions: string[]): st
     }
 
     if (stats.isFile()) {
-      if (extensions.some(ext => currentPath.endsWith(ext))) {
+      if (extensions.some((ext) => currentPath.endsWith(ext))) {
         results.push(currentPath);
       }
     }
@@ -157,18 +157,18 @@ function collectDeployScriptPaths(rootPaths: string[], extensions: string[]): st
 }
 
 function buildRegex(value: string): RegExp {
-  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const patternSource = "([\"'`])" + escapedValue + '\\1';
+  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patternSource = "([\"'`])" + escapedValue + "\\1";
   return new RegExp(patternSource);
 }
 
 function findHardcodedIds(deployIds: DeployIdEntry[], filePaths: string[], projectRoot: string): Finding[] {
-  const valueToId = new Map<string, string>(deployIds.map(entry => [entry.value, entry.constantName]));
+  const valueToId = new Map<string, string>(deployIds.map((entry) => [entry.value, entry.constantName]));
   const findings: Finding[] = [];
 
   for (const filePath of filePaths) {
     const relativePath = path.relative(projectRoot, filePath);
-    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const fileContent = fs.readFileSync(filePath, "utf8");
     const lines = fileContent.split(/\r?\n/);
 
     let inBlockComment = false;
@@ -178,7 +178,7 @@ function findHardcodedIds(deployIds: DeployIdEntry[], filePaths: string[], proje
       inBlockComment = commentStripped.inBlockComment;
 
       const withoutBlock = commentStripped.text;
-      const withoutLineComment = withoutBlock.split('//')[0];
+      const withoutLineComment = withoutBlock.split("//")[0];
       const trimmed = withoutLineComment.trim();
 
       if (!trimmed) return;
@@ -230,20 +230,20 @@ async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .description('Detect hard-coded deployment IDs in deploy scripts.')
-    .option('--deploy-ids <path>', 'Path to the deploy IDs source file (defaults to common locations).')
-    .option('--deploy-root <path...>', 'Directory or directories to scan for deploy scripts.')
-    .option('--extensions <list>', 'Comma-separated list of file extensions to scan (e.g. ".ts,.js").', '.ts')
-    .option('--report <path>', 'Optional path to write a JSON report with findings.')
-    .option('--quiet', 'Only output findings and errors.');
+    .description("Detect hard-coded deployment IDs in deploy scripts.")
+    .option("--deploy-ids <path>", "Path to the deploy IDs source file (defaults to common locations).")
+    .option("--deploy-root <path...>", "Directory or directories to scan for deploy scripts.")
+    .option("--extensions <list>", 'Comma-separated list of file extensions to scan (e.g. ".ts,.js").', ".ts")
+    .option("--report <path>", "Optional path to write a JSON report with findings.")
+    .option("--quiet", "Only output findings and errors.");
 
   program.parse(process.argv);
   const options = program.opts();
 
   const projectRoot = findProjectRoot();
-  const extensions = String(options.extensions || '.ts')
-    .split(',')
-    .map((ext: string) => (ext.startsWith('.') ? ext : `.${ext}`));
+  const extensions = String(options.extensions || ".ts")
+    .split(",")
+    .map((ext: string) => (ext.startsWith(".") ? ext : `.${ext}`));
 
   try {
     const deployIdsPath = resolveDeployIdsPath(projectRoot, options.deployIds);
@@ -253,12 +253,12 @@ async function main(): Promise<void> {
 
     const deployRoots = resolveDeployRoots(projectRoot, options.deployRoot);
     if (!options.quiet) {
-      logger.info(`Scanning deploy scripts in: ${deployRoots.map(root => path.relative(projectRoot, root)).join(', ')}`);
+      logger.info(`Scanning deploy scripts in: ${deployRoots.map((root) => path.relative(projectRoot, root)).join(", ")}`);
     }
 
     const deployIds = loadDeployIds(deployIdsPath);
     if (deployIds.length === 0) {
-      logger.warn('No deploy IDs found to compare against.');
+      logger.warn("No deploy IDs found to compare against.");
     }
 
     const scriptPaths = collectDeployScriptPaths(deployRoots, extensions);
@@ -269,9 +269,7 @@ async function main(): Promise<void> {
     const findings = findHardcodedIds(deployIds, scriptPaths, projectRoot);
 
     if (options.report) {
-      const reportPath = path.isAbsolute(options.report)
-        ? options.report
-        : path.join(projectRoot, options.report);
+      const reportPath = path.isAbsolute(options.report) ? options.report : path.join(projectRoot, options.report);
       writeReport(reportPath, findings);
       if (!options.quiet) {
         logger.info(`Wrote findings report to ${path.relative(projectRoot, reportPath)}`);
@@ -279,20 +277,20 @@ async function main(): Promise<void> {
     }
 
     if (findings.length === 0) {
-      logger.success('No hard-coded deployment IDs detected in deploy scripts.');
+      logger.success("No hard-coded deployment IDs detected in deploy scripts.");
       return;
     }
 
-    logger.warn('Detected hard-coded deployment IDs. Replace them with shared constants:');
-    findings.forEach(finding => {
+    logger.warn("Detected hard-coded deployment IDs. Replace them with shared constants:");
+    findings.forEach((finding) => {
       logger.warn(
-        `  - ${finding.file}:${finding.lineNumber} uses literal "${finding.value}" (expected ${finding.constantName})\n    ${finding.line}`,
+        `  - ${finding.file}:${finding.lineNumber} uses literal "${finding.value}" (expected ${finding.constantName})\n    ${finding.line}`
       );
     });
 
     process.exitCode = 1;
   } catch (error) {
-    logger.error('Failed to inspect deploy scripts for hard-coded IDs.');
+    logger.error("Failed to inspect deploy scripts for hard-coded IDs.");
     logger.error(String(error instanceof Error ? error.message : error));
     process.exitCode = 1;
   }

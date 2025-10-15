@@ -176,8 +176,7 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     await dStakeToken.connect(owner).setSettlementShortfall(0);
 
     const redeemableAfterRecovery = await dStakeToken.convertToAssets(bobShares);
-    const expectedAfterRecovery =
-      redeemableWithShortfall + (shortfall * bobShares) / totalSharesAfterDeposit;
+    const expectedAfterRecovery = redeemableWithShortfall + (shortfall * bobShares) / totalSharesAfterDeposit;
 
     const tolerance = 1_000_000_000_000_000n;
     expect(redeemableAfterRecovery).to.be.closeTo(expectedAfterRecovery, tolerance);
@@ -190,8 +189,9 @@ describe("DStakeTokenV2 settlement shortfall", function () {
     await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
 
     const excessiveShortfall = ethers.parseEther("60");
-    await expect(
-      dStakeToken.connect(owner).setSettlementShortfall(excessiveShortfall)
-    ).to.be.revertedWithCustomError(router, "SettlementShortfallTooHigh");
+    await expect(dStakeToken.connect(owner).setSettlementShortfall(excessiveShortfall)).to.be.revertedWithCustomError(
+      router,
+      "SettlementShortfallTooHigh",
+    );
   });
 });

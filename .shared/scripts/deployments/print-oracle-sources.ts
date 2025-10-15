@@ -1,17 +1,13 @@
 #!/usr/bin/env ts-node
 
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
-import { Command } from 'commander';
+import { Command } from "commander";
 
-import {
-  generateOracleReport,
-  renderOracleReport,
-  OracleCategoryDefinition,
-} from '../../lib/deployments/oracle-report';
-import { logger } from '../../lib/logger';
-import { findProjectRoot } from '../../lib/utils';
+import { generateOracleReport, renderOracleReport, OracleCategoryDefinition } from "../../lib/deployments/oracle-report";
+import { logger } from "../../lib/logger";
+import { findProjectRoot } from "../../lib/utils";
 
 function parseDefinitions(raw: string[] | undefined): Map<string, OracleCategoryDefinition> {
   const definitions = new Map<string, OracleCategoryDefinition>();
@@ -20,15 +16,15 @@ function parseDefinitions(raw: string[] | undefined): Map<string, OracleCategory
   }
 
   for (const entry of raw) {
-    const [namePart, valuePart] = entry.split('=');
-    const name = (namePart ?? '').trim();
+    const [namePart, valuePart] = entry.split("=");
+    const name = (namePart ?? "").trim();
     if (name.length === 0) {
       continue;
     }
-    const values = (valuePart ?? '')
-      .split(',')
-      .map(value => value.trim())
-      .filter(value => value.length > 0);
+    const values = (valuePart ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
 
     const existing = definitions.get(name) ?? { name, include: [], exclude: [] };
     if (!existing.include) {
@@ -47,16 +43,16 @@ function applyExclusions(definitions: Map<string, OracleCategoryDefinition>, raw
   }
 
   for (const entry of raw) {
-    const [namePart, valuePart] = entry.split('=');
-    const name = (namePart ?? '').trim();
+    const [namePart, valuePart] = entry.split("=");
+    const name = (namePart ?? "").trim();
     if (name.length === 0) {
       continue;
     }
 
-    const values = (valuePart ?? '')
-      .split(',')
-      .map(value => value.trim())
-      .filter(value => value.length > 0);
+    const values = (valuePart ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
 
     const existing = definitions.get(name) ?? { name, include: [], exclude: [] };
     if (!existing.exclude) {
@@ -71,16 +67,16 @@ async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .description('Aggregate oracle deployment addresses by category.')
-    .option('-n, --network <name...>', 'Limit the report to specific network directories.')
-    .option('--skip-network <name...>', 'Exclude specific networks from the report.')
-    .option('--deployments-dir <path>', 'Deployments directory (defaults to ./deployments).')
-    .option('--category <definition...>', 'Category include patterns (e.g. --category Redstone=Redstone,API3).')
-    .option('--exclude <definition...>', 'Category exclusion patterns (e.g. --exclude Chainlink=Mock).')
-    .option('--include-empty', 'Include entries even when no address is present.')
-    .option('--case-sensitive', 'Treat include/exclude patterns as case-sensitive.')
-    .option('--json', 'Output JSON instead of formatted text.')
-    .option('--output <path>', 'Optional file to write the report to.');
+    .description("Aggregate oracle deployment addresses by category.")
+    .option("-n, --network <name...>", "Limit the report to specific network directories.")
+    .option("--skip-network <name...>", "Exclude specific networks from the report.")
+    .option("--deployments-dir <path>", "Deployments directory (defaults to ./deployments).")
+    .option("--category <definition...>", "Category include patterns (e.g. --category Redstone=Redstone,API3).")
+    .option("--exclude <definition...>", "Category exclusion patterns (e.g. --exclude Chainlink=Mock).")
+    .option("--include-empty", "Include entries even when no address is present.")
+    .option("--case-sensitive", "Treat include/exclude patterns as case-sensitive.")
+    .option("--json", "Output JSON instead of formatted text.")
+    .option("--output <path>", "Optional file to write the report to.");
 
   program.parse(process.argv);
   const options = program.opts();
@@ -109,15 +105,18 @@ async function main(): Promise<void> {
         ? (options.output as string)
         : path.join(projectRoot, options.output as string);
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.writeFileSync(targetPath, `${output}
-`);
+      fs.writeFileSync(
+        targetPath,
+        `${output}
+`
+      );
       logger.success(`Report written to ${targetPath}`);
     } else {
       process.stdout.write(`${output}
 `);
     }
   } catch (error) {
-    logger.error('Failed to generate oracle report.');
+    logger.error("Failed to generate oracle report.");
     logger.error(String(error instanceof Error ? error.message : error));
     process.exitCode = 1;
   }

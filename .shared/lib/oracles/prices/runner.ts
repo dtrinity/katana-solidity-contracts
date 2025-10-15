@@ -1,21 +1,21 @@
-import type { HardhatRuntimeEnvironment } from 'hardhat/types';
-import type { DeploymentsExtension } from 'hardhat-deploy/types';
+import type { HardhatRuntimeEnvironment } from "hardhat/types";
+import type { DeploymentsExtension } from "hardhat-deploy/types";
 
-import { logger as defaultLogger } from '../../logger';
-import { classifyDeployments } from './deployment-classifier';
-import { buildAggregatorList, buildSymbolLookup } from './asset-extractors';
+import { logger as defaultLogger } from "../../logger";
+import { classifyDeployments } from "./deployment-classifier";
+import { buildAggregatorList, buildSymbolLookup } from "./asset-extractors";
 import type {
   OracleAssetEntry,
   OracleAggregatorRecord,
   OracleInspectorOptions,
   OracleInspectorOptionsNormalized,
   OracleInspectorResult,
-} from './types';
-import { loadNetworkOracleConfig } from './config-loader';
+} from "./types";
+import { loadNetworkOracleConfig } from "./config-loader";
 
 function normalizeOptions(options: OracleInspectorOptions | undefined): OracleInspectorOptionsNormalized {
-  const aggregators = (options?.aggregators ?? []).map(name => name.toLowerCase());
-  const assets = (options?.assets ?? []).map(address => address.toLowerCase());
+  const aggregators = (options?.aggregators ?? []).map((name) => name.toLowerCase());
+  const assets = (options?.assets ?? []).map((address) => address.toLowerCase());
 
   return {
     aggregators,
@@ -52,15 +52,9 @@ type DeploymentsEnabledHre = HardhatRuntimeEnvironment & {
 async function resolveAggregatorAddress(
   hre: DeploymentsEnabledHre,
   key: string,
-  deploymentNames: Set<string>,
+  deploymentNames: Set<string>
 ): Promise<{ address: string; name: string } | undefined> {
-  const candidates = [
-    `${key}_OracleAggregator`,
-    `${key}OracleAggregator`,
-    key,
-    `${key}_oracle_aggregator`,
-    'OracleAggregator',
-  ];
+  const candidates = [`${key}_OracleAggregator`, `${key}OracleAggregator`, key, `${key}_oracle_aggregator`, "OracleAggregator"];
 
   for (const candidate of candidates) {
     try {
@@ -75,7 +69,7 @@ async function resolveAggregatorAddress(
 
   // Try to match against deployment names we already discovered (case-insensitive)
   for (const candidate of candidates) {
-    const match = Array.from(deploymentNames).find(name => name.toLowerCase() === candidate.toLowerCase());
+    const match = Array.from(deploymentNames).find((name) => name.toLowerCase() === candidate.toLowerCase());
     if (match) {
       const deployment = await hre.deployments.getOrNull(match);
       if (deployment?.address) {
@@ -101,29 +95,29 @@ async function inspectAggregator(
   aggregatorKey: string,
   aggregatorAddress: string,
   assets: OracleAssetEntry[],
-  options: OracleInspectorOptionsNormalized,
+  options: OracleInspectorOptionsNormalized
 ): Promise<OracleAggregatorRecord> {
-  const results: AssetInspection[] = assets.map(asset => ({
+  const results: AssetInspection[] = assets.map((asset) => ({
     asset,
     notes: [],
   }));
 
   const AGGREGATOR_ABI = [
-    'function BASE_CURRENCY_UNIT() view returns (uint256)',
-    'function getAssetPrice(address) view returns (uint256)',
-    'function assetOracles(address) view returns (address)',
+    "function BASE_CURRENCY_UNIT() view returns (uint256)",
+    "function getAssetPrice(address) view returns (uint256)",
+    "function assetOracles(address) view returns (address)",
   ];
   const WRAPPER_ABI = [
-    'function BASE_CURRENCY_UNIT() view returns (uint256)',
-    'function getPriceInfo(address) view returns (uint256,bool)',
-    'function getAssetPrice(address) view returns (uint256)',
+    "function BASE_CURRENCY_UNIT() view returns (uint256)",
+    "function getPriceInfo(address) view returns (uint256,bool)",
+    "function getAssetPrice(address) view returns (uint256)",
   ];
 
   const aggregatorContract = await hre.ethers.getContractAt(AGGREGATOR_ABI, aggregatorAddress);
 
   let baseCurrencyUnit: bigint | undefined;
   try {
-    const unit = await aggregatorContract.getFunction('BASE_CURRENCY_UNIT').staticCall();
+    const unit = await aggregatorContract.getFunction("BASE_CURRENCY_UNIT").staticCall();
     baseCurrencyUnit = BigInt(unit);
   } catch {
     baseCurrencyUnit = undefined;
@@ -135,14 +129,14 @@ async function inspectAggregator(
 
   for (const entry of results) {
     try {
-      const price = await aggregatorContract.getFunction('getAssetPrice').staticCall(entry.asset.address);
+      const price = await aggregatorContract.getFunction("getAssetPrice").staticCall(entry.asset.address);
       aggregatorPrices.set(entry.asset.address.toLowerCase(), BigInt(price));
     } catch (error) {
       entry.notes.push(`Aggregator lookup failed: ${(error as Error).message}`);
     }
     try {
-      const pointer = await aggregatorContract.getFunction('assetOracles').staticCall(entry.asset.address);
-      if (typeof pointer === 'string') {
+      const pointer = await aggregatorContract.getFunction("assetOracles").staticCall(entry.asset.address);
+      if (typeof pointer === "string") {
         wrapperPointers.set(entry.asset.address.toLowerCase(), pointer.toLowerCase());
       }
     } catch {
@@ -175,7 +169,7 @@ async function inspectAggregator(
       let wrapperDecimals = wrapperUnitCache.get(pointer);
       if (wrapperDecimals === undefined) {
         try {
-          const unit = await wrapperContract.getFunction('BASE_CURRENCY_UNIT').staticCall();
+          const unit = await wrapperContract.getFunction("BASE_CURRENCY_UNIT").staticCall();
           wrapperDecimals = inferDecimalsFromUnit(unit);
           wrapperUnitCache.set(pointer, wrapperDecimals);
         } catch {
@@ -186,10 +180,10 @@ async function inspectAggregator(
 
       try {
         const [price, isAlive] = await wrapperContract
-          .getFunction('getPriceInfo')
+          .getFunction("getPriceInfo")
           .staticCall(entry.asset.address)
           .catch(async () => {
-            const fallback = await wrapperContract.getFunction('getAssetPrice').staticCall(entry.asset.address);
+            const fallback = await wrapperContract.getFunction("getAssetPrice").staticCall(entry.asset.address);
             return [fallback, true];
           });
         entry.wrapperPrice = hre.ethers.formatUnits(price, wrapperDecimals);
@@ -205,7 +199,7 @@ async function inspectAggregator(
   return {
     key: aggregatorKey,
     address: aggregatorAddress,
-    assets: results.map(entry => ({
+    assets: results.map((entry) => ({
       address: entry.asset.address,
       symbol: entry.asset.symbol,
       source: entry.wrapperAddress,
@@ -219,7 +213,7 @@ async function inspectAggregator(
 
 export async function runOraclePriceInspector(
   hre: HardhatRuntimeEnvironment,
-  rawOptions?: OracleInspectorOptions,
+  rawOptions?: OracleInspectorOptions
 ): Promise<OracleInspectorResult> {
   const env = hre as DeploymentsEnabledHre;
   const log = defaultLogger;
@@ -234,9 +228,9 @@ export async function runOraclePriceInspector(
   const aggregatorFilter = new Set(options.aggregators);
 
   const deployments = await classifyDeployments(env.deployments);
-  const deploymentNames = new Set(deployments.aggregators.map(item => item.name ?? '').filter(Boolean));
+  const deploymentNames = new Set(deployments.aggregators.map((item) => item.name ?? "").filter(Boolean));
 
-  const manualAssets = options.assets.map(address => ({ address, symbol: buildSymbolLookup(config).get(address) }));
+  const manualAssets = options.assets.map((address) => ({ address, symbol: buildSymbolLookup(config).get(address) }));
   const inspectedAggregators: OracleAggregatorRecord[] = [];
 
   for (const aggregator of aggregators) {
@@ -252,7 +246,7 @@ export async function runOraclePriceInspector(
 
     const assetEntries = [...aggregator.assets];
     for (const asset of manualAssets) {
-      if (!assetEntries.some(existing => existing.address === asset.address)) {
+      if (!assetEntries.some((existing) => existing.address === asset.address)) {
         assetEntries.push(asset);
       }
     }
@@ -263,7 +257,7 @@ export async function runOraclePriceInspector(
   }
 
   if (aggregatorFilter.size > 0 && inspectedAggregators.length === 0) {
-    log.warn(`No aggregators matched requested filters: ${Array.from(aggregatorFilter).join(', ')}`);
+    log.warn(`No aggregators matched requested filters: ${Array.from(aggregatorFilter).join(", ")}`);
   }
 
   return {

@@ -1,11 +1,6 @@
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { 
-  SDUSD_COLLATERAL_VAULT_ID,
-  SDETH_COLLATERAL_VAULT_ID,
-  SDUSD_ROUTER_ID,
-  SDETH_ROUTER_ID 
-} from "../typescript/deploy-ids";
+import { SDUSD_COLLATERAL_VAULT_ID, SDETH_COLLATERAL_VAULT_ID, SDUSD_ROUTER_ID, SDETH_ROUTER_ID } from "../typescript/deploy-ids";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployments, getNamedAccounts } = hre;
@@ -72,7 +67,7 @@ func.tags = ["mock-metamorpho-rewards"];
 func.dependencies = [
   "mock-metamorpho-vaults",
   "mock-urd",
-  "dStake",  // Use real dStake deployment, not mock
+  "dStake", // Use real dStake deployment, not mock
 ];
 
 export default func;

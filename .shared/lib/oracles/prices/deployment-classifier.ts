@@ -1,4 +1,4 @@
-import type { DeploymentsExtension } from 'hardhat-deploy/types';
+import type { DeploymentsExtension } from "hardhat-deploy/types";
 
 export interface DeploymentLike {
   address: string;
@@ -13,7 +13,7 @@ export interface ClassifiedDeployments {
 }
 
 function hasFn(abi: any[], name: string): boolean {
-  return Array.isArray(abi) && abi.some((item: any) => item?.type === 'function' && item?.name === name);
+  return Array.isArray(abi) && abi.some((item: any) => item?.type === "function" && item?.name === name);
 }
 
 export async function classifyDeployments(deployments: DeploymentsExtension): Promise<ClassifiedDeployments> {
@@ -30,8 +30,8 @@ export async function classifyDeployments(deployments: DeploymentsExtension): Pr
       abi,
     };
 
-    const isAggregator = hasFn(abi, 'setOracle') || hasFn(abi, 'assetOracles');
-    const isWrapper = hasFn(abi, 'getPriceInfo') || hasFn(abi, 'getAssetPrice');
+    const isAggregator = hasFn(abi, "setOracle") || hasFn(abi, "assetOracles");
+    const isWrapper = hasFn(abi, "getPriceInfo") || hasFn(abi, "getAssetPrice");
 
     if (isAggregator) {
       aggregators.push(item);

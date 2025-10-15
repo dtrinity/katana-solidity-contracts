@@ -1,20 +1,15 @@
 #!/usr/bin/env ts-node
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { execSync } from 'child_process';
-import { logger } from '../lib/logger';
+import * as fs from "fs";
+import * as path from "path";
+import { execSync } from "child_process";
+import { logger } from "../lib/logger";
 
-const HARDHAT_CONFIG_FILES = [
-  'hardhat.config.ts',
-  'hardhat.config.js',
-  'hardhat.config.cjs',
-  'hardhat.config.mjs'
-];
+const HARDHAT_CONFIG_FILES = ["hardhat.config.ts", "hardhat.config.js", "hardhat.config.cjs", "hardhat.config.mjs"];
 
-type SetupPhase = 'hooks' | 'configs' | 'ci' | 'packageScripts';
+type SetupPhase = "hooks" | "configs" | "ci" | "packageScripts";
 
-type PhaseOutcome = 'applied' | 'unchanged' | 'skipped' | 'manual-action' | 'error';
+type PhaseOutcome = "applied" | "unchanged" | "skipped" | "manual-action" | "error";
 
 interface PhaseResult {
   phase: SetupPhase;
@@ -51,22 +46,20 @@ interface PreflightResult {
 }
 
 const REQUIRED_SCRIPTS: Record<string, string> = {
-  'analyze:shared': 'ts-node .shared/scripts/analysis/run-all.ts',
-  'lint:eslint': 'ts-node .shared/scripts/linting/eslint.ts',
-  'lint:prettier': 'ts-node .shared/scripts/linting/prettier.ts',
-  'lint:all': 'ts-node .shared/scripts/linting/run-all.ts',
-  'guardrails:check': 'ts-node .shared/scripts/guardrails/check.ts',
-  'shared:update': 'bash .shared/scripts/subtree/update.sh'
+  "analyze:shared": "ts-node .shared/scripts/analysis/run-all.ts",
+  "lint:eslint": "ts-node .shared/scripts/linting/eslint.ts",
+  "lint:prettier": "ts-node .shared/scripts/linting/prettier.ts",
+  "lint:all": "ts-node .shared/scripts/linting/run-all.ts",
+  "guardrails:check": "ts-node .shared/scripts/guardrails/check.ts",
+  "shared:update": "bash .shared/scripts/subtree/update.sh",
 };
 
 const LEGACY_SCRIPT_REPLACEMENTS: Record<string, string[]> = {
-  'analyze:shared': [
-    'npm run --prefix .shared analyze:all'
-  ],
-  'lint:eslint': ['npm run --prefix .shared lint:eslint'],
-  'lint:prettier': ['npm run --prefix .shared lint:prettier'],
-  'lint:all': ['npm run --prefix .shared lint:all'],
-  'guardrails:check': ['npm run --prefix .shared guardrails:check']
+  "analyze:shared": ["npm run --prefix .shared analyze:all"],
+  "lint:eslint": ["npm run --prefix .shared lint:eslint"],
+  "lint:prettier": ["npm run --prefix .shared lint:prettier"],
+  "lint:all": ["npm run --prefix .shared lint:all"],
+  "guardrails:check": ["npm run --prefix .shared guardrails:check"],
 };
 
 function main(): void {
@@ -75,35 +68,35 @@ function main(): void {
 
   const preflight = runPreflight(context, options);
   if (preflight.errors.length > 0) {
-    logger.error('Preflight checks failed:');
+    logger.error("Preflight checks failed:");
     preflight.errors.forEach((error) => logger.error(`- ${error}`));
     process.exitCode = 1;
     return;
   }
 
   if (preflight.warnings.length > 0) {
-    logger.warn('Preflight warnings:');
+    logger.warn("Preflight warnings:");
     preflight.warnings.forEach((warning) => logger.warn(`- ${warning}`));
   }
 
   const results: PhaseResult[] = [];
 
-  if (options.phases.has('packageScripts')) {
+  if (options.phases.has("packageScripts")) {
     results.push(applyPackageScripts(context, options.force));
   }
-  if (options.phases.has('hooks')) {
+  if (options.phases.has("hooks")) {
     results.push(applyGitHooks(context, options.force));
   }
-  if (options.phases.has('configs')) {
+  if (options.phases.has("configs")) {
     results.push(applyConfigs(context, options.force));
   }
-  if (options.phases.has('ci')) {
+  if (options.phases.has("ci")) {
     results.push(applyCIWorkflows(context, options.force));
   }
 
   summarize(results);
 
-  if (results.some((result) => result.outcome === 'error')) {
+  if (results.some((result) => result.outcome === "error")) {
     process.exitCode = 1;
   }
 }
@@ -115,30 +108,30 @@ function parseArgs(args: string[]): SetupOptions {
 
   for (const arg of args) {
     switch (arg) {
-      case '--hooks':
-        phases.add('hooks');
+      case "--hooks":
+        phases.add("hooks");
         explicitPhaseSelection = true;
         break;
-      case '--configs':
-        phases.add('configs');
+      case "--configs":
+        phases.add("configs");
         explicitPhaseSelection = true;
         break;
-      case '--ci':
-        phases.add('ci');
+      case "--ci":
+        phases.add("ci");
         explicitPhaseSelection = true;
         break;
-      case '--package-scripts':
-        phases.add('packageScripts');
+      case "--package-scripts":
+        phases.add("packageScripts");
         explicitPhaseSelection = true;
         break;
-      case '--all':
-        phases.add('hooks');
-        phases.add('configs');
-        phases.add('ci');
-        phases.add('packageScripts');
+      case "--all":
+        phases.add("hooks");
+        phases.add("configs");
+        phases.add("ci");
+        phases.add("packageScripts");
         explicitPhaseSelection = true;
         break;
-      case '--force':
+      case "--force":
         force = true;
         break;
       default:
@@ -147,10 +140,10 @@ function parseArgs(args: string[]): SetupOptions {
   }
 
   if (!explicitPhaseSelection) {
-    phases.add('hooks');
-    phases.add('configs');
-    phases.add('ci');
-    phases.add('packageScripts');
+    phases.add("hooks");
+    phases.add("configs");
+    phases.add("ci");
+    phases.add("packageScripts");
   }
 
   return { phases, force };
@@ -158,23 +151,23 @@ function parseArgs(args: string[]): SetupOptions {
 
 function collectContext(): SetupContext {
   const projectRoot = process.cwd();
-  const sharedRoot = path.resolve(__dirname, '..');
-  const packageJsonPath = path.join(projectRoot, 'package.json');
+  const sharedRoot = path.resolve(__dirname, "..");
+  const packageJsonPath = path.join(projectRoot, "package.json");
 
   let packageJson: PackageJson | undefined;
   let packageJsonParseError: Error | undefined;
   if (fs.existsSync(packageJsonPath)) {
     try {
-      const raw = fs.readFileSync(packageJsonPath, 'utf-8');
+      const raw = fs.readFileSync(packageJsonPath, "utf-8");
       packageJson = JSON.parse(raw) as PackageJson;
     } catch (error) {
       packageJsonParseError = error as Error;
     }
   }
 
-  const hardhatConfigs = HARDHAT_CONFIG_FILES
-    .map((config) => path.join(projectRoot, config))
-    .filter((configPath) => fs.existsSync(configPath));
+  const hardhatConfigs = HARDHAT_CONFIG_FILES.map((config) => path.join(projectRoot, config)).filter((configPath) =>
+    fs.existsSync(configPath)
+  );
 
   const gitHooksDir = resolveGitHooksDir(projectRoot);
 
@@ -185,7 +178,7 @@ function collectContext(): SetupContext {
     packageJson,
     packageJsonParseError,
     hardhatConfigs,
-    gitHooksDir
+    gitHooksDir,
   };
 }
 
@@ -193,73 +186,70 @@ function runPreflight(context: SetupContext, options: SetupOptions): PreflightRe
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const expectedSharedDir = path.join(context.projectRoot, '.shared');
+  const expectedSharedDir = path.join(context.projectRoot, ".shared");
   if (path.resolve(expectedSharedDir) !== path.resolve(context.sharedRoot)) {
-    errors.push('Run this script from the Hardhat project root (unable to locate .shared directory).');
+    errors.push("Run this script from the Hardhat project root (unable to locate .shared directory).");
   } else if (!fs.existsSync(context.sharedRoot)) {
-    errors.push('Expected .shared directory is missing. Ensure the subtree is integrated before running setup.');
+    errors.push("Expected .shared directory is missing. Ensure the subtree is integrated before running setup.");
   }
 
   if (!context.packageJson) {
     if (context.packageJsonParseError) {
       errors.push(`Failed to parse package.json: ${context.packageJsonParseError.message}`);
     } else {
-      errors.push('No package.json found in project root.');
+      errors.push("No package.json found in project root.");
     }
   }
 
   if (context.hardhatConfigs.length === 0) {
-    errors.push('No hardhat.config.* file found in project root.');
+    errors.push("No hardhat.config.* file found in project root.");
   }
 
   if (!isInsideGitRepo(context.projectRoot)) {
-    errors.push('Not inside a git repository.');
+    errors.push("Not inside a git repository.");
   }
 
-  if (options.phases.has('hooks') && !context.gitHooksDir) {
-    errors.push('Unable to determine git hooks directory.');
+  if (options.phases.has("hooks") && !context.gitHooksDir) {
+    errors.push("Unable to determine git hooks directory.");
   }
 
-  if (options.phases.has('hooks')) {
-    const sharedHooksDir = path.join(context.sharedRoot, 'hooks');
+  if (options.phases.has("hooks")) {
+    const sharedHooksDir = path.join(context.sharedRoot, "hooks");
     if (!fs.existsSync(sharedHooksDir)) {
-      errors.push('Shared hooks directory is missing.');
+      errors.push("Shared hooks directory is missing.");
     }
   }
 
-  if (options.phases.has('configs')) {
-    const sharedConfigsDir = path.join(context.sharedRoot, 'configs');
+  if (options.phases.has("configs")) {
+    const sharedConfigsDir = path.join(context.sharedRoot, "configs");
     if (!fs.existsSync(sharedConfigsDir)) {
-      errors.push('Shared configs directory is missing.');
+      errors.push("Shared configs directory is missing.");
     }
   }
 
-  if (options.phases.has('ci')) {
-    const sharedCiDir = path.join(context.sharedRoot, 'ci');
+  if (options.phases.has("ci")) {
+    const sharedCiDir = path.join(context.sharedRoot, "ci");
     if (!fs.existsSync(sharedCiDir)) {
-      errors.push('Shared CI directory is missing.');
+      errors.push("Shared CI directory is missing.");
     }
-    const workflowsDir = path.join(context.projectRoot, '.github', 'workflows');
+    const workflowsDir = path.join(context.projectRoot, ".github", "workflows");
     if (!fs.existsSync(workflowsDir)) {
-      warnings.push('Project lacks .github/workflows; it will be created if CI workflows are installed.');
+      warnings.push("Project lacks .github/workflows; it will be created if CI workflows are installed.");
     }
   }
 
   const packageJson = context.packageJson;
   if (packageJson) {
     const hasSharedDependency = Boolean(
-      packageJson.dependencies?.['@dtrinity/shared-hardhat-tools'] ||
-      packageJson.devDependencies?.['@dtrinity/shared-hardhat-tools']
+      packageJson.dependencies?.["@dtrinity/shared-hardhat-tools"] || packageJson.devDependencies?.["@dtrinity/shared-hardhat-tools"]
     );
     if (!hasSharedDependency) {
-      warnings.push('Package.json does not list @dtrinity/shared-hardhat-tools; install it via npm/yarn for consistent behavior.');
+      warnings.push("Package.json does not list @dtrinity/shared-hardhat-tools; install it via npm/yarn for consistent behavior.");
     }
 
-    const hasHardhatDependency = Boolean(
-      packageJson.dependencies?.hardhat || packageJson.devDependencies?.hardhat
-    );
+    const hasHardhatDependency = Boolean(packageJson.dependencies?.hardhat || packageJson.devDependencies?.hardhat);
     if (!hasHardhatDependency) {
-      warnings.push('Hardhat dependency not detected in package.json. Confirm this repository is a Hardhat project.');
+      warnings.push("Hardhat dependency not detected in package.json. Confirm this repository is a Hardhat project.");
     }
   }
 
@@ -270,9 +260,9 @@ function applyPackageScripts(context: SetupContext, force: boolean): PhaseResult
   const packageJson = context.packageJson;
   if (!packageJson) {
     return {
-      phase: 'packageScripts',
-      outcome: 'error',
-      messages: ['Cannot update package scripts without a valid package.json']
+      phase: "packageScripts",
+      outcome: "error",
+      messages: ["Cannot update package scripts without a valid package.json"],
     };
   }
 
@@ -314,9 +304,9 @@ function applyPackageScripts(context: SetupContext, force: boolean): PhaseResult
 
   if (added.length === 0 && normalized.length === 0 && conflicts.length === 0) {
     return {
-      phase: 'packageScripts',
-      outcome: 'unchanged',
-      messages: ['All shared scripts already present.']
+      phase: "packageScripts",
+      outcome: "unchanged",
+      messages: ["All shared scripts already present."],
     };
   }
 
@@ -325,16 +315,16 @@ function applyPackageScripts(context: SetupContext, force: boolean): PhaseResult
     if (added.length > 0 || normalized.length > 0) {
       writePackageJson(context.packageJsonPath, packageJson);
       if (added.length > 0) {
-        messages.unshift(`Added scripts: ${added.join(', ')}.`);
+        messages.unshift(`Added scripts: ${added.join(", ")}.`);
       }
       if (normalized.length > 0) {
-        messages.unshift(`Standardized scripts: ${normalized.join(', ')}.`);
+        messages.unshift(`Standardized scripts: ${normalized.join(", ")}.`);
       }
     }
     return {
-      phase: 'packageScripts',
-      outcome: 'manual-action',
-      messages
+      phase: "packageScripts",
+      outcome: "manual-action",
+      messages,
     };
   }
 
@@ -342,16 +332,16 @@ function applyPackageScripts(context: SetupContext, force: boolean): PhaseResult
 
   const messages: string[] = [];
   if (added.length > 0) {
-    messages.push(`Added scripts: ${added.join(', ')}.`);
+    messages.push(`Added scripts: ${added.join(", ")}.`);
   }
   if (normalized.length > 0) {
-    messages.push(`Standardized scripts: ${normalized.join(', ')}.`);
+    messages.push(`Standardized scripts: ${normalized.join(", ")}.`);
   }
 
   return {
-    phase: 'packageScripts',
-    outcome: 'applied',
-    messages
+    phase: "packageScripts",
+    outcome: "applied",
+    messages,
   };
 }
 
@@ -359,14 +349,14 @@ function applyGitHooks(context: SetupContext, force: boolean): PhaseResult {
   const gitHooksDir = context.gitHooksDir;
   if (!gitHooksDir) {
     return {
-      phase: 'hooks',
-      outcome: 'error',
-      messages: ['Unable to locate git hooks directory.']
+      phase: "hooks",
+      outcome: "error",
+      messages: ["Unable to locate git hooks directory."],
     };
   }
 
-  const sharedHooksDir = path.join(context.sharedRoot, 'hooks');
-  const hooks = ['pre-commit', 'pre-push'];
+  const sharedHooksDir = path.join(context.sharedRoot, "hooks");
+  const hooks = ["pre-commit", "pre-push"];
   const installed: string[] = [];
   const skipped: string[] = [];
   const manual: string[] = [];
@@ -391,8 +381,8 @@ function applyGitHooks(context: SetupContext, force: boolean): PhaseResult {
       continue;
     }
 
-    const targetContent = fs.readFileSync(targetPath, 'utf-8');
-    const sourceContent = fs.readFileSync(sourcePath, 'utf-8');
+    const targetContent = fs.readFileSync(targetPath, "utf-8");
+    const sourceContent = fs.readFileSync(sourcePath, "utf-8");
 
     if (targetContent === sourceContent) {
       skipped.push(`${hook} (already up to date)`);
@@ -409,14 +399,14 @@ function applyGitHooks(context: SetupContext, force: boolean): PhaseResult {
     manual.push(`${hook} (existing hook differs; use --force to overwrite)`);
   }
 
-  return buildPhaseResult('hooks', installed, skipped, manual);
+  return buildPhaseResult("hooks", installed, skipped, manual);
 }
 
 function applyConfigs(context: SetupContext, force: boolean): PhaseResult {
-  const sharedConfigsDir = path.join(context.sharedRoot, 'configs');
+  const sharedConfigsDir = path.join(context.sharedRoot, "configs");
   const configs = [
-    { name: 'slither.json', target: '.slither.json' },
-    { name: 'solhint.json', target: '.solhint.json' }
+    { name: "slither.json", target: ".slither.json" },
+    { name: "solhint.json", target: ".solhint.json" },
   ];
 
   const installed: string[] = [];
@@ -438,8 +428,8 @@ function applyConfigs(context: SetupContext, force: boolean): PhaseResult {
       continue;
     }
 
-    const targetContent = fs.readFileSync(targetPath, 'utf-8');
-    const sourceContent = fs.readFileSync(sourcePath, 'utf-8');
+    const targetContent = fs.readFileSync(targetPath, "utf-8");
+    const sourceContent = fs.readFileSync(sourcePath, "utf-8");
 
     if (targetContent === sourceContent) {
       skipped.push(`${config.target} (already up to date)`);
@@ -455,13 +445,13 @@ function applyConfigs(context: SetupContext, force: boolean): PhaseResult {
     manual.push(`${config.target} (existing config differs; use --force to overwrite)`);
   }
 
-  return buildPhaseResult('configs', installed, skipped, manual);
+  return buildPhaseResult("configs", installed, skipped, manual);
 }
 
 function applyCIWorkflows(context: SetupContext, force: boolean): PhaseResult {
-  const sharedCiDir = path.join(context.sharedRoot, 'ci');
-  const workflows = ['shared-guardrails.yml'];
-  const workflowsDir = path.join(context.projectRoot, '.github', 'workflows');
+  const sharedCiDir = path.join(context.sharedRoot, "ci");
+  const workflows = ["shared-guardrails.yml"];
+  const workflowsDir = path.join(context.projectRoot, ".github", "workflows");
 
   if (!fs.existsSync(workflowsDir)) {
     fs.mkdirSync(workflowsDir, { recursive: true });
@@ -486,8 +476,8 @@ function applyCIWorkflows(context: SetupContext, force: boolean): PhaseResult {
       continue;
     }
 
-    const targetContent = fs.readFileSync(targetPath, 'utf-8');
-    const sourceContent = fs.readFileSync(sourcePath, 'utf-8');
+    const targetContent = fs.readFileSync(targetPath, "utf-8");
+    const sourceContent = fs.readFileSync(sourcePath, "utf-8");
 
     if (targetContent === sourceContent) {
       skipped.push(`${workflow} (already up to date)`);
@@ -503,53 +493,48 @@ function applyCIWorkflows(context: SetupContext, force: boolean): PhaseResult {
     manual.push(`${workflow} (existing workflow differs; use --force to overwrite)`);
   }
 
-  return buildPhaseResult('ci', installed, skipped, manual);
+  return buildPhaseResult("ci", installed, skipped, manual);
 }
 
-function buildPhaseResult(
-  phase: SetupPhase,
-  installed: string[],
-  skipped: string[],
-  manual: string[]
-): PhaseResult {
+function buildPhaseResult(phase: SetupPhase, installed: string[], skipped: string[], manual: string[]): PhaseResult {
   const messages: string[] = [];
 
   if (installed.length > 0) {
-    messages.push(`Installed/updated: ${installed.join(', ')}.`);
+    messages.push(`Installed/updated: ${installed.join(", ")}.`);
   }
   if (skipped.length > 0) {
-    messages.push(`Already up to date: ${skipped.join(', ')}.`);
+    messages.push(`Already up to date: ${skipped.join(", ")}.`);
   }
   if (manual.length > 0) {
-    messages.push(`Manual review required: ${manual.join(', ')}.`);
+    messages.push(`Manual review required: ${manual.join(", ")}.`);
   }
 
-  let outcome: PhaseOutcome = 'unchanged';
+  let outcome: PhaseOutcome = "unchanged";
   if (installed.length > 0) {
-    outcome = 'applied';
+    outcome = "applied";
   } else if (manual.length > 0) {
-    outcome = 'manual-action';
+    outcome = "manual-action";
   } else if (skipped.length > 0) {
-    outcome = 'unchanged';
+    outcome = "unchanged";
   } else {
-    outcome = 'skipped';
+    outcome = "skipped";
   }
 
   return { phase, outcome, messages };
 }
 
 function summarize(results: PhaseResult[]): void {
-  logger.info('Setup summary:');
+  logger.info("Setup summary:");
   for (const result of results) {
     const header = `${result.phase} -> ${result.outcome}`;
     switch (result.outcome) {
-      case 'applied':
+      case "applied":
         logger.success(header);
         break;
-      case 'manual-action':
+      case "manual-action":
         logger.warn(header);
         break;
-      case 'error':
+      case "error":
         logger.error(header);
         break;
       default:
@@ -561,24 +546,24 @@ function summarize(results: PhaseResult[]): void {
 }
 
 function resolveGitHooksDir(projectRoot: string): string | undefined {
-  const gitPath = path.join(projectRoot, '.git');
+  const gitPath = path.join(projectRoot, ".git");
   if (!fs.existsSync(gitPath)) {
     return undefined;
   }
 
   const stats = fs.statSync(gitPath);
   if (stats.isDirectory()) {
-    return path.join(gitPath, 'hooks');
+    return path.join(gitPath, "hooks");
   }
 
   if (stats.isFile()) {
     try {
-      const content = fs.readFileSync(gitPath, 'utf-8');
+      const content = fs.readFileSync(gitPath, "utf-8");
       const match = content.match(/gitdir:\s*(.*)/i);
       if (match && match[1]) {
         const gitDir = match[1].trim();
         const resolved = path.resolve(projectRoot, gitDir);
-        return path.join(resolved, 'hooks');
+        return path.join(resolved, "hooks");
       }
     } catch {
       return undefined;
@@ -590,7 +575,7 @@ function resolveGitHooksDir(projectRoot: string): string | undefined {
 
 function isInsideGitRepo(projectRoot: string): boolean {
   try {
-    execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore', cwd: projectRoot });
+    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore", cwd: projectRoot });
     return true;
   } catch {
     return false;
@@ -603,10 +588,10 @@ function commandsMatch(existing: string, desired: string): boolean {
 
 function normalizeCommand(command: string): string {
   return command
-    .replace(/node_modules\/\.bin\//g, '')
-    .replace(/^npx\s+/, '')
-    .replace(/^yarn\s+/, '')
-    .replace(/^pnpm exec\s+/, '')
+    .replace(/node_modules\/\.bin\//g, "")
+    .replace(/^npx\s+/, "")
+    .replace(/^yarn\s+/, "")
+    .replace(/^pnpm exec\s+/, "")
     .trim();
 }
 

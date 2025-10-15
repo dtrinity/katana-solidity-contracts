@@ -16,11 +16,7 @@ import { ActionSource, PreparedContractPlan, prepareContractPlans } from "./plan
 
 type HardhatRuntimeEnvironment = any;
 
-type OperationType =
-  | "transferOwnership"
-  | "grantDefaultAdmin"
-  | "renounceDefaultAdmin"
-  | "revokeDefaultAdmin";
+type OperationType = "transferOwnership" | "grantDefaultAdmin" | "renounceDefaultAdmin" | "revokeDefaultAdmin";
 
 type OperationStatus = "executed" | "queued" | "skipped" | "failed" | "planned";
 
@@ -98,7 +94,7 @@ export async function runRoleManifest(options: RunManifestOptions): Promise<Runn
     deployerSigner = await ethers.getSigner(manifest.deployer);
   } catch (error) {
     throw new ManifestValidationError(
-      `Unable to obtain signer for deployer ${manifest.deployer}. Error: ${error instanceof Error ? error.message : String(error)}`,
+      `Unable to obtain signer for deployer ${manifest.deployer}. Error: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
@@ -250,9 +246,7 @@ export async function runRoleManifest(options: RunManifestOptions): Promise<Runn
 
   if (!dryRun && safeTransactions.length > 0) {
     if (!manifest.safe) {
-      throw new ManifestValidationError(
-        `Safe transactions were requested but manifest.safe is not configured.`,
-      );
+      throw new ManifestValidationError(`Safe transactions were requested but manifest.safe is not configured.`);
     }
 
     const description = manifest.safe.description || `Role revocations (${safeTransactions.length} operations)`;

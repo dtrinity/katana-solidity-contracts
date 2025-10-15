@@ -1,13 +1,13 @@
 #!/usr/bin/env ts-node
 
-import { Command } from 'commander';
-import { scanRolesAndOwnership } from '../../lib/roles/scan';
-import { logger } from '../../lib/logger';
-import { loadRoleManifest, resolveRoleManifest, ResolvedDefaultAdminAction } from '../../lib/roles/manifest';
-import { prepareContractPlans, isDeploymentExcluded } from '../../lib/roles/planner';
+import { Command } from "commander";
+import { scanRolesAndOwnership } from "../../lib/roles/scan";
+import { logger } from "../../lib/logger";
+import { loadRoleManifest, resolveRoleManifest, ResolvedDefaultAdminAction } from "../../lib/roles/manifest";
+import { prepareContractPlans, isDeploymentExcluded } from "../../lib/roles/planner";
 
 interface DriftIssue {
-  readonly type: 'ownable' | 'defaultAdmin';
+  readonly type: "ownable" | "defaultAdmin";
   readonly deployment: string;
   readonly address: string;
   readonly contract: string;
@@ -15,22 +15,22 @@ interface DriftIssue {
 }
 
 type ScanResult = Awaited<ReturnType<typeof scanRolesAndOwnership>>;
-type RolesExposure = ScanResult['rolesContracts'][number];
-type OwnableExposure = ScanResult['ownableContracts'][number];
+type RolesExposure = ScanResult["rolesContracts"][number];
+type OwnableExposure = ScanResult["ownableContracts"][number];
 
 async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .description('Scan deployed contracts for role assignments and ownership.')
-    .requiredOption('-n, --network <name>', 'Network to scan (must have deployments)')
-    .option('-d, --deployer <address>', 'Deployer address to check for role ownership (defaults to network.config.roles.deployer)')
-    .option('-g, --governance <address>', 'Governance multisig address to check (defaults to network.config.roles.governance)')
-    .option('--manifest <path>', 'Path to a role manifest to evaluate coverage')
-    .option('--drift-check', 'Exit non-zero when deployer-held roles are not covered by the manifest')
-    .option('--json-output <path>', 'Write scan report JSON to path (or stdout when set to "-")')
-    .option('--deployments-dir <path>', 'Path to deployments directory (defaults to ./deployments)')
-    .option('--hardhat-config <path>', 'Path to hardhat.config.ts (defaults to ./hardhat.config.ts)');
+    .description("Scan deployed contracts for role assignments and ownership.")
+    .requiredOption("-n, --network <name>", "Network to scan (must have deployments)")
+    .option("-d, --deployer <address>", "Deployer address to check for role ownership (defaults to network.config.roles.deployer)")
+    .option("-g, --governance <address>", "Governance multisig address to check (defaults to network.config.roles.governance)")
+    .option("--manifest <path>", "Path to a role manifest to evaluate coverage")
+    .option("--drift-check", "Exit non-zero when deployer-held roles are not covered by the manifest")
+    .option("--json-output <path>", 'Write scan report JSON to path (or stdout when set to "-")')
+    .option("--deployments-dir <path>", "Path to deployments directory (defaults to ./deployments)")
+    .option("--hardhat-config <path>", "Path to hardhat.config.ts (defaults to ./hardhat.config.ts)");
 
   program.parse(process.argv);
   const options = program.opts();
@@ -42,15 +42,17 @@ async function main(): Promise<void> {
 
   try {
     process.env.HARDHAT_NETWORK = options.network;
-    const hre = require('hardhat');
+    const hre = require("hardhat");
 
     const networkConfig = (hre.network?.config ?? {}) as { roles?: { deployer?: string; governance?: string } };
     const configRoles = networkConfig.roles ?? {};
-    const deployer: string | undefined = options.deployer as string | undefined ?? configRoles.deployer;
-    const governance: string | undefined = options.governance as string | undefined ?? configRoles.governance;
+    const deployer: string | undefined = (options.deployer as string | undefined) ?? configRoles.deployer;
+    const governance: string | undefined = (options.governance as string | undefined) ?? configRoles.governance;
 
     if (!deployer || !governance) {
-      throw new Error('Missing deployer/governance addresses. Provide --deployer/--governance or set roles.deployer / roles.governance in the Hardhat network config.');
+      throw new Error(
+        "Missing deployer/governance addresses. Provide --deployer/--governance or set roles.deployer / roles.governance in the Hardhat network config."
+      );
     }
 
     logger.info(`Scanning roles/ownership on ${options.network}`);
@@ -67,10 +69,10 @@ async function main(): Promise<void> {
     for (const c of result.rolesContracts) {
       logger.info(`- ${c.name} (${c.address})`);
       if (c.rolesHeldByDeployer.length > 0) {
-        logger.info(`  deployer roles: ${c.rolesHeldByDeployer.map((r) => r.name).join(', ')}`);
+        logger.info(`  deployer roles: ${c.rolesHeldByDeployer.map((r) => r.name).join(", ")}`);
       }
       if (c.rolesHeldByGovernance.length > 0) {
-        logger.info(`  governance roles: ${c.rolesHeldByGovernance.map((r) => r.name).join(', ')}`);
+        logger.info(`  governance roles: ${c.rolesHeldByGovernance.map((r) => r.name).join(", ")}`);
       }
       logger.info(`  governanceHasDefaultAdmin: ${c.governanceHasDefaultAdmin}`);
     }
@@ -78,7 +80,7 @@ async function main(): Promise<void> {
     logger.info(`\nOwnable contracts: ${result.ownableContracts.length}`);
     for (const c of result.ownableContracts) {
       logger.info(
-        `- ${c.name} (${c.address}) owner=${c.owner} deployerIsOwner=${c.deployerIsOwner} governanceIsOwner=${c.governanceIsOwner}`,
+        `- ${c.name} (${c.address}) owner=${c.owner} deployerIsOwner=${c.deployerIsOwner} governanceIsOwner=${c.governanceIsOwner}`
       );
     }
 
@@ -86,7 +88,7 @@ async function main(): Promise<void> {
     const exposureOwnable = result.ownableContracts.filter((c) => c.deployerIsOwner);
     const governanceOwnableMismatches = result.ownableContracts.filter((c) => !c.governanceIsOwner);
 
-    logger.info('\n--- Deployer Exposure Summary ---');
+    logger.info("\n--- Deployer Exposure Summary ---");
     if (exposureRoles.length > 0) {
       logger.info(`Contracts with roles held by deployer: ${exposureRoles.length}`);
       for (const c of exposureRoles) {
@@ -96,7 +98,7 @@ async function main(): Promise<void> {
         }
       }
     } else {
-      logger.success('Deployer holds no AccessControl roles.');
+      logger.success("Deployer holds no AccessControl roles.");
     }
 
     if (exposureOwnable.length > 0) {
@@ -105,7 +107,7 @@ async function main(): Promise<void> {
         logger.info(`- ${c.name} (${c.address})`);
       }
     } else {
-      logger.success('\nDeployer owns no Ownable contracts.');
+      logger.success("\nDeployer owns no Ownable contracts.");
     }
 
     if (governanceOwnableMismatches.length > 0) {
@@ -114,7 +116,7 @@ async function main(): Promise<void> {
         logger.warn(`- ${c.name} (${c.address}) owner=${c.owner}`);
       }
     } else {
-      logger.success('\nAll Ownable contracts are governed by the multisig.');
+      logger.success("\nAll Ownable contracts are governed by the multisig.");
     }
 
     let driftIssues: DriftIssue[] = [];
@@ -139,17 +141,17 @@ async function main(): Promise<void> {
 
       if (options.driftCheck) {
         if (driftIssues.length > 0) {
-          logger.error('\nDrift detected: deployer retains control outside manifest coverage.');
+          logger.error("\nDrift detected: deployer retains control outside manifest coverage.");
           for (const issue of driftIssues) {
             logger.error(`- [${issue.type}] ${issue.contract} (${issue.address}) :: ${issue.detail}`);
           }
           process.exitCode = 1;
         } else {
-          logger.success('\nNo drift detected. Manifest covers all deployer-held ownership/admin roles.');
+          logger.success("\nNo drift detected. Manifest covers all deployer-held ownership/admin roles.");
         }
       }
     } else if (options.driftCheck) {
-      throw new Error('--drift-check requires --manifest to evaluate coverage.');
+      throw new Error("--drift-check requires --manifest to evaluate coverage.");
     }
 
     if (options.jsonOutput) {
@@ -182,21 +184,19 @@ async function main(): Promise<void> {
       };
 
       const payload = JSON.stringify(report, null, 2);
-      if (options.jsonOutput === '-') {
+      if (options.jsonOutput === "-") {
         // eslint-disable-next-line no-console
         console.log(payload);
       } else {
-        const fs = require('fs');
-        const path = require('path');
-        const resolvedPath = path.isAbsolute(options.jsonOutput)
-          ? options.jsonOutput
-          : path.join(process.cwd(), options.jsonOutput);
+        const fs = require("fs");
+        const path = require("path");
+        const resolvedPath = path.isAbsolute(options.jsonOutput) ? options.jsonOutput : path.join(process.cwd(), options.jsonOutput);
         fs.writeFileSync(resolvedPath, payload);
         logger.info(`\nSaved JSON report to ${resolvedPath}`);
       }
     }
   } catch (error) {
-    logger.error('Failed to scan roles and ownership.');
+    logger.error("Failed to scan roles and ownership.");
     logger.error(String(error instanceof Error ? error.message : error));
     process.exitCode = 1;
   }
@@ -218,16 +218,16 @@ function findOwnableDrift({
       continue;
     }
 
-    if (isDeploymentExcluded(manifest, exposure.deploymentName, 'ownable')) {
+    if (isDeploymentExcluded(manifest, exposure.deploymentName, "ownable")) {
       continue;
     }
 
     issues.push({
-      type: 'ownable',
+      type: "ownable",
       deployment: exposure.deploymentName,
       address: exposure.address,
       contract: exposure.name,
-      detail: 'Manifest does not include an Ownable transfer for this deployment.',
+      detail: "Manifest does not include an Ownable transfer for this deployment.",
     });
   }
 
@@ -246,7 +246,7 @@ function findDefaultAdminDrift({
   const issues: DriftIssue[] = [];
 
   for (const exposure of exposureRoles) {
-    const defaultAdminRole = exposure.rolesHeldByDeployer.find((role) => role.name === 'DEFAULT_ADMIN_ROLE');
+    const defaultAdminRole = exposure.rolesHeldByDeployer.find((role) => role.name === "DEFAULT_ADMIN_ROLE");
     if (!defaultAdminRole) {
       continue;
     }
@@ -262,16 +262,16 @@ function findDefaultAdminDrift({
       continue;
     }
 
-    if (isDeploymentExcluded(manifest, exposure.deploymentName, 'defaultAdmin')) {
+    if (isDeploymentExcluded(manifest, exposure.deploymentName, "defaultAdmin")) {
       continue;
     }
 
     issues.push({
-      type: 'defaultAdmin',
+      type: "defaultAdmin",
       deployment: exposure.deploymentName,
       address: exposure.address,
       contract: exposure.name,
-      detail: 'Manifest does not include a DEFAULT_ADMIN_ROLE migration for this deployment.',
+      detail: "Manifest does not include a DEFAULT_ADMIN_ROLE migration for this deployment.",
     });
   }
 

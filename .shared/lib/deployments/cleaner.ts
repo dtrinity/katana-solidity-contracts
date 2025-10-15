@@ -1,7 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
-import { findProjectRoot } from '../utils';
+import { findProjectRoot } from "../utils";
 
 export interface CleanDeploymentsOptions {
   network: string;
@@ -19,14 +19,14 @@ export interface CleanDeploymentsResult {
   dryRun: boolean;
 }
 
-const DEFAULT_DEPLOYMENTS_DIR = 'deployments';
-const MIGRATIONS_FILENAME = '.migrations.json';
+const DEFAULT_DEPLOYMENTS_DIR = "deployments";
+const MIGRATIONS_FILENAME = ".migrations.json";
 
 function normalizeKeywords(keywords: string[], caseSensitive: boolean): string[] {
   return keywords
-    .map(keyword => keyword.trim())
-    .filter(keyword => keyword.length > 0)
-    .map(keyword => (caseSensitive ? keyword : keyword.toLowerCase()));
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword.length > 0)
+    .map((keyword) => (caseSensitive ? keyword : keyword.toLowerCase()));
 }
 
 function resolveDeploymentsRoot(projectRoot: string, deploymentsDir?: string): string {
@@ -34,9 +34,7 @@ function resolveDeploymentsRoot(projectRoot: string, deploymentsDir?: string): s
     return path.join(projectRoot, DEFAULT_DEPLOYMENTS_DIR);
   }
 
-  return path.isAbsolute(deploymentsDir)
-    ? deploymentsDir
-    : path.join(projectRoot, deploymentsDir);
+  return path.isAbsolute(deploymentsDir) ? deploymentsDir : path.join(projectRoot, deploymentsDir);
 }
 
 export function cleanDeployments(options: CleanDeploymentsOptions): CleanDeploymentsResult {
@@ -44,7 +42,7 @@ export function cleanDeployments(options: CleanDeploymentsOptions): CleanDeploym
   const keywords = normalizeKeywords(options.keywords, caseSensitive);
 
   if (keywords.length === 0) {
-    throw new Error('At least one keyword must be provided');
+    throw new Error("At least one keyword must be provided");
   }
 
   const projectRoot = findProjectRoot();
@@ -60,7 +58,7 @@ export function cleanDeployments(options: CleanDeploymentsOptions): CleanDeploym
     throw new Error(`Migrations file not found at ${migrationsPath}`);
   }
 
-  const migrationsContent = fs.readFileSync(migrationsPath, 'utf8');
+  const migrationsContent = fs.readFileSync(migrationsPath, "utf8");
   let migrations: Record<string, unknown>;
   try {
     migrations = JSON.parse(migrationsContent) as Record<string, unknown>;
@@ -73,7 +71,7 @@ export function cleanDeployments(options: CleanDeploymentsOptions): CleanDeploym
 
   const matchesKeyword = (value: string): boolean => {
     const target = caseSensitive ? value : value.toLowerCase();
-    return keywords.some(keyword => target.includes(keyword));
+    return keywords.some((keyword) => target.includes(keyword));
   };
 
   const filteredMigrations: Record<string, unknown> = {};
@@ -89,9 +87,7 @@ export function cleanDeployments(options: CleanDeploymentsOptions): CleanDeploym
   const missingFiles: string[] = [];
 
   if (removedMigrationKeys.length > 0) {
-    const deploymentFiles = fs
-      .readdirSync(networkDir)
-      .filter(file => file.endsWith('.json') && file !== MIGRATIONS_FILENAME);
+    const deploymentFiles = fs.readdirSync(networkDir).filter((file) => file.endsWith(".json") && file !== MIGRATIONS_FILENAME);
 
     for (const file of deploymentFiles) {
       if (!matchesKeyword(file)) {

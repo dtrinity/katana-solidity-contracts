@@ -32,7 +32,7 @@ describe("DStakeIdleVault", function () {
       "Staked dUSD Idle",
       "sdUSD-idle",
       deployer,
-      rewardManager
+      rewardManager,
     )) as DStakeIdleVault;
     await vault.waitForDeployment();
   });
@@ -97,18 +97,16 @@ describe("DStakeIdleVault", function () {
 
   it("restricts reward operations to the reward manager", async function () {
     const [, nonManagerSigner] = await ethers.getSigners();
-    await expect(vault.connect(nonManagerSigner).fundRewards(ONE)).to.be.revertedWithCustomError(
-      vault,
-      "AccessControlUnauthorizedAccount"
-    );
+    await expect(vault.connect(nonManagerSigner).fundRewards(ONE)).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
 
-    await expect(
-      vault.connect(nonManagerSigner).withdrawUnreleasedRewards(nonManagerSigner.address, ONE)
-    ).to.be.revertedWithCustomError(vault, "AccessControlUnauthorizedAccount");
+    await expect(vault.connect(nonManagerSigner).withdrawUnreleasedRewards(nonManagerSigner.address, ONE)).to.be.revertedWithCustomError(
+      vault,
+      "AccessControlUnauthorizedAccount",
+    );
 
     await expect(vault.connect(nonManagerSigner).setEmissionSchedule(0, 0, 0)).to.be.revertedWithCustomError(
       vault,
-      "AccessControlUnauthorizedAccount"
+      "AccessControlUnauthorizedAccount",
     );
   });
 
@@ -117,9 +115,10 @@ describe("DStakeIdleVault", function () {
     await asset.connect(rewardManagerSigner).approve(await vault.getAddress(), ONE);
     await vault.connect(rewardManagerSigner).fundRewards(ONE);
 
-    await expect(
-      vault.connect(rewardManagerSigner).withdrawUnreleasedRewards(rewardManager, ONE * 2n)
-    ).to.be.revertedWithCustomError(vault, "InsufficientRewardReserve");
+    await expect(vault.connect(rewardManagerSigner).withdrawUnreleasedRewards(rewardManager, ONE * 2n)).to.be.revertedWithCustomError(
+      vault,
+      "InsufficientRewardReserve",
+    );
   });
 
   it("clamps pending emission by available reserve", async function () {

@@ -2,7 +2,7 @@
   "extends": "solhint:recommended",
   "rules": {
     "compiler-version": ["error", "^0.8.0"],
-    "func-visibility": ["warn", {"ignoreConstructors": true}],
+    "func-visibility": ["warn", { "ignoreConstructors": true }],
     "avoid-low-level-calls": "warn",
     "avoid-sha3": "warn",
     "avoid-suicide": "error",
@@ -19,7 +19,7 @@
     "reentrancy": "warn",
     "state-visibility": "error",
     "no-console": "error",
-    "reason-string": ["warn", {"maxLength": 100}],
+    "reason-string": ["warn", { "maxLength": 100 }],
     "max-line-length": ["error", 120],
     "code-complexity": ["warn", 7],
     "function-max-lines": ["warn", 50],

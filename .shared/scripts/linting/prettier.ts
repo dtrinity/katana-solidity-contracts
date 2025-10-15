@@ -1,32 +1,32 @@
 #!/usr/bin/env ts-node
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { globSync } from 'glob';
-import { Command } from 'commander';
+import * as fs from "fs";
+import * as path from "path";
+import { globSync } from "glob";
+import { Command } from "commander";
 
-import { logger } from '../../lib/logger';
-import { findProjectRoot, loadProjectModule } from '../../lib/utils';
+import { logger } from "../../lib/logger";
+import { findProjectRoot, loadProjectModule } from "../../lib/utils";
 
 const DEFAULT_PATTERNS = [
-  'contracts/**/*.sol',
-  'deploy/**/*.{ts,js}',
-  'scripts/**/*.{ts,js}',
-  'config/**/*.{ts,js,json}',
-  'test/**/*.{ts,js}',
-  'typescript/**/*.{ts,js}',
-  '*.{ts,js,json,cjs,mjs}',
+  "contracts/**/*.sol",
+  "deploy/**/*.{ts,js}",
+  "scripts/**/*.{ts,js}",
+  "config/**/*.{ts,js,json}",
+  "test/**/*.{ts,js}",
+  "typescript/**/*.{ts,js}",
+  "*.{ts,js,json,cjs,mjs}",
 ];
 
 const DEFAULT_IGNORES = [
-  '**/node_modules/**',
-  '**/artifacts/**',
-  '**/cache/**',
-  '**/deployments/**',
-  '**/typechain-types/**',
-  '**/reports/**',
-  '**/.shared/**',
-  '**/.yarn/**',
+  "**/node_modules/**",
+  "**/artifacts/**",
+  "**/cache/**",
+  "**/deployments/**",
+  "**/typechain-types/**",
+  "**/reports/**",
+  "**/.shared/**",
+  "**/.yarn/**",
 ];
 
 export interface PrettierOptions {
@@ -58,7 +58,7 @@ async function resolveConfigPath(prettier: PrettierModule, projectRoot: string, 
       return discovered;
     }
   } catch (error) {
-    logger.debug('Unable to auto-detect Prettier config:', error);
+    logger.debug("Unable to auto-detect Prettier config:", error);
   }
 
   return null;
@@ -68,7 +68,7 @@ async function loadConfigForFile(
   prettier: PrettierModule,
   filePath: string,
   configPath: string | null,
-  fallbackConfig: Record<string, unknown> | null,
+  fallbackConfig: Record<string, unknown> | null
 ): Promise<Record<string, unknown>> {
   try {
     if (configPath) {
@@ -91,10 +91,10 @@ async function loadConfigForFile(
 
 export async function runPrettier(options: PrettierOptions = {}): Promise<boolean> {
   const projectRoot = findProjectRoot();
-  const prettier = loadProjectModule<PrettierModule>('prettier', projectRoot);
+  const prettier = loadProjectModule<PrettierModule>("prettier", projectRoot);
 
   if (!prettier) {
-    logger.error('Prettier is not installed. Install it with: npm install -D prettier prettier-plugin-solidity');
+    logger.error("Prettier is not installed. Install it with: npm install -D prettier prettier-plugin-solidity");
     return false;
   }
 
@@ -102,7 +102,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
   const ignore = Array.from(new Set([...(options.ignore ?? []), ...DEFAULT_IGNORES]));
 
   const configPath = await resolveConfigPath(prettier, projectRoot, options.config);
-  const sharedConfigPath = path.join(__dirname, '../../configs/prettier.config.cjs');
+  const sharedConfigPath = path.join(__dirname, "../../configs/prettier.config.cjs");
   let fallbackConfig: Record<string, unknown> | null = null;
 
   if (!configPath) {
@@ -111,7 +111,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
       const configModule = require(sharedConfigPath);
       fallbackConfig = (configModule.default ?? configModule) as Record<string, unknown>;
     } catch (error) {
-      logger.warn('Failed to load shared Prettier config:', error);
+      logger.warn("Failed to load shared Prettier config:", error);
     }
   }
 
@@ -130,7 +130,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
   }
 
   if (files.size === 0) {
-    logger.info('No files matched Prettier patterns.');
+    logger.info("No files matched Prettier patterns.");
     return true;
   }
 
@@ -140,7 +140,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
   for (const file of files) {
     let content: string;
     try {
-      content = fs.readFileSync(file, 'utf8');
+      content = fs.readFileSync(file, "utf8");
     } catch (error) {
       logger.warn(`Unable to read ${file}:`, error);
       hasIssues = true;
@@ -154,7 +154,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
       if (options.write) {
         const formatted = await Promise.resolve(prettier.format(content, finalConfig));
         if (formatted !== content) {
-          fs.writeFileSync(file, formatted, 'utf8');
+          fs.writeFileSync(file, formatted, "utf8");
           formattedCount += 1;
           logger.debug(`Formatted ${path.relative(projectRoot, file)}`);
         }
@@ -173,7 +173,7 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
 
   if (options.write) {
     if (hasIssues) {
-      logger.error('Prettier encountered errors while formatting.');
+      logger.error("Prettier encountered errors while formatting.");
       return false;
     }
     logger.success(`Prettier formatting complete. Updated ${formattedCount} file(s).`);
@@ -181,11 +181,11 @@ export async function runPrettier(options: PrettierOptions = {}): Promise<boolea
   }
 
   if (hasIssues) {
-    logger.error('Prettier check failed. Run with --write to fix formatting.');
+    logger.error("Prettier check failed. Run with --write to fix formatting.");
     return false;
   }
 
-  logger.success('Prettier check passed.');
+  logger.success("Prettier check passed.");
   return true;
 }
 
@@ -193,16 +193,16 @@ if (require.main === module) {
   const program = new Command();
 
   program
-    .description('Run Prettier using shared defaults with project overrides.')
-    .option('--write', 'Write formatting changes instead of checking.')
-    .option('--config <path>', 'Path to a Prettier configuration file.')
-    .option('--pattern <glob>', 'Glob pattern to include (can be repeated).', (value, previous: string[]) => {
+    .description("Run Prettier using shared defaults with project overrides.")
+    .option("--write", "Write formatting changes instead of checking.")
+    .option("--config <path>", "Path to a Prettier configuration file.")
+    .option("--pattern <glob>", "Glob pattern to include (can be repeated).", (value, previous: string[]) => {
       if (previous) {
         return [...previous, value];
       }
       return [value];
     })
-    .option('--ignore <glob>', 'Glob pattern to ignore (can be repeated).', (value, previous: string[]) => {
+    .option("--ignore <glob>", "Glob pattern to ignore (can be repeated).", (value, previous: string[]) => {
       if (previous) {
         return [...previous, value];
       }
@@ -219,7 +219,7 @@ if (require.main === module) {
     config: opts.config,
     patterns,
     ignore,
-  }).then(success => {
+  }).then((success) => {
     process.exit(success ? 0 : 1);
   });
 }

@@ -5,7 +5,7 @@ import * as path from "path";
 
 // Type guards for ABI fragments
 function isAbiFunctionFragment(
-  item: AbiItem,
+  item: AbiItem
 ): item is AbiItem & { type: "function"; name: string; stateMutability?: string; inputs?: any[]; outputs?: any[] } {
   return item.type === "function";
 }
@@ -86,7 +86,7 @@ export async function scanRolesAndOwnership(options: ScanOptions): Promise<ScanR
           item.inputs[0].type === "bytes32" &&
           item.inputs[1].type === "address" &&
           item.outputs?.length === 1 &&
-          item.outputs[0].type === "bool",
+          item.outputs[0].type === "bool"
       );
 
       if (hasRoleFn) {
@@ -165,7 +165,7 @@ export async function scanRolesAndOwnership(options: ScanOptions): Promise<ScanR
           item.name === "owner" &&
           (item.inputs?.length ?? 0) === 0 &&
           item.outputs?.length === 1 &&
-          item.outputs[0].type === "address",
+          item.outputs[0].type === "address"
       );
 
       if (ownerFn) {

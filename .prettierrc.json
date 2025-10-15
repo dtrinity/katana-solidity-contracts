@@ -1,10 +1,20 @@
 {
   "printWidth": 140,
-  "trailingComma": "es5",
+  "trailingComma": "all",
   "semi": true,
   "singleQuote": false,
   "tabWidth": 2,
   "arrowParens": "always",
   "bracketSpacing": true,
-  "endOfLine": "lf"
+  "endOfLine": "lf",
+  "plugins": ["prettier-plugin-solidity"],
+  "overrides": [
+    {
+      "files": "*.sol",
+      "options": {
+        "tabWidth": 4,
+        "printWidth": 120
+      }
+    }
+  ]
 }

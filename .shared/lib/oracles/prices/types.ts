@@ -1,5 +1,5 @@
-import type { HardhatRuntimeEnvironment } from 'hardhat/types';
-import type { DeploymentsExtension } from 'hardhat-deploy/types';
+import type { HardhatRuntimeEnvironment } from "hardhat/types";
+import type { DeploymentsExtension } from "hardhat-deploy/types";
 
 export type OracleInspectorLogger = {
   info(message: string): void;

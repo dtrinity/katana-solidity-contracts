@@ -1,8 +1,8 @@
-import { execSync, ExecSyncOptions } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-import { createRequire } from 'module';
-import { logger } from './logger';
+import { execSync, ExecSyncOptions } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import { createRequire } from "module";
+import { logger } from "./logger";
 
 export interface ExecResult {
   success: boolean;
@@ -13,22 +13,19 @@ export interface ExecResult {
 /**
  * Execute a command and return the result
  */
-export function execCommand(
-  command: string,
-  options: ExecSyncOptions = {}
-): ExecResult {
+export function execCommand(command: string, options: ExecSyncOptions = {}): ExecResult {
   try {
     const output = execSync(command, {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      ...options
+      encoding: "utf-8",
+      stdio: "pipe",
+      ...options,
     }) as string;
     return { success: true, output };
   } catch (error: any) {
     return {
       success: false,
       error: error.message,
-      output: error.stdout?.toString()
+      output: error.stdout?.toString(),
     };
   }
 }
@@ -48,11 +45,11 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
   let currentDir = startDir;
 
   while (true) {
-    const packagePath = path.join(currentDir, 'package.json');
+    const packagePath = path.join(currentDir, "package.json");
     if (fs.existsSync(packagePath)) {
       try {
-        const content = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { name?: string };
-        if (content.name !== '@dtrinity/shared-hardhat-tools') {
+        const content = JSON.parse(fs.readFileSync(packagePath, "utf8")) as { name?: string };
+        if (content.name !== "@dtrinity/shared-hardhat-tools") {
           return currentDir;
         }
       } catch (error) {
@@ -77,7 +74,7 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
 export function getNetworkName(): string | undefined {
   // Check command line arguments
   const args = process.argv;
-  const networkIndex = args.indexOf('--network');
+  const networkIndex = args.indexOf("--network");
   if (networkIndex !== -1 && args[networkIndex + 1]) {
     return args[networkIndex + 1];
   }
@@ -103,7 +100,7 @@ export function isCI(): boolean {
 /**
  * Get all Solidity files in a directory
  */
-export function getSolidityFiles(dir: string = 'contracts'): string[] {
+export function getSolidityFiles(dir: string = "contracts"): string[] {
   const files: string[] = [];
   const fullPath = path.join(process.cwd(), dir);
 
@@ -121,7 +118,7 @@ export function getSolidityFiles(dir: string = 'contracts'): string[] {
 
       if (stat.isDirectory()) {
         walkDir(entryPath);
-      } else if (entry.endsWith('.sol')) {
+      } else if (entry.endsWith(".sol")) {
         files.push(entryPath);
       }
     }
@@ -136,7 +133,7 @@ export function getSolidityFiles(dir: string = 'contracts'): string[] {
 export function loadProjectModule<T = any>(moduleName: string, projectRoot?: string): T | null {
   const root = projectRoot ?? findProjectRoot();
   try {
-    const requireFromProject = createRequire(path.join(root, 'package.json'));
+    const requireFromProject = createRequire(path.join(root, "package.json"));
     return requireFromProject(moduleName) as T;
   } catch (error) {
     logger.debug(`Failed to load module '${moduleName}' from ${root}:`, error);

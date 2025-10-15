@@ -1,18 +1,18 @@
-import chalk from 'chalk';
+import chalk from "chalk";
 
 export enum LogLevel {
   ERROR = 0,
   WARN = 1,
   INFO = 2,
   DEBUG = 3,
-  VERBOSE = 4
+  VERBOSE = 4,
 }
 
 export class Logger {
   private level: LogLevel;
   private prefix: string;
 
-  constructor(prefix: string = 'shared-tools', level: LogLevel = LogLevel.INFO) {
+  constructor(prefix: string = "shared-tools", level: LogLevel = LogLevel.INFO) {
     this.prefix = prefix;
     this.level = this.getLogLevelFromEnv() ?? level;
   }

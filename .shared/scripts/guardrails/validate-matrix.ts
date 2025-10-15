@@ -1,18 +1,18 @@
 #!/usr/bin/env ts-node
 
-import { Command } from 'commander';
-import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { Command } from "commander";
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-import { logger } from '../../lib/logger';
+import { logger } from "../../lib/logger";
 
-type TaskName = 'lint' | 'compile' | 'test';
-const DEFAULT_TASKS: TaskName[] = ['lint', 'compile', 'test'];
+type TaskName = "lint" | "compile" | "test";
+const DEFAULT_TASKS: TaskName[] = ["lint", "compile", "test"];
 const SUPPORTED_TASKS = new Set(DEFAULT_TASKS);
-type ResultTaskName = TaskName | 'install';
+type ResultTaskName = TaskName | "install";
 
-type PackageManager = 'npm' | 'yarn' | 'pnpm';
+type PackageManager = "npm" | "yarn" | "pnpm";
 
 type CommandOverrides = Partial<Record<TaskName, string>>;
 
@@ -41,7 +41,7 @@ type ValidationConfig = {
 
 type TaskResult = {
   task: ResultTaskName;
-  status: 'passed' | 'failed' | 'skipped';
+  status: "passed" | "failed" | "skipped";
   command?: string;
   exitCode?: number | null;
   durationMs?: number;
@@ -69,13 +69,13 @@ function collectStrings(value: string, previous: string[] = []): string[] {
 
 function parseTask(value: string): TaskName {
   if (!SUPPORTED_TASKS.has(value as TaskName)) {
-    throw new Error(`Unsupported task '${value}'. Supported tasks: ${Array.from(SUPPORTED_TASKS).join(', ')}`);
+    throw new Error(`Unsupported task '${value}'. Supported tasks: ${Array.from(SUPPORTED_TASKS).join(", ")}`);
   }
   return value as TaskName;
 }
 
 function parseRepoArg(value: string): RepoDefinition {
-  const [name, repoPath] = value.split('=');
+  const [name, repoPath] = value.split("=");
   if (!name || !repoPath) {
     throw new Error(`Invalid --repo value '${value}'. Use the format name=/absolute/or/relative/path`);
   }
@@ -83,12 +83,12 @@ function parseRepoArg(value: string): RepoDefinition {
 }
 
 function parseCommandOverride(value: string): [TaskName, string] {
-  const [task, ...commandParts] = value.split('=');
+  const [task, ...commandParts] = value.split("=");
   if (!task || commandParts.length === 0) {
     throw new Error(`Invalid --command value '${value}'. Use the format task="command".`);
   }
   const taskName = parseTask(task.trim());
-  const command = commandParts.join('=').trim();
+  const command = commandParts.join("=").trim();
   if (!command) {
     throw new Error(`Command override for task '${task}' cannot be empty.`);
   }
@@ -105,7 +105,7 @@ function loadConfig(configPath: string | undefined): ValidationConfig {
     throw new Error(`Config file not found at ${resolvedPath}`);
   }
 
-  const raw = fs.readFileSync(resolvedPath, 'utf8');
+  const raw = fs.readFileSync(resolvedPath, "utf8");
   try {
     const parsed = JSON.parse(raw) as ValidationConfig;
     return parsed ?? {};
@@ -115,29 +115,29 @@ function loadConfig(configPath: string | undefined): ValidationConfig {
 }
 
 function resolvePackageManager(repoPath: string, packageJson: any): PackageManager {
-  const packageManagerField = typeof packageJson.packageManager === 'string' ? packageJson.packageManager : '';
-  if (packageManagerField.includes('pnpm')) {
-    return 'pnpm';
+  const packageManagerField = typeof packageJson.packageManager === "string" ? packageJson.packageManager : "";
+  if (packageManagerField.includes("pnpm")) {
+    return "pnpm";
   }
-  if (packageManagerField.includes('yarn')) {
-    return 'yarn';
+  if (packageManagerField.includes("yarn")) {
+    return "yarn";
   }
 
-  if (fs.existsSync(path.join(repoPath, 'pnpm-lock.yaml'))) {
-    return 'pnpm';
+  if (fs.existsSync(path.join(repoPath, "pnpm-lock.yaml"))) {
+    return "pnpm";
   }
-  if (fs.existsSync(path.join(repoPath, 'yarn.lock'))) {
-    return 'yarn';
+  if (fs.existsSync(path.join(repoPath, "yarn.lock"))) {
+    return "yarn";
   }
-  return 'npm';
+  return "npm";
 }
 
 function loadPackageJson(repoPath: string): any {
-  const packageJsonPath = path.join(repoPath, 'package.json');
+  const packageJsonPath = path.join(repoPath, "package.json");
   if (!fs.existsSync(packageJsonPath)) {
     throw new Error(`package.json not found in ${repoPath}`);
   }
-  const raw = fs.readFileSync(packageJsonPath, 'utf8');
+  const raw = fs.readFileSync(packageJsonPath, "utf8");
   try {
     return JSON.parse(raw);
   } catch (error) {
@@ -146,22 +146,22 @@ function loadPackageJson(repoPath: string): any {
 }
 
 function hasScript(packageJson: any, scriptName: string): boolean {
-  return Boolean(packageJson?.scripts && typeof packageJson.scripts[scriptName] === 'string');
+  return Boolean(packageJson?.scripts && typeof packageJson.scripts[scriptName] === "string");
 }
 
 function isPlaceholderTestScript(script: string | undefined): boolean {
   if (!script) {
     return false;
   }
-  const normalized = script.replace(/\s+/g, ' ').toLowerCase();
-  return normalized.includes('error: no test specified') && normalized.includes('exit 1');
+  const normalized = script.replace(/\s+/g, " ").toLowerCase();
+  return normalized.includes("error: no test specified") && normalized.includes("exit 1");
 }
 
 function buildRunScriptCommand(packageManager: PackageManager, scriptName: string): string {
   switch (packageManager) {
-    case 'yarn':
+    case "yarn":
       return `yarn run ${scriptName}`;
-    case 'pnpm':
+    case "pnpm":
       return `pnpm run ${scriptName}`;
     default:
       return `npm run ${scriptName}`;
@@ -170,17 +170,17 @@ function buildRunScriptCommand(packageManager: PackageManager, scriptName: strin
 
 function buildInstallCommand(packageManager: PackageManager): string {
   switch (packageManager) {
-    case 'yarn':
-      return 'yarn install';
-    case 'pnpm':
-      return 'pnpm install --frozen-lockfile';
+    case "yarn":
+      return "yarn install";
+    case "pnpm":
+      return "pnpm install --frozen-lockfile";
     default:
-      return 'npm install';
+      return "npm install";
   }
 }
 
 function buildNpxCommand(binary: string, args: string[]): string {
-  const joinedArgs = args.join(' ');
+  const joinedArgs = args.join(" ");
   return `npx ${binary} ${joinedArgs}`.trim();
 }
 
@@ -201,11 +201,11 @@ function resolveTaskCommand(task: TaskName, context: ResolveContext): CommandRes
   }
 
   switch (task) {
-    case 'lint':
+    case "lint":
       return resolveLintCommand(context);
-    case 'compile':
+    case "compile":
       return resolveCompileCommand(context);
-    case 'test':
+    case "test":
       return resolveTestCommand(context);
     default:
       return { skip: true, reason: `Task '${task}' is not recognized.` };
@@ -214,69 +214,69 @@ function resolveTaskCommand(task: TaskName, context: ResolveContext): CommandRes
 
 function resolveLintCommand(context: ResolveContext): CommandResolution {
   const { packageJson, packageManager, repoPath } = context;
-  if (hasScript(packageJson, 'lint:eslint')) {
-    return { command: buildRunScriptCommand(packageManager, 'lint:eslint') };
+  if (hasScript(packageJson, "lint:eslint")) {
+    return { command: buildRunScriptCommand(packageManager, "lint:eslint") };
   }
-  if (hasScript(packageJson, 'lint')) {
-    return { command: buildRunScriptCommand(packageManager, 'lint') };
+  if (hasScript(packageJson, "lint")) {
+    return { command: buildRunScriptCommand(packageManager, "lint") };
   }
 
-  const sharedLintScript = path.join(repoPath, '.shared', 'scripts', 'linting', 'eslint.ts');
+  const sharedLintScript = path.join(repoPath, ".shared", "scripts", "linting", "eslint.ts");
   if (fs.existsSync(sharedLintScript)) {
-    return { command: buildNpxCommand('ts-node', ['.shared/scripts/linting/eslint.ts']) };
+    return { command: buildNpxCommand("ts-node", [".shared/scripts/linting/eslint.ts"]) };
   }
 
-  return { skip: true, reason: 'No lint task or shared lint script found.' };
+  return { skip: true, reason: "No lint task or shared lint script found." };
 }
 
 function resolveCompileCommand(context: ResolveContext): CommandResolution {
   const { packageJson, packageManager } = context;
-  if (hasScript(packageJson, 'compile')) {
-    return { command: buildRunScriptCommand(packageManager, 'compile') };
+  if (hasScript(packageJson, "compile")) {
+    return { command: buildRunScriptCommand(packageManager, "compile") };
   }
 
-  return { command: buildNpxCommand('hardhat', ['compile']) };
+  return { command: buildNpxCommand("hardhat", ["compile"]) };
 }
 
 function resolveTestCommand(context: ResolveContext): CommandResolution {
   const { packageJson, packageManager } = context;
-  if (hasScript(packageJson, 'test')) {
+  if (hasScript(packageJson, "test")) {
     const script = packageJson.scripts.test as string | undefined;
     if (isPlaceholderTestScript(script)) {
-      return { skip: true, reason: 'Test script is a placeholder (no tests configured).' };
+      return { skip: true, reason: "Test script is a placeholder (no tests configured)." };
     }
 
     switch (packageManager) {
-      case 'yarn':
-        return { command: 'yarn test' };
-      case 'pnpm':
-        return { command: 'pnpm test' };
+      case "yarn":
+        return { command: "yarn test" };
+      case "pnpm":
+        return { command: "pnpm test" };
       default:
-        return { command: 'npm test' };
+        return { command: "npm test" };
     }
   }
 
-  if (hasScript(packageJson, 'hardhat:test')) {
-    return { command: buildRunScriptCommand(packageManager, 'hardhat:test') };
+  if (hasScript(packageJson, "hardhat:test")) {
+    return { command: buildRunScriptCommand(packageManager, "hardhat:test") };
   }
 
-  return { command: buildNpxCommand('hardhat', ['test']) };
+  return { command: buildNpxCommand("hardhat", ["test"]) };
 }
 
 function runCommand(command: string, cwd: string): { exitCode: number | null; durationMs: number } {
   const start = Date.now();
   const result = spawnSync(command, {
     cwd,
-    stdio: 'inherit',
+    stdio: "inherit",
     shell: true,
     env: {
       ...process.env,
-      FORCE_COLOR: process.env.FORCE_COLOR ?? '1',
+      FORCE_COLOR: process.env.FORCE_COLOR ?? "1",
     },
   });
 
   const durationMs = Date.now() - start;
-  const exitCode = typeof result.status === 'number' ? result.status : result.signal === null ? 0 : 1;
+  const exitCode = typeof result.status === "number" ? result.status : result.signal === null ? 0 : 1;
   return { exitCode, durationMs };
 }
 
@@ -293,12 +293,12 @@ function validateRepo(config: RepoRunConfig): RepoResult {
     return {
       name: config.name,
       path: repoPath,
-      packageManager: 'npm',
+      packageManager: "npm",
       results: [
         {
-          task: 'install',
-          status: 'failed',
-          message: 'Repository path does not exist.',
+          task: "install",
+          status: "failed",
+          message: "Repository path does not exist.",
         },
       ],
     };
@@ -312,12 +312,12 @@ function validateRepo(config: RepoRunConfig): RepoResult {
     logger.info(`[${config.name}] Installing dependencies via: ${installCommand}`);
     const { exitCode, durationMs } = runCommand(installCommand, repoPath);
     results.push({
-      task: 'install',
-      status: exitCode === 0 ? 'passed' : 'failed',
+      task: "install",
+      status: exitCode === 0 ? "passed" : "failed",
       command: installCommand,
       exitCode,
       durationMs,
-      message: exitCode === 0 ? undefined : 'Package installation failed.',
+      message: exitCode === 0 ? undefined : "Package installation failed.",
     });
     if (exitCode !== 0) {
       logger.error(`[${config.name}] Dependency installation failed (exit code ${exitCode}). Skipping remaining tasks.`);
@@ -339,13 +339,13 @@ function validateRepo(config: RepoRunConfig): RepoResult {
       overrides: config.overrides ?? {},
     });
 
-    if ('skip' in resolution) {
+    if ("skip" in resolution) {
       if (resolution.skip) {
         const message = resolution.reason;
         logger.warn(`[${config.name}] Skipping ${task}: ${message}`);
         results.push({
           task,
-          status: 'skipped',
+          status: "skipped",
           message,
         });
         continue;
@@ -356,15 +356,15 @@ function validateRepo(config: RepoRunConfig): RepoResult {
     const command = (resolution as { command: string }).command;
     logger.info(`[${config.name}] Running ${task} via: ${command}`);
     const { exitCode, durationMs } = runCommand(command, repoPath);
-    const status = exitCode === 0 ? 'passed' : 'failed';
+    const status = exitCode === 0 ? "passed" : "failed";
     const message = exitCode === 0 ? undefined : `${task} command exited with code ${exitCode}.`;
-    if (status === 'passed') {
+    if (status === "passed") {
       logger.success(`[${config.name}] ${task} passed in ${Math.round(durationMs / 100) / 10}s.`);
     } else {
       logger.error(`[${config.name}] ${task} failed (exit code ${exitCode}).`);
     }
     results.push({ task, status, command, exitCode, durationMs, message });
-    if (status === 'failed') {
+    if (status === "failed") {
       break;
     }
   }
@@ -384,10 +384,10 @@ function buildRepoRunConfigs(
   configOverrides: CommandOverrides,
   cliOverrides: CommandOverrides
 ): RepoRunConfig[] {
-  return definitions.map(def => ({
+  return definitions.map((def) => ({
     name: def.name,
     path: def.path,
-    tasks: (def.tasks && def.tasks.length > 0 ? def.tasks : defaultTasks).filter(task => SUPPORTED_TASKS.has(task)),
+    tasks: (def.tasks && def.tasks.length > 0 ? def.tasks : defaultTasks).filter((task) => SUPPORTED_TASKS.has(task)),
     runInstall: def.install ?? globalInstall,
     overrides: {
       ...configOverrides,
@@ -400,20 +400,20 @@ function buildRepoRunConfigs(
 function summarise(results: RepoResult[]): void {
   const failures: RepoResult[] = [];
   for (const repo of results) {
-    const failedTask = repo.results.find(result => result.status === 'failed');
+    const failedTask = repo.results.find((result) => result.status === "failed");
     if (failedTask) {
       failures.push(repo);
     }
   }
 
   if (failures.length === 0) {
-    logger.success('All repositories passed the validation matrix.');
+    logger.success("All repositories passed the validation matrix.");
   } else {
-    logger.error('Validation matrix detected failures in the following repositories:');
+    logger.error("Validation matrix detected failures in the following repositories:");
     for (const repo of failures) {
-      const failedTask = repo.results.find(result => result.status === 'failed');
+      const failedTask = repo.results.find((result) => result.status === "failed");
       if (failedTask) {
-        logger.error(`- ${repo.name}: ${failedTask.task} (${failedTask.message ?? 'command failed'})`);
+        logger.error(`- ${repo.name}: ${failedTask.task} (${failedTask.message ?? "command failed"})`);
       }
     }
   }
@@ -427,15 +427,15 @@ function writeReport(reportPath: string, summary: SummaryReport): void {
 }
 
 function computeSummaryReport(results: RepoResult[], startedAt: Date, finishedAt: Date): SummaryReport {
-  const repos = results.map(repo => ({
+  const repos = results.map((repo) => ({
     ...repo,
-    success: !repo.results.some(result => result.status === 'failed'),
+    success: !repo.results.some((result) => result.status === "failed"),
   }));
   return {
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     repos,
-    success: repos.every(repo => repo.success),
+    success: repos.every((repo) => repo.success),
   };
 }
 
@@ -443,13 +443,13 @@ function main(): void {
   const program = new Command();
 
   program
-    .description('Run shared guardrail checks across multiple repositories.')
-    .option('--config <path>', 'Path to validation config JSON file.')
-    .option('--repo <name=path>', 'Repository to validate (repeatable).', collectStrings, [])
-    .option('--task <name>', 'Task to run (lint, compile, test). Repeat for multiple tasks.', collectStrings, [])
-    .option('--install', 'Run package installation in each repository before executing tasks.')
-    .option('--report <path>', 'Write a JSON summary report to the provided path.')
-    .option('--command <task=command>', 'Override the command used for a task (repeatable).', collectStrings, []);
+    .description("Run shared guardrail checks across multiple repositories.")
+    .option("--config <path>", "Path to validation config JSON file.")
+    .option("--repo <name=path>", "Repository to validate (repeatable).", collectStrings, [])
+    .option("--task <name>", "Task to run (lint, compile, test). Repeat for multiple tasks.", collectStrings, [])
+    .option("--install", "Run package installation in each repository before executing tasks.")
+    .option("--report <path>", "Write a JSON summary report to the provided path.")
+    .option("--command <task=command>", "Override the command used for a task (repeatable).", collectStrings, []);
 
   program.parse(process.argv);
 
@@ -469,17 +469,18 @@ function main(): void {
   const repoDefinitions: RepoDefinition[] = [...configRepos, ...cliRepos];
 
   if (repoDefinitions.length === 0) {
-    logger.error('No repositories provided. Use --repo name=path or specify repos in a config file.');
+    logger.error("No repositories provided. Use --repo name=path or specify repos in a config file.");
     process.exit(1);
   }
 
   const globalTasksFromConfig = Array.isArray(config.tasks) ? config.tasks : undefined;
   const tasksFromCli = (options.task ?? []).map(parseTask);
-  const defaultTasks = tasksFromCli.length > 0
-    ? tasksFromCli
-    : globalTasksFromConfig && globalTasksFromConfig.length > 0
-      ? globalTasksFromConfig
-      : DEFAULT_TASKS;
+  const defaultTasks =
+    tasksFromCli.length > 0
+      ? tasksFromCli
+      : globalTasksFromConfig && globalTasksFromConfig.length > 0
+        ? globalTasksFromConfig
+        : DEFAULT_TASKS;
 
   const cliOverridesEntries = (options.command ?? []).map(parseCommandOverride);
   const cliOverrides: CommandOverrides = Object.fromEntries(cliOverridesEntries);
@@ -487,13 +488,7 @@ function main(): void {
 
   const runInstall = options.install ?? Boolean(config.install);
 
-  const repoRunConfigs = buildRepoRunConfigs(
-    repoDefinitions,
-    defaultTasks,
-    runInstall,
-    configOverrides,
-    cliOverrides
-  );
+  const repoRunConfigs = buildRepoRunConfigs(repoDefinitions, defaultTasks, runInstall, configOverrides, cliOverrides);
   const results: RepoResult[] = [];
 
   const runStartedAt = new Date();
@@ -508,11 +503,11 @@ function main(): void {
       results.push({
         name: repoConfig.name,
         path: ensureAbsolutePath(repoConfig.path),
-        packageManager: 'npm',
+        packageManager: "npm",
         results: [
           {
-            task: 'install',
-            status: 'failed',
+            task: "install",
+            status: "failed",
             message: (error as Error).message,
           },
         ],

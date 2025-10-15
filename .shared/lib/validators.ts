@@ -1,6 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { findProjectRoot } from './utils';
+import * as fs from "fs";
+import * as path from "path";
+import { findProjectRoot } from "./utils";
 
 export interface ValidationResult {
   valid: boolean;
@@ -15,7 +15,7 @@ export function validateTools(tools: string[]): ValidationResult {
   const result: ValidationResult = {
     valid: true,
     errors: [],
-    warnings: []
+    warnings: [],
   };
 
   for (const tool of tools) {
@@ -23,9 +23,9 @@ export function validateTools(tools: string[]): ValidationResult {
       require.resolve(tool);
     } catch {
       // Check if it's a system command
-      const { execSync } = require('child_process');
+      const { execSync } = require("child_process");
       try {
-        execSync(`which ${tool}`, { stdio: 'ignore' });
+        execSync(`which ${tool}`, { stdio: "ignore" });
       } catch {
         result.valid = false;
         result.errors.push(`Required tool '${tool}' is not installed`);
@@ -43,31 +43,29 @@ export function validateHardhatProject(): ValidationResult {
   const result: ValidationResult = {
     valid: true,
     errors: [],
-    warnings: []
+    warnings: [],
   };
 
   const projectRoot = findProjectRoot();
 
   // Check for required files
-  const requiredFiles = ['hardhat.config.ts', 'hardhat.config.js'];
-  const hasHardhatConfig = requiredFiles.some(file =>
-    fs.existsSync(path.join(projectRoot, file))
-  );
+  const requiredFiles = ["hardhat.config.ts", "hardhat.config.js"];
+  const hasHardhatConfig = requiredFiles.some((file) => fs.existsSync(path.join(projectRoot, file)));
 
   if (!hasHardhatConfig) {
     result.valid = false;
-    result.errors.push('No Hardhat configuration file found');
+    result.errors.push("No Hardhat configuration file found");
   }
 
   // Check for package.json
-  if (!fs.existsSync(path.join(projectRoot, 'package.json'))) {
+  if (!fs.existsSync(path.join(projectRoot, "package.json"))) {
     result.valid = false;
-    result.errors.push('No package.json found in project root');
+    result.errors.push("No package.json found in project root");
   }
 
   // Check for contracts directory
-  if (!fs.existsSync(path.join(projectRoot, 'contracts'))) {
-    result.warnings.push('No contracts directory found');
+  if (!fs.existsSync(path.join(projectRoot, "contracts"))) {
+    result.warnings.push("No contracts directory found");
   }
 
   return result;
@@ -80,7 +78,7 @@ export function validateConfig(config: any, schema: any): ValidationResult {
   const result: ValidationResult = {
     valid: true,
     errors: [],
-    warnings: []
+    warnings: [],
   };
 
   // Simple validation - can be extended with a proper schema validator
@@ -95,9 +93,7 @@ export function validateConfig(config: any, schema: any): ValidationResult {
       const expectedType = schema[key].type;
       if (actualType !== expectedType) {
         result.valid = false;
-        result.errors.push(
-          `Configuration '${key}' has wrong type. Expected ${expectedType}, got ${actualType}`
-        );
+        result.errors.push(`Configuration '${key}' has wrong type. Expected ${expectedType}, got ${actualType}`);
       }
     }
   }

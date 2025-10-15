@@ -245,9 +245,7 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
 
   const exclusions = (manifest.exclusions ?? []).map((exclusion, index) => {
     if (!exclusion.deployment && !exclusion.deploymentPrefix) {
-      throw new ManifestValidationError(
-        `exclusions[${index}] must specify either a deployment or deploymentPrefix`,
-      );
+      throw new ManifestValidationError(`exclusions[${index}] must specify either a deployment or deploymentPrefix`);
     }
 
     return {
@@ -275,9 +273,7 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
 
     const deployment = contract.deployment.trim();
     if (seenDeployments.has(deployment)) {
-      throw new ManifestValidationError(
-        `Duplicate override detected for deployment ${deployment}. Each deployment can only appear once.`,
-      );
+      throw new ManifestValidationError(`Duplicate override detected for deployment ${deployment}. Each deployment can only appear once.`);
     }
     seenDeployments.add(deployment);
 
@@ -332,7 +328,9 @@ function resolveManifestDefaults(defaults: ManifestDefaults | undefined, context
   const ownableDefaults = defaults?.ownable;
   const ownableExecution = normalizeExecution(ownableDefaults?.execution, "direct");
   if (ownableExecution !== "direct") {
-    throw new ManifestValidationError(`defaults.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`);
+    throw new ManifestValidationError(
+      `defaults.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`
+    );
   }
 
   const resolvedOwnable: ResolvedOwnableAction = {
@@ -343,9 +341,7 @@ function resolveManifestDefaults(defaults: ManifestDefaults | undefined, context
   const defaultAdminDefaults = defaults?.defaultAdmin;
   const grantExecution = normalizeExecution(defaultAdminDefaults?.grantExecution, "direct");
   if (grantExecution === "safe") {
-    throw new ManifestValidationError(
-      `defaults.defaultAdmin.grantExecution cannot be 'safe'. Granting requires the current admin signer.`,
-    );
+    throw new ManifestValidationError(`defaults.defaultAdmin.grantExecution cannot be 'safe'. Granting requires the current admin signer.`);
   }
 
   const removalConfig = defaultAdminDefaults?.remove ?? {};
@@ -358,16 +354,10 @@ function resolveManifestDefaults(defaults: ManifestDefaults | undefined, context
     const execution = normalizeExecution(removalConfig.execution, defaultRemovalExecution);
 
     if (execution === "safe" && strategy !== "revoke") {
-      throw new ManifestValidationError(
-        `defaults.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`,
-      );
+      throw new ManifestValidationError(`defaults.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`);
     }
 
-    const address = resolveAddress(
-      removalConfig.address ?? context.deployer,
-      context,
-      "defaults.defaultAdmin.remove.address",
-    );
+    const address = resolveAddress(removalConfig.address ?? context.deployer, context, "defaults.defaultAdmin.remove.address");
 
     removal = {
       address,
@@ -392,7 +382,7 @@ function resolveOwnableOverride(
   override: ManifestOwnableOverrides,
   defaults: ResolvedOwnableAction,
   context: AddressContext,
-  label: string,
+  label: string
 ): ResolvedOwnableOverride {
   const enabled = override.enabled;
 
@@ -403,15 +393,11 @@ function resolveOwnableOverride(
   const execution = normalizeExecution(override.execution, defaults.execution);
   if (execution !== "direct") {
     throw new ManifestValidationError(
-      `${label}.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`,
+      `${label}.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`
     );
   }
 
-  const newOwner = resolveAddress(
-    override.newOwner ?? defaults.newOwner,
-    context,
-    `${label}.ownable.newOwner`,
-  );
+  const newOwner = resolveAddress(override.newOwner ?? defaults.newOwner, context, `${label}.ownable.newOwner`);
 
   return {
     enabled,
@@ -426,7 +412,7 @@ function resolveDefaultAdminOverride(
   override: ManifestDefaultAdminOverrides,
   defaults: ResolvedDefaultAdminAction,
   context: AddressContext,
-  label: string,
+  label: string
 ): ResolvedDefaultAdminOverride {
   const enabled = override.enabled;
 
@@ -436,16 +422,10 @@ function resolveDefaultAdminOverride(
 
   const grantExecution = normalizeExecution(override.grantExecution, defaults.grantExecution);
   if (grantExecution === "safe") {
-    throw new ManifestValidationError(
-      `${label}.defaultAdmin.grantExecution cannot be 'safe'. Granting requires the current admin signer.`,
-    );
+    throw new ManifestValidationError(`${label}.defaultAdmin.grantExecution cannot be 'safe'. Granting requires the current admin signer.`);
   }
 
-  const newAdmin = resolveAddress(
-    override.newAdmin ?? defaults.newAdmin,
-    context,
-    `${label}.defaultAdmin.newAdmin`,
-  );
+  const newAdmin = resolveAddress(override.newAdmin ?? defaults.newAdmin, context, `${label}.defaultAdmin.newAdmin`);
 
   const removalConfig = override.remove ?? {};
   const defaultRemoval = defaults.removal;
@@ -457,19 +437,17 @@ function resolveDefaultAdminOverride(
     const defaultRemovalExecution = strategy === "revoke" ? "safe" : "direct";
     const execution = normalizeExecution(
       removalConfig.execution ?? defaultRemoval?.execution,
-      defaultRemoval?.execution ?? defaultRemovalExecution,
+      defaultRemoval?.execution ?? defaultRemovalExecution
     );
 
     if (execution === "safe" && strategy !== "revoke") {
-      throw new ManifestValidationError(
-        `${label}.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`,
-      );
+      throw new ManifestValidationError(`${label}.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`);
     }
 
     const address = resolveAddress(
       removalConfig.address ?? defaultRemoval?.address ?? context.deployer,
       context,
-      `${label}.defaultAdmin.remove.address`,
+      `${label}.defaultAdmin.remove.address`
     );
 
     removal = {

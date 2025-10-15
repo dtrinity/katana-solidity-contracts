@@ -138,7 +138,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
       if (updatedVaultRouter !== newRouterDeployment.address) {
         throw new Error(
-          `Failed to update collateral vault router for ${instanceKey}. Expected ${newRouterDeployment.address}, got ${updatedVaultRouter}`
+          `Failed to update collateral vault router for ${instanceKey}. Expected ${newRouterDeployment.address}, got ${updatedVaultRouter}`,
         );
       }
     } else {

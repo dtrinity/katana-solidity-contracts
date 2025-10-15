@@ -1,29 +1,29 @@
 #!/usr/bin/env ts-node
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { Command } from 'commander';
+import * as fs from "fs";
+import * as path from "path";
+import { Command } from "commander";
 
-import { logger } from '../../lib/logger';
-import { findProjectRoot, loadProjectModule } from '../../lib/utils';
+import { logger } from "../../lib/logger";
+import { findProjectRoot, loadProjectModule } from "../../lib/utils";
 
 const DEFAULT_PATTERNS = [
-  'config/**/*.{ts,js}',
-  'deploy/**/*.{ts,js}',
-  'scripts/**/*.{ts,js}',
-  'test/**/*.{ts,js}',
-  'typescript/**/*.{ts,js}',
-  '*.{ts,js,cjs,mjs}',
+  "config/**/*.{ts,js}",
+  "deploy/**/*.{ts,js}",
+  "scripts/**/*.{ts,js}",
+  "test/**/*.{ts,js}",
+  "typescript/**/*.{ts,js}",
+  "*.{ts,js,cjs,mjs}",
 ];
 
 const ESLINT_CONFIG_FILES = [
-  'eslint.config.mjs',
-  'eslint.config.js',
-  'eslint.config.cjs',
-  '.eslintrc.js',
-  '.eslintrc.cjs',
-  '.eslintrc.json',
-  '.eslintrc',
+  "eslint.config.mjs",
+  "eslint.config.js",
+  "eslint.config.cjs",
+  ".eslintrc.js",
+  ".eslintrc.cjs",
+  ".eslintrc.json",
+  ".eslintrc",
 ];
 
 type ESLintModule = {
@@ -61,15 +61,17 @@ function resolveConfigPath(projectRoot: string, provided?: string): string {
     }
   }
 
-  return path.join(__dirname, '../../configs/eslint.config.mjs');
+  return path.join(__dirname, "../../configs/eslint.config.mjs");
 }
 
 export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
   const projectRoot = findProjectRoot();
-  const eslintModule = loadProjectModule<ESLintModule>('eslint', projectRoot);
+  const eslintModule = loadProjectModule<ESLintModule>("eslint", projectRoot);
 
   if (!eslintModule?.ESLint) {
-    logger.error('ESLint is not installed. Install it with: npm install -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin');
+    logger.error(
+      "ESLint is not installed. Install it with: npm install -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin"
+    );
     return false;
   }
 
@@ -89,7 +91,7 @@ export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
   try {
     results = await eslint.lintFiles(patterns);
   } catch (error) {
-    logger.error('ESLint execution failed:', error);
+    logger.error("ESLint execution failed:", error);
     return false;
   }
 
@@ -98,7 +100,7 @@ export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
   }
 
   const processedResults = options.quiet
-    ? results.map(result => ({
+    ? results.map((result) => ({
         ...result,
         messages: (result.messages ?? []).filter((message: any) => message.severity === 2),
         warningCount: 0,
@@ -106,7 +108,7 @@ export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
       }))
     : results;
 
-  const formatterName = options.format || 'stylish';
+  const formatterName = options.format || "stylish";
   try {
     const formatter = await eslint.loadFormatter(formatterName);
     const output = formatter.format(processedResults);
@@ -119,11 +121,11 @@ export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
 
   const errorCount = processedResults.reduce(
     (sum: number, result: any) => sum + (result.errorCount ?? 0) + (result.fatalErrorCount ?? 0),
-    0,
+    0
   );
   const warningCount = processedResults.reduce((sum: number, result: any) => sum + (result.warningCount ?? 0), 0);
 
-  if (typeof options.maxWarnings === 'number' && warningCount > options.maxWarnings) {
+  if (typeof options.maxWarnings === "number" && warningCount > options.maxWarnings) {
     logger.error(`ESLint found ${warningCount} warning(s), which exceeds the configured maximum of ${options.maxWarnings}.`);
     return false;
   }
@@ -137,7 +139,7 @@ export async function runEslint(options: EslintOptions = {}): Promise<boolean> {
     logger.warn(`ESLint completed with ${warningCount} warning(s).`);
   }
 
-  logger.success('ESLint checks passed.');
+  logger.success("ESLint checks passed.");
   return true;
 }
 
@@ -145,13 +147,13 @@ if (require.main === module) {
   const program = new Command();
 
   program
-    .description('Run ESLint using shared defaults with project overrides.')
-    .option('--config <path>', 'Path to an ESLint configuration file.')
-    .option('--fix', 'Automatically fix problems where possible.')
-    .option('--format <name>', 'Formatter name to use for output.', 'stylish')
-    .option('--max-warnings <count>', 'Maximum allowed warnings before failing.', (value: string) => parseInt(value, 10))
-    .option('--quiet', 'Report errors only.')
-    .option('--pattern <glob>', 'Glob pattern to include (can be repeated).', (value, previous: string[]) => {
+    .description("Run ESLint using shared defaults with project overrides.")
+    .option("--config <path>", "Path to an ESLint configuration file.")
+    .option("--fix", "Automatically fix problems where possible.")
+    .option("--format <name>", "Formatter name to use for output.", "stylish")
+    .option("--max-warnings <count>", "Maximum allowed warnings before failing.", (value: string) => parseInt(value, 10))
+    .option("--quiet", "Report errors only.")
+    .option("--pattern <glob>", "Glob pattern to include (can be repeated).", (value, previous: string[]) => {
       if (previous) {
         return [...previous, value];
       }
@@ -161,9 +163,7 @@ if (require.main === module) {
 
   const opts = program.opts();
   const patterns = opts.pattern as string[] | undefined;
-  const maxWarnings = typeof opts.maxWarnings === 'number' && !Number.isNaN(opts.maxWarnings)
-    ? opts.maxWarnings
-    : undefined;
+  const maxWarnings = typeof opts.maxWarnings === "number" && !Number.isNaN(opts.maxWarnings) ? opts.maxWarnings : undefined;
 
   runEslint({
     config: opts.config,
@@ -172,7 +172,7 @@ if (require.main === module) {
     maxWarnings,
     quiet: Boolean(opts.quiet),
     patterns,
-  }).then(success => {
+  }).then((success) => {
     process.exit(success ? 0 : 1);
   });
 }

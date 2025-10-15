@@ -1,10 +1,5 @@
 import { OwnableContractInfo, RolesContractInfo } from "./scan";
-import {
-  ResolvedContractOverride,
-  ResolvedDefaultAdminAction,
-  ResolvedOwnableAction,
-  ResolvedRoleManifest,
-} from "./manifest";
+import { ResolvedContractOverride, ResolvedDefaultAdminAction, ResolvedOwnableAction, ResolvedRoleManifest } from "./manifest";
 
 export type ActionSource = "auto" | "override";
 
@@ -182,11 +177,7 @@ function computeDefaultAdminSelection(options: DefaultAdminSelectionOptions): Se
   return { excluded: false };
 }
 
-export function isDeploymentExcluded(
-  manifest: ResolvedRoleManifest,
-  deployment: string,
-  kind: "ownable" | "defaultAdmin",
-): boolean {
+export function isDeploymentExcluded(manifest: ResolvedRoleManifest, deployment: string, kind: "ownable" | "defaultAdmin"): boolean {
   return manifest.exclusions.some((exclusion) => {
     const appliesToKind = exclusion[kind];
     if (!appliesToKind) {

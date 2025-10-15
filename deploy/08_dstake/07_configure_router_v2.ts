@@ -129,7 +129,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
           console.log(`    ➕ Added adapter ${adapterDeploymentName} for vault ${vaultAssetAddress}`);
         } else if (existingAdapter !== adapterDeployment.address) {
           console.log(
-            `    ⚠️  Adapter for vault ${vaultAssetAddress} is already set to ${existingAdapter}, expected ${adapterDeployment.address}`
+            `    ⚠️  Adapter for vault ${vaultAssetAddress} is already set to ${existingAdapter}, expected ${adapterDeployment.address}`,
           );
         } else {
           console.log(`    👍 Adapter ${adapterDeploymentName} for vault ${vaultAssetAddress} already configured`);

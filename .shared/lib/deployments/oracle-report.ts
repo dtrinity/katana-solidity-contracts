@@ -1,7 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
-import { findProjectRoot } from '../utils';
+import { findProjectRoot } from "../utils";
 
 export interface OracleCategoryDefinition {
   name: string;
@@ -25,15 +25,15 @@ export interface OracleReportOptions {
   caseSensitive?: boolean;
 }
 
-const DEFAULT_DEPLOYMENTS_DIR = 'deployments';
-const MIGRATIONS_FILENAME = '.migrations.json';
+const DEFAULT_DEPLOYMENTS_DIR = "deployments";
+const MIGRATIONS_FILENAME = ".migrations.json";
 
 const DEFAULT_CATEGORIES: OracleCategoryDefinition[] = [
-  { name: 'Redstone', include: ['Redstone'] },
-  { name: 'API3', include: ['API3'] },
-  { name: 'Chainlink', include: ['Chainlink'], exclude: ['Factory'] },
-  { name: 'CurveAPI3', include: ['CurveAPI3'] },
-  { name: 'HardPegOracle', include: ['HardPegOracle'] },
+  { name: "Redstone", include: ["Redstone"] },
+  { name: "API3", include: ["API3"] },
+  { name: "Chainlink", include: ["Chainlink"], exclude: ["Factory"] },
+  { name: "CurveAPI3", include: ["CurveAPI3"] },
+  { name: "HardPegOracle", include: ["HardPegOracle"] },
 ];
 
 function resolveDeploymentsRoot(projectRoot: string, deploymentsDir?: string): string {
@@ -41,25 +41,23 @@ function resolveDeploymentsRoot(projectRoot: string, deploymentsDir?: string): s
     return path.join(projectRoot, DEFAULT_DEPLOYMENTS_DIR);
   }
 
-  return path.isAbsolute(deploymentsDir)
-    ? deploymentsDir
-    : path.join(projectRoot, deploymentsDir);
+  return path.isAbsolute(deploymentsDir) ? deploymentsDir : path.join(projectRoot, deploymentsDir);
 }
 
 function listNetworks(deploymentsRoot: string): string[] {
   return fs
     .readdirSync(deploymentsRoot)
-    .filter(entry => {
+    .filter((entry) => {
       const fullPath = path.join(deploymentsRoot, entry);
-      return fs.statSync(fullPath).isDirectory() && !entry.startsWith('.');
+      return fs.statSync(fullPath).isDirectory() && !entry.startsWith(".");
     })
     .sort();
 }
 
 function readAddress(filePath: string): string | null {
-  const raw = fs.readFileSync(filePath, 'utf8');
+  const raw = fs.readFileSync(filePath, "utf8");
   const json = JSON.parse(raw) as { address?: string | null };
-  if (typeof json.address === 'string' && json.address.trim().length > 0) {
+  if (typeof json.address === "string" && json.address.trim().length > 0) {
     return json.address;
   }
   return null;
@@ -71,20 +69,15 @@ function normalizePatterns(patterns: string[] | undefined, caseSensitive: boolea
   }
 
   return patterns
-    .map(pattern => pattern.trim())
-    .filter(pattern => pattern.length > 0)
-    .map(pattern => (caseSensitive ? pattern : pattern.toLowerCase()));
+    .map((pattern) => pattern.trim())
+    .filter((pattern) => pattern.length > 0)
+    .map((pattern) => (caseSensitive ? pattern : pattern.toLowerCase()));
 }
 
-function fileMatches(
-  fileName: string,
-  include: string[],
-  exclude: string[],
-  caseSensitive: boolean
-): boolean {
+function fileMatches(fileName: string, include: string[], exclude: string[], caseSensitive: boolean): boolean {
   const target = caseSensitive ? fileName : fileName.toLowerCase();
 
-  const includeMatch = include.length === 0 || include.some(pattern => target.includes(pattern));
+  const includeMatch = include.length === 0 || include.some((pattern) => target.includes(pattern));
   if (!includeMatch) {
     return false;
   }
@@ -93,7 +86,7 @@ function fileMatches(
     return true;
   }
 
-  return !exclude.some(pattern => target.includes(pattern));
+  return !exclude.some((pattern) => target.includes(pattern));
 }
 
 export function generateOracleReport(options: OracleReportOptions = {}): OracleReport {
@@ -105,16 +98,15 @@ export function generateOracleReport(options: OracleReportOptions = {}): OracleR
   }
 
   const caseSensitive = options.caseSensitive === true;
-  const skipNetworks = new Set((options.skipNetworks ?? []).map(network => network.trim()));
-  const targetNetworks = (options.networks && options.networks.length > 0)
-    ? options.networks
-    : listNetworks(deploymentsRoot).filter(network => !skipNetworks.has(network));
+  const skipNetworks = new Set((options.skipNetworks ?? []).map((network) => network.trim()));
+  const targetNetworks =
+    options.networks && options.networks.length > 0
+      ? options.networks
+      : listNetworks(deploymentsRoot).filter((network) => !skipNetworks.has(network));
 
-  const categories = (options.categories && options.categories.length > 0)
-    ? options.categories
-    : DEFAULT_CATEGORIES;
+  const categories = options.categories && options.categories.length > 0 ? options.categories : DEFAULT_CATEGORIES;
 
-  const normalizedCategories = categories.map(category => ({
+  const normalizedCategories = categories.map((category) => ({
     name: category.name,
     include: normalizePatterns(category.include, caseSensitive),
     exclude: normalizePatterns(category.exclude, caseSensitive),
@@ -130,7 +122,7 @@ export function generateOracleReport(options: OracleReportOptions = {}): OracleR
 
     const files = fs
       .readdirSync(networkDir)
-      .filter(file => file.endsWith('.json') && file !== MIGRATIONS_FILENAME)
+      .filter((file) => file.endsWith(".json") && file !== MIGRATIONS_FILENAME)
       .sort();
 
     const categoryMap: Record<string, Set<string>> = {};
@@ -141,7 +133,7 @@ export function generateOracleReport(options: OracleReportOptions = {}): OracleR
     }
 
     for (const file of files) {
-      const baseName = file.replace(/\.json$/i, '');
+      const baseName = file.replace(/\.json$/i, "");
       let address: string | null = null;
 
       try {
@@ -154,12 +146,12 @@ export function generateOracleReport(options: OracleReportOptions = {}): OracleR
         continue;
       }
 
-      const matchFound = normalizedCategories.some(definition => {
+      const matchFound = normalizedCategories.some((definition) => {
         if (fileMatches(baseName, definition.include, definition.exclude, caseSensitive)) {
           if (address) {
             categoryMap[definition.name].add(address);
           } else {
-            categoryMap[definition.name].add('');
+            categoryMap[definition.name].add("");
           }
           return true;
         }
@@ -173,10 +165,7 @@ export function generateOracleReport(options: OracleReportOptions = {}): OracleR
 
     report[network] = {
       categories: Object.fromEntries(
-        Object.entries(categoryMap).map(([name, values]) => [
-          name,
-          Array.from(values).filter(value => value.length > 0),
-        ])
+        Object.entries(categoryMap).map(([name, values]) => [name, Array.from(values).filter((value) => value.length > 0)])
       ),
       uncategorized: Array.from(uncategorized),
     };
@@ -196,19 +185,25 @@ export function renderOracleReport(report: OracleReport, asJson = false): string
     lines.push(`${network}: {`);
 
     for (const [category, addresses] of Object.entries(details.categories)) {
-      const formatted = addresses.length > 0 ? `[
-  ${addresses.map(address => `'${address}'`).join(',\n  ')}
-]` : '[]';
+      const formatted =
+        addresses.length > 0
+          ? `[
+  ${addresses.map((address) => `'${address}'`).join(",\n  ")}
+]`
+          : "[]";
       lines.push(`  ${category}: ${formatted},`);
     }
 
     const uncategorized = details.uncategorized;
-    const formattedUncategorized = uncategorized.length > 0 ? `[
-  ${uncategorized.map(address => `'${address}'`).join(',\n  ')}
-]` : '[]';
+    const formattedUncategorized =
+      uncategorized.length > 0
+        ? `[
+  ${uncategorized.map((address) => `'${address}'`).join(",\n  ")}
+]`
+        : "[]";
     lines.push(`  Uncategorized: ${formattedUncategorized}`);
-    lines.push('}');
+    lines.push("}");
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }

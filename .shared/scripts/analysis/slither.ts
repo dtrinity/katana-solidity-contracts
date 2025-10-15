@@ -1,16 +1,16 @@
 #!/usr/bin/env ts-node
 
-import { Command } from 'commander';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import { Command } from "commander";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
-import { configLoader } from '../../lib/config-loader';
-import { logger } from '../../lib/logger';
-import { ensureSlitherInstalled } from '../../lib/slither-installer';
-import { execCommand, getNetworkName } from '../../lib/utils';
+import { configLoader } from "../../lib/config-loader";
+import { logger } from "../../lib/logger";
+import { ensureSlitherInstalled } from "../../lib/slither-installer";
+import { execCommand, getNetworkName } from "../../lib/utils";
 
-type SlitherMode = 'legacy' | 'default' | 'check' | 'focused';
+type SlitherMode = "legacy" | "default" | "check" | "focused";
 
 interface SlitherOptions {
   network?: string;
@@ -44,11 +44,11 @@ interface WorkflowConfig {
   skipSummary?: boolean;
 }
 
-const DEFAULT_REPORT_DIR = path.join('reports', 'slither');
-const DEFAULT_JSON_BASENAME = 'slither-report.json';
-const DEFAULT_SUMMARY_FILE = path.join('reports', 'slither-summary.md');
-const FOCUSED_JSON_BASENAME = 'slither-focused-report.json';
-const FOCUSED_SUMMARY_FILE = path.join('reports', 'slither-focused-summary.md');
+const DEFAULT_REPORT_DIR = path.join("reports", "slither");
+const DEFAULT_JSON_BASENAME = "slither-report.json";
+const DEFAULT_SUMMARY_FILE = path.join("reports", "slither-summary.md");
+const FOCUSED_JSON_BASENAME = "slither-focused-report.json";
+const FOCUSED_SUMMARY_FILE = path.join("reports", "slither-focused-summary.md");
 
 export function runSlither(options: SlitherOptions = {}): boolean {
   return runSlitherLegacy(options);
@@ -65,30 +65,30 @@ function runSlitherLegacy(options: SlitherOptions = {}): boolean {
     const { configPath } = resolveConfigPath(options.network, options.configFile, cleanupTasks);
     const filterPaths = options.filterPaths;
 
-    const baseArgs = buildBaseArgs(options.target ?? '.', configPath, filterPaths);
+    const baseArgs = buildBaseArgs(options.target ?? ".", configPath, filterPaths);
     const commandArgs = [...baseArgs];
 
     if (options.outputFile) {
-      commandArgs.push('--json', options.outputFile);
+      commandArgs.push("--json", options.outputFile);
       ensureParentDir(options.outputFile);
     }
 
     if (options.failOnHigh) {
-      commandArgs.push('--fail-high');
+      commandArgs.push("--fail-high");
     }
 
     if (options.failOnMedium) {
-      commandArgs.push('--fail-medium');
+      commandArgs.push("--fail-medium");
     }
 
     const result = runSlitherCommand(commandArgs);
 
     if (!result.success) {
-      logger.error('Slither analysis failed');
+      logger.error("Slither analysis failed");
       return false;
     }
 
-    logger.success('Slither analysis completed successfully');
+    logger.success("Slither analysis completed successfully");
     return true;
   } finally {
     runCleanup(cleanupTasks);
@@ -110,15 +110,15 @@ function runWorkflow(config: WorkflowConfig): boolean {
 
     const jsonArgs = [...baseArgs];
     if (config.failOnHigh) {
-      jsonArgs.push('--fail-high');
+      jsonArgs.push("--fail-high");
     }
     if (config.failOnMedium) {
-      jsonArgs.push('--fail-medium');
+      jsonArgs.push("--fail-medium");
     }
 
     ensureDir(config.reportDir);
     ensureParentDir(config.jsonPath);
-    jsonArgs.push('--json', config.jsonPath);
+    jsonArgs.push("--json", config.jsonPath);
 
     const jsonResult = runSlitherCommand(jsonArgs, { allowFailure: config.allowFailure });
 
@@ -133,22 +133,22 @@ function runWorkflow(config: WorkflowConfig): boolean {
     if (!config.skipSummary && config.summaryPath) {
       const summaryArgs = [...baseArgs];
       if (!config.prints.length) {
-        summaryArgs.push('--print', 'human-summary');
+        summaryArgs.push("--print", "human-summary");
       } else {
         for (const print of config.prints) {
-          summaryArgs.push('--print', print);
+          summaryArgs.push("--print", print);
         }
       }
-      summaryArgs.push('--disable-color');
+      summaryArgs.push("--disable-color");
 
       const summaryResult = runSlitherCommand(summaryArgs, { captureOutput: true, allowFailure: true });
 
       if (summaryResult.output) {
         ensureParentDir(config.summaryPath);
-        fs.writeFileSync(config.summaryPath, summaryResult.output, 'utf-8');
+        fs.writeFileSync(config.summaryPath, summaryResult.output, "utf-8");
         logger.info(`Summary saved to ${relativePath(config.summaryPath)}`);
       } else if (!summaryResult.success) {
-        logger.warn('Failed to generate Slither summary output.');
+        logger.warn("Failed to generate Slither summary output.");
       }
     }
 
@@ -157,9 +157,9 @@ function runWorkflow(config: WorkflowConfig): boolean {
     }
 
     if (!jsonResult.success) {
-      logger.warn('Slither exited with non-zero status. Continuing because allowFailure is enabled.');
+      logger.warn("Slither exited with non-zero status. Continuing because allowFailure is enabled.");
     } else {
-      logger.success('Slither analysis completed successfully');
+      logger.success("Slither analysis completed successfully");
     }
 
     return jsonResult.success || config.allowFailure;
@@ -172,11 +172,11 @@ function buildBaseArgs(target: string, configPath?: string, filterPaths?: string
   const args = [target];
 
   if (configPath) {
-    args.push('--config-file', configPath);
+    args.push("--config-file", configPath);
   }
 
   if (filterPaths && filterPaths.trim().length > 0) {
-    args.push('--filter-paths', filterPaths);
+    args.push("--filter-paths", filterPaths);
   }
 
   return args;
@@ -188,10 +188,10 @@ function runSlitherCommand(
 ): ReturnType<typeof execCommand> {
   const command = buildCommand(args);
   logger.debug(`Executing: ${command}`);
-  const result = execCommand(command, options.captureOutput ? {} : { stdio: 'inherit' });
+  const result = execCommand(command, options.captureOutput ? {} : { stdio: "inherit" });
 
   if (!result.success && !options.allowFailure) {
-    logger.error('Slither command failed:', result.error);
+    logger.error("Slither command failed:", result.error);
   }
 
   return result;
@@ -199,7 +199,7 @@ function runSlitherCommand(
 
 function buildCommand(args: string[]): string {
   const quotedArgs = args.map((arg) => quoteArg(arg));
-  return ['slither', ...quotedArgs].join(' ');
+  return ["slither", ...quotedArgs].join(" ");
 }
 
 function quoteArg(arg: string): string {
@@ -224,10 +224,10 @@ function resolveConfigPath(
   const candidateNames = [
     network ? `slither.${network}.json` : undefined,
     network ? `.slither.${network}.json` : undefined,
-    'slither.config.json',
-    '.slither.config.json',
-    'slither.json',
-    '.slither.json'
+    "slither.config.json",
+    ".slither.config.json",
+    "slither.json",
+    ".slither.json",
   ].filter((name): name is string => !!name);
 
   for (const candidate of candidateNames) {
@@ -242,36 +242,33 @@ function resolveConfigPath(
   }
 
   try {
-    const config = configLoader.loadConfig('slither', { network });
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-hht-slither-'));
-    const tempConfigPath = path.join(tempDir, 'slither.config.json');
+    const config = configLoader.loadConfig("slither", { network });
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-hht-slither-"));
+    const tempConfigPath = path.join(tempDir, "slither.config.json");
     fs.writeFileSync(tempConfigPath, JSON.stringify(config, null, 2));
     cleanupTasks.push(() => fs.rmSync(tempDir, { recursive: true, force: true }));
     return { configPath: tempConfigPath, configData: config };
   } catch (error) {
-    logger.warn('No Slither configuration found, using defaults');
+    logger.warn("No Slither configuration found, using defaults");
   }
 
   return {};
 }
 
-function resolveFilterPaths(
-  filterPaths: string | string[] | undefined,
-  configData?: Record<string, unknown>
-): string | undefined {
+function resolveFilterPaths(filterPaths: string | string[] | undefined, configData?: Record<string, unknown>): string | undefined {
   if (Array.isArray(filterPaths)) {
-    return filterPaths.join(',');
+    return filterPaths.join(",");
   }
 
-  if (typeof filterPaths === 'string' && filterPaths.trim().length > 0) {
+  if (typeof filterPaths === "string" && filterPaths.trim().length > 0) {
     return filterPaths;
   }
 
-  const value = configData?.['filter_paths'] ?? configData?.['filterPaths'];
+  const value = configData?.["filter_paths"] ?? configData?.["filterPaths"];
   if (Array.isArray(value)) {
-    return value.join(',');
+    return value.join(",");
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
   return undefined;
@@ -279,7 +276,7 @@ function resolveFilterPaths(
 
 function readConfig(filePath: string): Record<string, unknown> | undefined {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(content) as Record<string, unknown>;
   } catch (error) {
     logger.debug(`Failed to parse Slither config at ${filePath}:`, error);
@@ -309,7 +306,7 @@ function runCleanup(cleanupTasks: Array<() => void>): void {
     try {
       task();
     } catch (error) {
-      logger.debug('Failed to clean up Slither temp asset', error);
+      logger.debug("Failed to clean up Slither temp asset", error);
     }
   }
 }
@@ -323,29 +320,29 @@ if (require.main === module) {
   const program = new Command();
 
   program
-    .argument('[mode]', 'Preset to run: default, check, focused, legacy')
-    .option('--mode <mode>', 'Preset to run: default, check, focused, legacy')
-    .option('--network <network>', 'Network identifier for config resolution')
-    .option('--config <path>', 'Explicit Slither config path')
-    .option('--output <path>', 'Override JSON output path (alias: --json-output)')
-    .option('--json-output <path>', 'Override JSON output path')
-    .option('--summary-output <path>', 'Override summary markdown output path')
-    .option('--report-dir <path>', 'Directory for Slither JSON reports', DEFAULT_REPORT_DIR)
-    .option('--filter-paths <paths>', 'Comma-separated filter paths for Slither')
-    .option('--print <value...>', 'Additional --print modules to include')
-    .option('--contract <path>', 'Contract path for focused mode')
-    .option('--skip-install', 'Skip Slither auto-installation if missing', false)
-    .option('--ensure-only', 'Only ensure Slither is installed, then exit', false)
-    .option('--fail-on-high', 'Fail when high severity issues are detected', false)
-    .option('--fail-on-medium', 'Fail when medium severity issues are detected', false)
-    .option('--target <path>', 'Override the target passed to Slither (legacy mode)');
+    .argument("[mode]", "Preset to run: default, check, focused, legacy")
+    .option("--mode <mode>", "Preset to run: default, check, focused, legacy")
+    .option("--network <network>", "Network identifier for config resolution")
+    .option("--config <path>", "Explicit Slither config path")
+    .option("--output <path>", "Override JSON output path (alias: --json-output)")
+    .option("--json-output <path>", "Override JSON output path")
+    .option("--summary-output <path>", "Override summary markdown output path")
+    .option("--report-dir <path>", "Directory for Slither JSON reports", DEFAULT_REPORT_DIR)
+    .option("--filter-paths <paths>", "Comma-separated filter paths for Slither")
+    .option("--print <value...>", "Additional --print modules to include")
+    .option("--contract <path>", "Contract path for focused mode")
+    .option("--skip-install", "Skip Slither auto-installation if missing", false)
+    .option("--ensure-only", "Only ensure Slither is installed, then exit", false)
+    .option("--fail-on-high", "Fail when high severity issues are detected", false)
+    .option("--fail-on-medium", "Fail when medium severity issues are detected", false)
+    .option("--target <path>", "Override the target passed to Slither (legacy mode)");
 
   program.parse(process.argv);
 
   const opts = program.opts();
   const [positionalMode] = program.args as string[];
 
-  const requestedMode = (opts.mode ?? positionalMode ?? 'legacy') as string;
+  const requestedMode = (opts.mode ?? positionalMode ?? "legacy") as string;
   const mode = toMode(requestedMode);
 
   const network = opts.network ?? getNetworkName();
@@ -372,7 +369,7 @@ if (require.main === module) {
   let success = false;
 
   switch (mode) {
-    case 'legacy':
+    case "legacy":
       success = runSlitherLegacy({
         network,
         configFile,
@@ -380,10 +377,10 @@ if (require.main === module) {
         failOnHigh,
         failOnMedium,
         filterPaths,
-        target: targetOverride
+        target: targetOverride,
       });
       break;
-    case 'default': {
+    case "default": {
       const jsonPath = path.resolve(jsonOverride ?? path.join(opts.reportDir ?? DEFAULT_REPORT_DIR, DEFAULT_JSON_BASENAME));
       const summaryPath = path.resolve(summaryOverride ?? DEFAULT_SUMMARY_FILE);
       const workflow: WorkflowConfig = {
@@ -393,17 +390,17 @@ if (require.main === module) {
         reportDir: path.resolve(opts.reportDir ?? DEFAULT_REPORT_DIR),
         jsonPath,
         summaryPath,
-        prints: printModules.length ? printModules : ['human-summary'],
+        prints: printModules.length ? printModules : ["human-summary"],
         failOnHigh,
         failOnMedium,
         allowFailure: !(failOnHigh || failOnMedium),
-        target: '.',
-        filterPaths
+        target: ".",
+        filterPaths,
       };
       success = runWorkflow(workflow);
       break;
     }
-    case 'check': {
+    case "check": {
       const jsonPath = path.resolve(jsonOverride ?? path.join(opts.reportDir ?? DEFAULT_REPORT_DIR, DEFAULT_JSON_BASENAME));
       const summaryPath = path.resolve(summaryOverride ?? DEFAULT_SUMMARY_FILE);
       const workflow: WorkflowConfig = {
@@ -413,26 +410,24 @@ if (require.main === module) {
         reportDir: path.resolve(opts.reportDir ?? DEFAULT_REPORT_DIR),
         jsonPath,
         summaryPath,
-        prints: printModules.length ? printModules : ['human-summary', 'contract-summary', 'loc'],
+        prints: printModules.length ? printModules : ["human-summary", "contract-summary", "loc"],
         failOnHigh: true,
         failOnMedium,
         allowFailure: false,
-        target: '.',
-        filterPaths
+        target: ".",
+        filterPaths,
       };
       success = runWorkflow(workflow);
       break;
     }
-    case 'focused': {
+    case "focused": {
       const contractPath = (opts.contract as string | undefined) ?? targetOverride;
       if (!contractPath) {
-        logger.error('Focused mode requires a contract path (use --contract=<path>).');
+        logger.error("Focused mode requires a contract path (use --contract=<path>).");
         process.exit(1);
       }
 
-      const jsonPath = path.resolve(
-        jsonOverride ?? path.join(opts.reportDir ?? DEFAULT_REPORT_DIR, FOCUSED_JSON_BASENAME)
-      );
+      const jsonPath = path.resolve(jsonOverride ?? path.join(opts.reportDir ?? DEFAULT_REPORT_DIR, FOCUSED_JSON_BASENAME));
       const summaryPath = path.resolve(summaryOverride ?? FOCUSED_SUMMARY_FILE);
       const workflow: WorkflowConfig = {
         mode,
@@ -441,12 +436,12 @@ if (require.main === module) {
         reportDir: path.resolve(opts.reportDir ?? DEFAULT_REPORT_DIR),
         jsonPath,
         summaryPath,
-        prints: printModules.length ? printModules : ['human-summary', 'contract-summary', 'loc'],
+        prints: printModules.length ? printModules : ["human-summary", "contract-summary", "loc"],
         failOnHigh: true,
         failOnMedium,
         allowFailure: false,
         target: contractPath,
-        filterPaths
+        filterPaths,
       };
       success = runWorkflow(workflow);
       break;
@@ -459,7 +454,7 @@ if (require.main === module) {
         failOnHigh,
         failOnMedium,
         filterPaths,
-        target: targetOverride
+        target: targetOverride,
       });
   }
 
@@ -467,9 +462,9 @@ if (require.main === module) {
 }
 
 function toMode(value: string): SlitherMode {
-  const normalized = (value || 'legacy').toLowerCase();
-  if (normalized === 'default' || normalized === 'check' || normalized === 'focused' || normalized === 'legacy') {
+  const normalized = (value || "legacy").toLowerCase();
+  if (normalized === "default" || normalized === "check" || normalized === "focused" || normalized === "legacy") {
     return normalized;
   }
-  return 'legacy';
+  return "legacy";
 }
