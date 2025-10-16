@@ -233,7 +233,8 @@ async function main(): Promise<void> {
 
         const tx = await contract.transferOwnership(target.newOwner);
         const receipt = await tx.wait();
-        logger.info(`  ✅ Transaction hash: ${receipt?.transactionHash ?? "unknown"}`);
+        const txHash = receipt?.hash ?? tx.hash ?? "unknown";
+        logger.info(`  ✅ Transaction hash: ${txHash}`);
         executed.push(target);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

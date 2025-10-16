@@ -278,7 +278,8 @@ async function main(): Promise<void> {
 
         const tx = await contract.grantRole(target.defaultAdminRoleHash, manifest.governance);
         const receipt = await tx.wait();
-        logger.info(`  ✅ Transaction hash: ${receipt?.transactionHash ?? "unknown"}`);
+        const txHash = receipt?.hash ?? tx.hash ?? "unknown";
+        logger.info(`  ✅ Transaction hash: ${txHash}`);
         resultsGranted.push(target);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
