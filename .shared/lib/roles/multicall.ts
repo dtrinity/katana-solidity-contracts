@@ -61,3 +61,41 @@ export async function executeMulticall(
     return null;
   }
 }
+
+export interface BatchedMulticallOptions extends MulticallOptions {
+  readonly chunkSize?: number;
+  readonly onBatchComplete?: (info: { readonly index: number; readonly total: number }) => void;
+}
+
+export interface BatchedMulticallResult {
+  readonly results: MulticallResult[];
+  readonly batchesExecuted: number;
+}
+
+export async function executeMulticallBatches(
+  hre: HardhatRuntimeEnvironment,
+  requests: MulticallRequest[],
+  options?: BatchedMulticallOptions,
+): Promise<BatchedMulticallResult | null> {
+  if (requests.length === 0) {
+    return { results: [], batchesExecuted: 0 };
+  }
+
+  const chunkSize = Math.max(1, options?.chunkSize ?? 50);
+  const aggregatedResults: MulticallResult[] = [];
+  let batchesExecuted = 0;
+  const totalBatches = Math.ceil(requests.length / chunkSize);
+
+  for (let index = 0; index < requests.length; index += chunkSize) {
+    const chunk = requests.slice(index, index + chunkSize);
+    const chunkResult = await executeMulticall(hre, chunk, options);
+    if (chunkResult === null) {
+      return null;
+    }
+    batchesExecuted += 1;
+    options?.onBatchComplete?.({ index: batchesExecuted, total: totalBatches });
+    aggregatedResults.push(...chunkResult);
+  }
+
+  return { results: aggregatedResults, batchesExecuted };
+}
