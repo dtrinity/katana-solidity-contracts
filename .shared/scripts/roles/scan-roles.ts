@@ -261,11 +261,7 @@ function findDefaultAdminDrift({
     const plannedAction = plannedDefaultAdmin.get(exposure.deploymentName);
 
     if (plannedAction) {
-      if (!plannedAction.removal) {
-        // Manifest explicitly keeps deployer as admin; no drift.
-        continue;
-      }
-      // Removal planned – coverage exists.
+      // Manifest plans to grant governance default admin; coverage exists.
       continue;
     }
 

@@ -79,11 +79,11 @@
 
 ## 4. Implementation Steps
 
-1. **Multicall & batching refactor**: extend helper, update scan logic, add progress logging/statistics.
-2. **Manifest cleanup**: remove renounce policy fields, update types/validation, adjust planner output.
-3. **Grant script**: create `grant-default-admin.ts`, wire into planner/runner machinery with direct execution only.
-4. **Revoke script**: overhaul to generate Safe revocation batches for all deployer-held roles, honoring opt-outs, with explicit logging.
-5. **Transfer script**: strip role handling logic, reinforce ownership safeguards and progress reporting.
+1. ✅ **Multicall & batching refactor**: extend helper, update scan logic, add progress logging/statistics.
+2. ✅ **Manifest cleanup**: remove renounce policy fields, update types/validation, adjust planner output.
+3. ✅ **Grant script**: create `grant-default-admin.ts`, wire into planner machinery with direct execution only.
+4. ✅ **Revoke script**: overhaul to generate Safe revocation batches for all deployer-held roles, honoring opt-outs, with explicit logging.
+5. ✅ **Transfer script**: strip role handling logic, reinforce ownership safeguards and progress reporting.
 6. **Documentation & verification**:
    - Update README/examples/CLI help.
    - Run `scan` against sample deployments.
@@ -121,3 +121,10 @@
   - Stage logging now outputs three progress markers (role hashes, hasRole checks, ownership), replacing 400+ lines with 60 lines.
   - Summary block reports direct-call counts and multicall stats; exposure sections list only actionable items.
   - Remaining gaps: environment warns about missing mnemonics; consider suppressing for read-only scans in future polish.
+- Script dry-runs (Katana Mainnet, 2025-02-15):
+  - `npx ts-node .shared/scripts/roles/grant-default-admin.ts --network katana_mainnet --manifest manifests/katana-mainnet-roles.json --dry-run`
+    - Planned 20 grants (auto), 4 already satisfied, 2 blocked (implementations without deployer admin).
+  - `npx ts-node .shared/scripts/roles/revoke-roles.ts --network katana_mainnet --manifest manifests/katana-mainnet-roles.json --dry-run`
+    - Generated Safe batch preview with 48 `revokeRole` operations across 22 contracts, zero opt-outs.
+  - `npx ts-node .shared/scripts/roles/transfer-ownership.ts --network katana_mainnet --manifest manifests/katana-mainnet-roles.json --dry-run`
+    - Single Ownable transfer (DefaultProxyAdmin) flagged with irreversible transfer warning; no opt-outs.

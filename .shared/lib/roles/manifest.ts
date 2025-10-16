@@ -5,27 +5,16 @@ import { getAddress } from "@ethersproject/address";
 
 import { SafeConfig } from "./types";
 
-export const DEFAULT_RENOUNCE_ROLES = ["MINTER_ROLE"];
-
 export type ExecutionMode = "direct" | "safe";
-export type DefaultAdminRemovalStrategy = "renounce" | "revoke";
 
 export interface ManifestOwnableDefaults {
   readonly newOwner?: string;
   readonly execution?: ExecutionMode;
 }
 
-export interface ManifestDefaultAdminRemoval {
-  readonly address?: string;
-  readonly strategy?: DefaultAdminRemovalStrategy;
-  readonly execution?: ExecutionMode;
-  readonly enabled?: boolean;
-}
-
 export interface ManifestDefaultAdminDefaults {
   readonly newAdmin?: string;
   readonly grantExecution?: ExecutionMode;
-  readonly remove?: ManifestDefaultAdminRemoval;
 }
 
 export interface ManifestDefaults {
@@ -39,7 +28,6 @@ export interface ManifestOwnableOverrides extends ManifestOwnableDefaults {
 
 export interface ManifestDefaultAdminOverrides extends ManifestDefaultAdminDefaults {
   readonly enabled?: boolean;
-  readonly remove?: ManifestDefaultAdminRemoval;
 }
 
 export interface ManifestContractOverride {
@@ -49,7 +37,6 @@ export interface ManifestContractOverride {
   readonly ownable?: ManifestOwnableOverrides;
   readonly defaultAdmin?: ManifestDefaultAdminOverrides;
   readonly disabled?: boolean;
-  readonly roles?: ManifestRolePolicies;
 }
 
 export interface ManifestOutputConfig {
@@ -74,10 +61,6 @@ export interface ManifestExclusionConfig {
   readonly defaultAdmin?: boolean;
 }
 
-export interface ManifestRolePolicies {
-  readonly renounce?: string[];
-}
-
 export interface RoleManifest {
   readonly version: 2;
   readonly network?: string;
@@ -89,7 +72,6 @@ export interface RoleManifest {
   readonly overrides?: ManifestContractOverride[];
   readonly safe?: ManifestSafeConfig;
   readonly output?: ManifestOutputConfig;
-  readonly roles?: ManifestRolePolicies;
 }
 
 export interface ResolvedOwnableAction {
@@ -97,16 +79,9 @@ export interface ResolvedOwnableAction {
   readonly execution: ExecutionMode;
 }
 
-export interface ResolvedDefaultAdminRemoval {
-  readonly address: string;
-  readonly strategy: DefaultAdminRemovalStrategy;
-  readonly execution: ExecutionMode;
-}
-
 export interface ResolvedDefaultAdminAction {
   readonly newAdmin: string;
   readonly grantExecution: ExecutionMode;
-  readonly removal?: ResolvedDefaultAdminRemoval;
 }
 
 export interface ResolvedOwnableOverride {
@@ -126,7 +101,6 @@ export interface ResolvedContractOverride {
   readonly ownable?: ResolvedOwnableOverride;
   readonly defaultAdmin?: ResolvedDefaultAdminOverride;
   readonly disabled?: boolean;
-  readonly roles?: ResolvedRoleOverride;
 }
 
 export interface ResolvedManifestDefaults {
@@ -148,14 +122,6 @@ export interface ResolvedExclusion {
   readonly defaultAdmin: boolean;
 }
 
-export interface ResolvedRolePolicies {
-  readonly renounce: string[];
-}
-
-export interface ResolvedRoleOverride {
-  readonly renounce?: string[];
-}
-
 export interface ResolvedRoleManifest {
   readonly version: 2;
   readonly network?: string;
@@ -167,7 +133,6 @@ export interface ResolvedRoleManifest {
   readonly overrides: ResolvedContractOverride[];
   readonly safe?: ManifestSafeConfig;
   readonly output?: ManifestOutputConfig;
-  readonly rolePolicies: ResolvedRolePolicies;
 }
 
 export class ManifestValidationError extends Error {
@@ -216,73 +181,6 @@ function normalizeExecution(mode: ExecutionMode | undefined, fallback: Execution
   return mode;
 }
 
-function normalizeStrategy(strategy: DefaultAdminRemovalStrategy | undefined): DefaultAdminRemovalStrategy {
-  if (!strategy) {
-    return "renounce";
-  }
-
-  if (strategy !== "renounce" && strategy !== "revoke") {
-    throw new ManifestValidationError(`Unsupported removal strategy: ${strategy}`);
-  }
-
-  return strategy;
-}
-
-function resolveRolePolicies(config: ManifestRolePolicies | undefined): ResolvedRolePolicies {
-  if (!config || config.renounce === undefined) {
-    return {
-      renounce: normalizeRoleList(DEFAULT_RENOUNCE_ROLES, "default roles.renounce"),
-    };
-  }
-
-  return {
-    renounce: normalizeRoleList(config.renounce, "roles.renounce"),
-  };
-}
-
-function resolveRoleOverride(
-  config: ManifestRolePolicies | undefined,
-  label: string,
-): ResolvedRoleOverride | undefined {
-  if (!config || config.renounce === undefined) {
-    return undefined;
-  }
-
-  return {
-    renounce: normalizeRoleList(config.renounce, `${label}.renounce`),
-  };
-}
-
-function normalizeRoleList(values: string[] | undefined, label: string): string[] {
-  if (!values || values.length === 0) {
-    return [];
-  }
-
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  for (let index = 0; index < values.length; index += 1) {
-    const raw = values[index];
-
-    if (typeof raw !== "string") {
-      throw new ManifestValidationError(`${label}[${index}] must be a string.`);
-    }
-
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) {
-      throw new ManifestValidationError(`${label}[${index}] cannot be empty.`);
-    }
-
-    if (!seen.has(trimmed)) {
-      seen.add(trimmed);
-      normalized.push(trimmed);
-    }
-  }
-
-  normalized.sort((a, b) => a.localeCompare(b));
-  return normalized;
-}
-
 export function loadRoleManifest(manifestPath: string): RoleManifest {
   const absolutePath = path.isAbsolute(manifestPath) ? manifestPath : path.join(process.cwd(), manifestPath);
 
@@ -315,7 +213,6 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
   };
 
   const defaults = resolveManifestDefaults(manifest.defaults, context);
-  const rolePolicies = resolveRolePolicies(manifest.roles);
 
   const exclusions = (manifest.exclusions ?? []).map((exclusion, index) => {
     if (!exclusion.deployment && !exclusion.deploymentPrefix) {
@@ -363,15 +260,12 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
       ? resolveDefaultAdminOverride(contract.defaultAdmin, defaults.defaultAdmin, context, `overrides[${index}]`)
       : undefined;
 
-    const roleOverride = resolveRoleOverride(contract.roles, `overrides[${index}].roles`);
-
     const resolvedOverride: ResolvedContractOverride = {
       deployment,
       ...(contract.alias && contract.alias.trim().length > 0 ? { alias: contract.alias.trim() } : {}),
       ...(contract.notes ? { notes: contract.notes } : {}),
       ...(ownableOverride ? { ownable: ownableOverride } : {}),
       ...(defaultAdminOverride ? { defaultAdmin: defaultAdminOverride } : {}),
-      ...(roleOverride ? { roles: roleOverride } : {}),
     };
 
     overrides.push(resolvedOverride);
@@ -402,7 +296,6 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
     overrides,
     safe: safeConfig,
     output: manifest.output,
-    rolePolicies,
   };
 }
 
@@ -410,15 +303,26 @@ function resolveManifestDefaults(defaults: ManifestDefaults | undefined, context
   const ownableDefaults = defaults?.ownable;
   const ownableExecution = normalizeExecution(ownableDefaults?.execution, "direct");
   if (ownableExecution !== "direct") {
-    throw new ManifestValidationError(`defaults.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`);
+    throw new ManifestValidationError(
+      `defaults.ownable.execution must be 'direct'. Safe execution is not supported for Ownable transfers.`,
+    );
   }
 
   const resolvedOwnable: ResolvedOwnableAction = {
-    newOwner: resolveAddress(ownableDefaults?.newOwner ?? context.governance, context, "defaults.ownable.newOwner"),
+    newOwner: resolveAddress(
+      ownableDefaults?.newOwner ?? context.governance,
+      context,
+      "defaults.ownable.newOwner",
+    ),
     execution: ownableExecution,
   };
 
   const defaultAdminDefaults = defaults?.defaultAdmin;
+  if (defaultAdminDefaults && Object.prototype.hasOwnProperty.call(defaultAdminDefaults as Record<string, unknown>, "remove")) {
+    throw new ManifestValidationError(
+      "defaults.defaultAdmin.remove is no longer supported. Use the revoke script generated Safe batch to drop deployer roles.",
+    );
+  }
   const grantExecution = normalizeExecution(defaultAdminDefaults?.grantExecution, "direct");
   if (grantExecution === "safe") {
     throw new ManifestValidationError(
@@ -426,38 +330,13 @@ function resolveManifestDefaults(defaults: ManifestDefaults | undefined, context
     );
   }
 
-  const removalConfig = defaultAdminDefaults?.remove ?? {};
-  const removalEnabled = removalConfig.enabled ?? true;
-
-  let removal: ResolvedDefaultAdminRemoval | undefined;
-  if (removalEnabled) {
-    const strategy = normalizeStrategy(removalConfig.strategy);
-    const defaultRemovalExecution = strategy === "revoke" ? "safe" : "direct";
-    const execution = normalizeExecution(removalConfig.execution, defaultRemovalExecution);
-
-    if (execution === "safe" && strategy !== "revoke") {
-      throw new ManifestValidationError(
-        `defaults.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`,
-      );
-    }
-
-    const address = resolveAddress(
-      removalConfig.address ?? context.deployer,
-      context,
-      "defaults.defaultAdmin.remove.address",
-    );
-
-    removal = {
-      address,
-      strategy,
-      execution,
-    };
-  }
-
   const resolvedDefaultAdmin: ResolvedDefaultAdminAction = {
-    newAdmin: resolveAddress(defaultAdminDefaults?.newAdmin ?? context.governance, context, "defaults.defaultAdmin.newAdmin"),
+    newAdmin: resolveAddress(
+      defaultAdminDefaults?.newAdmin ?? context.governance,
+      context,
+      "defaults.defaultAdmin.newAdmin",
+    ),
     grantExecution,
-    removal,
   };
 
   return {
@@ -476,6 +355,12 @@ function resolveOwnableOverride(
 
   if (enabled === false) {
     return { enabled };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(override as Record<string, unknown>, "remove")) {
+    throw new ManifestValidationError(
+      `${label}.defaultAdmin.remove is no longer supported. Use the revoke script generated Safe batch to drop deployer roles.`,
+    );
   }
 
   const execution = normalizeExecution(override.execution, defaults.execution);
@@ -525,44 +410,11 @@ function resolveDefaultAdminOverride(
     `${label}.defaultAdmin.newAdmin`,
   );
 
-  const removalConfig = override.remove ?? {};
-  const defaultRemoval = defaults.removal;
-  const removalEnabled = removalConfig.enabled ?? (override.remove ? true : Boolean(defaultRemoval));
-
-  let removal: ResolvedDefaultAdminRemoval | undefined;
-  if (removalEnabled) {
-    const strategy = normalizeStrategy(removalConfig.strategy ?? defaultRemoval?.strategy);
-    const defaultRemovalExecution = strategy === "revoke" ? "safe" : "direct";
-    const execution = normalizeExecution(
-      removalConfig.execution ?? defaultRemoval?.execution,
-      defaultRemoval?.execution ?? defaultRemovalExecution,
-    );
-
-    if (execution === "safe" && strategy !== "revoke") {
-      throw new ManifestValidationError(
-        `${label}.defaultAdmin.remove.execution set to 'safe' requires the 'revoke' strategy.`,
-      );
-    }
-
-    const address = resolveAddress(
-      removalConfig.address ?? defaultRemoval?.address ?? context.deployer,
-      context,
-      `${label}.defaultAdmin.remove.address`,
-    );
-
-    removal = {
-      address,
-      strategy,
-      execution,
-    };
-  }
-
   return {
     enabled,
     action: {
       newAdmin,
       grantExecution,
-      removal,
     },
   };
 }
