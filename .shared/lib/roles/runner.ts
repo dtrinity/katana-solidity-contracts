@@ -12,7 +12,7 @@ import {
   ResolvedOwnableAction,
   ResolvedRoleManifest,
 } from "./manifest";
-import { ActionSource, PreparedContractPlan, prepareContractPlans } from "./planner";
+import { ActionSource, PreparedContractPlan, PreparedRoleRenounceAction, prepareContractPlans } from "./planner";
 
 type HardhatRuntimeEnvironment = any;
 
@@ -20,7 +20,8 @@ type OperationType =
   | "transferOwnership"
   | "grantDefaultAdmin"
   | "renounceDefaultAdmin"
-  | "revokeDefaultAdmin";
+  | "revokeDefaultAdmin"
+  | "renounceRole";
 
 type OperationStatus = "executed" | "queued" | "skipped" | "failed" | "planned";
 
@@ -160,6 +161,8 @@ export async function runRoleManifest(options: RunManifestOptions): Promise<Runn
 
     const rolesInfo = rolesByDeployment.get(plan.deployment);
     const ownableInfo = ownableByDeployment.get(plan.deployment);
+    const renounceActions = plan.renounceRoles ?? [];
+    const renounceRoleHashes = new Set(renounceActions.map((action) => action.role.hash));
 
     if (plan.ownable) {
       if (plan.ownableSource === "auto") {
@@ -185,6 +188,30 @@ export async function runRoleManifest(options: RunManifestOptions): Promise<Runn
       if (result.status === "executed") {
         totalDirectOperations += 1;
       }
+    }
+
+    if (renounceActions.length > 0) {
+      const { operations, errors } = await handleRoleRenounceActions({
+        hre,
+        deployment,
+        actions: renounceActions,
+        deployerSigner,
+        signerAddress,
+        contractName,
+        rolesInfo,
+        dryRun,
+        log,
+      });
+
+      reportOperations.push(...operations);
+
+      for (const op of operations) {
+        if (op.status === "executed") {
+          totalDirectOperations += 1;
+        }
+      }
+
+      reportErrors.push(...errors);
     }
 
     if (plan.defaultAdmin) {
@@ -221,6 +248,7 @@ export async function runRoleManifest(options: RunManifestOptions): Promise<Runn
     if (rolesInfo) {
       for (const role of rolesInfo.roles) {
         if (role.name === "DEFAULT_ADMIN_ROLE") continue;
+        if (renounceRoleHashes.has(role.hash)) continue;
 
         const deployerHasRole = rolesInfo.rolesHeldByDeployer.some((r) => r.hash === role.hash);
         const governanceHasRole = rolesInfo.rolesHeldByGovernance.some((r) => r.hash === role.hash);
@@ -403,6 +431,107 @@ async function handleOwnableAction(context: OwnableActionContext): Promise<Opera
       details: message,
     };
   }
+}
+
+interface RenounceRoleActionContext {
+  readonly hre: HardhatRuntimeEnvironment;
+  readonly deployment: any;
+  readonly actions: PreparedRoleRenounceAction[];
+  readonly deployerSigner: any;
+  readonly signerAddress: string;
+  readonly contractName: string;
+  readonly rolesInfo?: RolesContractInfo;
+  readonly dryRun: boolean;
+  readonly log: (message: string) => void;
+}
+
+async function handleRoleRenounceActions(
+  context: RenounceRoleActionContext,
+): Promise<{ operations: OperationReport[]; errors: string[] }> {
+  const { hre, deployment, actions, deployerSigner, signerAddress, contractName, rolesInfo, dryRun, log } = context;
+  const operations: OperationReport[] = [];
+  const errors: string[] = [];
+
+  if (actions.length === 0) {
+    return { operations, errors };
+  }
+
+  let contract: any;
+  try {
+    contract = await hre.ethers.getContractAt(deployment.abi as any, deployment.address, deployerSigner);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(`Failed to instantiate contract for ${contractName}: ${message}`);
+    return { operations, errors };
+  }
+
+  for (const action of actions) {
+    const roleName = action.role.name;
+    const roleHash = action.role.hash;
+
+    let hasRole = rolesInfo?.rolesHeldByDeployer.some((role) => role.hash === roleHash) ?? false;
+    if (!hasRole || !dryRun) {
+      try {
+        hasRole = await contract.hasRole(roleHash, signerAddress);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`  Failed to verify role ${roleName}: ${message}`);
+        operations.push({
+          type: "renounceRole",
+          mode: "direct",
+          status: "failed",
+          details: `Unable to verify ${roleName}: ${message}`,
+        });
+        continue;
+      }
+    }
+
+    if (!hasRole) {
+      log(`  ${signerAddress} no longer holds ${roleName}; skipping renounce.`);
+      operations.push({
+        type: "renounceRole",
+        mode: "direct",
+        status: "skipped",
+        details: "Role already removed from deployer.",
+      });
+      continue;
+    }
+
+    if (dryRun) {
+      log(`  [dry-run] Would renounce ${roleName} from deployer`);
+      operations.push({
+        type: "renounceRole",
+        mode: "direct",
+        status: "planned",
+        details: `Would call renounceRole(${roleName}, ${signerAddress})`,
+      });
+      continue;
+    }
+
+    try {
+      log(`  Renouncing ${roleName} from deployer`);
+      const tx = await contract.renounceRole(roleHash, signerAddress);
+      const receipt = await tx.wait();
+      operations.push({
+        type: "renounceRole",
+        mode: "direct",
+        status: "executed",
+        txHash: receipt?.transactionHash,
+        details: roleName,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`  Failed to renounce ${roleName}: ${message}`);
+      operations.push({
+        type: "renounceRole",
+        mode: "direct",
+        status: "failed",
+        details: message,
+      });
+    }
+  }
+
+  return { operations, errors };
 }
 
 interface DefaultAdminActionContext {

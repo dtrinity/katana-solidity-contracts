@@ -3,6 +3,7 @@ import { AbiItem } from "web3-utils";
 import * as fs from "fs";
 import * as path from "path";
 
+import { DEFAULT_MULTICALL3_ADDRESS, executeMulticall, MulticallRequest } from "./multicall";
 // Type guards for ABI fragments
 function isAbiFunctionFragment(
   item: AbiItem,
@@ -48,6 +49,7 @@ export interface ScanOptions {
   governanceMultisig: string;
   deploymentsPath?: string;
   logger?: (message: string) => void;
+  multicallAddress?: string;
 }
 
 export async function scanRolesAndOwnership(options: ScanOptions): Promise<ScanResult> {
@@ -55,6 +57,7 @@ export async function scanRolesAndOwnership(options: ScanOptions): Promise<ScanR
   const ethers = (hre as any).ethers;
   const network = (hre as any).network;
   const log = logger || (() => {});
+  const multicallAddress = options.multicallAddress ?? DEFAULT_MULTICALL3_ADDRESS;
 
   const deploymentsPath = options.deploymentsPath || path.join((hre as any).config.paths.deployments, network.name);
   if (!fs.existsSync(deploymentsPath)) {
@@ -92,57 +95,165 @@ export async function scanRolesAndOwnership(options: ScanOptions): Promise<ScanR
       if (hasRoleFn) {
         log(`  Contract ${contractName} has a hasRole function.`);
         log(`\nChecking roles for contract: ${contractName} at ${contractAddress}`);
-        const roles: RoleInfo[] = [];
+        const contract = await ethers.getContractAt(abi as any, contractAddress);
+        const contractInterface = (contract as any).interface;
 
-        // Collect role constants as view functions returning bytes32
-        for (const item of abi) {
-          if (
+        const roleHashes = new Map<string, string>();
+        const recordRoleHash = (name: string, hash: string) => {
+          if (!roleHashes.has(name)) {
+            roleHashes.set(name, hash);
+            log(`  - Found role: ${name} with hash ${hash}`);
+          }
+        };
+
+        const constantFragments = abi.filter(
+          (item) =>
             isAbiFunctionFragment(item) &&
             item.stateMutability === "view" &&
             ((item.name?.endsWith("_ROLE") as boolean) || item.name === "DEFAULT_ADMIN_ROLE") &&
             (item.inputs?.length ?? 0) === 0 &&
             item.outputs?.length === 1 &&
-            item.outputs[0].type === "bytes32"
-          ) {
+            item.outputs[0].type === "bytes32" &&
+            item.name,
+        );
+
+        if (constantFragments.length > 0) {
+          const constantCalls: MulticallRequest[] = constantFragments.map((item) => ({
+            target: contractAddress,
+            allowFailure: true,
+            callData: contractInterface.encodeFunctionData(item.name!, []),
+          }));
+
+          const constantResults = await executeMulticall(
+            hre as any,
+            constantCalls,
+            { address: multicallAddress, logger: log },
+          );
+
+          const fallbackConstants: string[] = [];
+
+          if (constantResults) {
+            for (let index = 0; index < constantResults.length; index += 1) {
+              const fragment = constantFragments[index];
+              const result = constantResults[index];
+
+              if (!result || !result.success) {
+                fallbackConstants.push(fragment.name!);
+                continue;
+              }
+
+              try {
+                const decoded = contractInterface.decodeFunctionResult(fragment.name!, result.returnData);
+                const hashValue = String(decoded[0]);
+                recordRoleHash(fragment.name!, hashValue);
+              } catch {
+                fallbackConstants.push(fragment.name!);
+              }
+            }
+          } else {
+            fallbackConstants.push(...constantFragments.map((fragment) => fragment.name!));
+          }
+
+          for (const name of fallbackConstants) {
             try {
-              const contract = await ethers.getContractAt(abi as any, contractAddress);
-              const roleHash: string = await (contract as any)[item.name]();
-              roles.push({ name: item.name!, hash: roleHash });
-              log(`  - Found role: ${item.name} with hash ${roleHash}`);
+              const roleHash: string = await (contract as any)[name]();
+              recordRoleHash(name, roleHash);
             } catch {
               // ignore role hash failures for this item
             }
           }
         }
 
-        // Build role ownership information
-        const contract = await ethers.getContractAt(abi as any, contractAddress);
+        const roles: RoleInfo[] = Array.from(roleHashes.entries()).map(([name, hash]) => ({ name, hash }));
+
         const rolesHeldByDeployer: RoleInfo[] = [];
         const rolesHeldByGovernance: RoleInfo[] = [];
+        const deployerRoleHashes = new Set<string>();
+        const governanceRoleHashes = new Set<string>();
 
-        for (const role of roles) {
-          try {
-            if (await (contract as any).hasRole(role.hash, deployer)) {
+        const recordHolder = (holder: "deployer" | "governance", role: RoleInfo) => {
+          if (holder === "deployer") {
+            if (!deployerRoleHashes.has(role.hash)) {
+              deployerRoleHashes.add(role.hash);
               rolesHeldByDeployer.push(role);
               log(`    Deployer HAS role ${role.name}`);
             }
-          } catch {}
+          } else if (!governanceRoleHashes.has(role.hash)) {
+            governanceRoleHashes.add(role.hash);
+            rolesHeldByGovernance.push(role);
+            log(`    Governance HAS role ${role.name}`);
+          }
+        };
 
-          try {
-            if (await (contract as any).hasRole(role.hash, governanceMultisig)) {
-              rolesHeldByGovernance.push(role);
-              log(`    Governance HAS role ${role.name}`);
+        if (roles.length > 0) {
+          const hasRoleCalls: MulticallRequest[] = [];
+          const hasRoleMetadata: { role: RoleInfo; holder: "deployer" | "governance" }[] = [];
+
+          for (const role of roles) {
+            hasRoleMetadata.push({ role, holder: "deployer" });
+            hasRoleCalls.push({
+              target: contractAddress,
+              allowFailure: true,
+              callData: contractInterface.encodeFunctionData("hasRole", [role.hash, deployer]),
+            });
+
+            hasRoleMetadata.push({ role, holder: "governance" });
+            hasRoleCalls.push({
+              target: contractAddress,
+              allowFailure: true,
+              callData: contractInterface.encodeFunctionData("hasRole", [role.hash, governanceMultisig]),
+            });
+          }
+
+          const hasRoleResults = await executeMulticall(
+            hre as any,
+            hasRoleCalls,
+            { address: multicallAddress, logger: log },
+          );
+
+          const fallbackChecks: { role: RoleInfo; holder: "deployer" | "governance" }[] = [];
+
+          if (hasRoleResults) {
+            for (let index = 0; index < hasRoleResults.length; index += 1) {
+              const query = hasRoleMetadata[index];
+              const result = hasRoleResults[index];
+
+              if (!result || !result.success) {
+                fallbackChecks.push(query);
+                continue;
+              }
+
+              try {
+                const decoded = contractInterface.decodeFunctionResult("hasRole", result.returnData);
+                const holds = Boolean(decoded[0]);
+                if (holds) {
+                  recordHolder(query.holder, query.role);
+                }
+              } catch {
+                fallbackChecks.push(query);
+              }
             }
-          } catch {}
+          } else {
+            fallbackChecks.push(...hasRoleMetadata);
+          }
+
+          for (const query of fallbackChecks) {
+            try {
+              const holder = query.holder === "deployer" ? deployer : governanceMultisig;
+              if (await (contract as any).hasRole(query.role.hash, holder)) {
+                recordHolder(query.holder, query.role);
+              }
+            } catch {
+              // ignore failures
+            }
+          }
         }
 
         const defaultAdmin = roles.find((r) => r.name === "DEFAULT_ADMIN_ROLE");
-        let governanceHasDefaultAdmin = false;
+        const governanceHasDefaultAdmin =
+          defaultAdmin !== undefined ? governanceRoleHashes.has(defaultAdmin.hash) : false;
         if (defaultAdmin) {
-          try {
-            governanceHasDefaultAdmin = await (contract as any).hasRole(defaultAdmin.hash, governanceMultisig);
-            log(`    governanceHasDefaultAdmin: ${governanceHasDefaultAdmin}`);
-          } catch {}
+          log(`    governanceHasDefaultAdmin: ${governanceHasDefaultAdmin}`);
         }
 
         rolesContracts.push({

@@ -1,4 +1,4 @@
-import { OwnableContractInfo, RolesContractInfo } from "./scan";
+import { OwnableContractInfo, RoleInfo, RolesContractInfo } from "./scan";
 import {
   ResolvedContractOverride,
   ResolvedDefaultAdminAction,
@@ -16,6 +16,12 @@ export interface PreparedContractPlan {
   readonly ownableSource?: ActionSource;
   readonly defaultAdmin?: ResolvedDefaultAdminAction;
   readonly defaultAdminSource?: ActionSource;
+  readonly renounceRoles?: PreparedRoleRenounceAction[];
+}
+
+export interface PreparedRoleRenounceAction {
+  readonly role: RoleInfo;
+  readonly source: ActionSource;
 }
 
 interface SelectionResult<TAction> {
@@ -42,6 +48,12 @@ interface DefaultAdminSelectionOptions {
   readonly override?: ResolvedContractOverride;
   readonly deployment: string;
   readonly hasRoles: boolean;
+}
+
+interface RenounceSelectionOptions {
+  readonly manifest: ResolvedRoleManifest;
+  readonly override?: ResolvedContractOverride;
+  readonly rolesInfo?: RolesContractInfo;
 }
 
 export function prepareContractPlans(options: PrepareContractPlansOptions): PreparedContractPlan[] {
@@ -84,7 +96,15 @@ export function prepareContractPlans(options: PrepareContractPlansOptions): Prep
       hasRoles: Boolean(rolesInfo?.defaultAdminRoleHash),
     });
 
-    const hasAction = Boolean(ownableSelection.action || defaultAdminSelection.action);
+    const renounceSelection = computeRenounceSelection({
+      manifest,
+      override,
+      rolesInfo,
+    });
+
+    const hasAction = Boolean(
+      ownableSelection.action || defaultAdminSelection.action || renounceSelection.length > 0,
+    );
     let hasOverride = false;
     let hasPresentation = false;
     if (override) {
@@ -104,6 +124,7 @@ export function prepareContractPlans(options: PrepareContractPlansOptions): Prep
       ownableSource: ownableSelection.source,
       defaultAdmin: defaultAdminSelection.action,
       defaultAdminSource: defaultAdminSelection.source,
+      renounceRoles: renounceSelection.length > 0 ? renounceSelection : undefined,
     });
   }
 
@@ -180,6 +201,41 @@ function computeDefaultAdminSelection(options: DefaultAdminSelectionOptions): Se
   }
 
   return { excluded: false };
+}
+
+function computeRenounceSelection(options: RenounceSelectionOptions): PreparedRoleRenounceAction[] {
+  const { manifest, override, rolesInfo } = options;
+
+  if (!rolesInfo) {
+    return [];
+  }
+
+  const overrideConfig = override?.roles;
+  const activeList =
+    overrideConfig && overrideConfig.renounce !== undefined
+      ? overrideConfig.renounce
+      : manifest.rolePolicies.renounce;
+
+  if (!activeList || activeList.length === 0) {
+    return [];
+  }
+
+  const source: ActionSource =
+    overrideConfig && overrideConfig.renounce !== undefined ? "override" : "auto";
+  const allowedRoles = new Set(activeList);
+  const planned: PreparedRoleRenounceAction[] = [];
+
+  for (const role of rolesInfo.rolesHeldByDeployer) {
+    if (role.name === "DEFAULT_ADMIN_ROLE") {
+      continue;
+    }
+
+    if (allowedRoles.has(role.name)) {
+      planned.push({ role, source });
+    }
+  }
+
+  return planned;
 }
 
 export function isDeploymentExcluded(

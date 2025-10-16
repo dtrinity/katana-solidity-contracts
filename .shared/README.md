@@ -221,6 +221,9 @@ The shared runner migrates `Ownable` ownership and `DEFAULT_ADMIN_ROLE` by readi
       "remove": { "strategy": "renounce", "execution": "direct", "address": "{{deployer}}" }
     }
   },
+  "roles": {
+    "renounce": ["MINTER_ROLE"]
+  },
   "safe": {
     "safeAddress": "0xSafe...",
     "owners": ["0xGovernor1...", "0xGovernor2..."],
@@ -245,6 +248,7 @@ The shared runner migrates `Ownable` ownership and `DEFAULT_ADMIN_ROLE` by readi
 
 - `{{deployer}}` and `{{governance}}` placeholders resolve to the manifest addresses.
 - `autoInclude` determines the default sweep; exclusions and overrides explicitly change the plan.
+- `roles.renounce` lists AccessControl roles that should be renounced (instead of transferred) before the deployer gives up `DEFAULT_ADMIN_ROLE`. When omitted, the script defaults to `["MINTER_ROLE"]`.
 - `ownable.execution` must stay `direct`; Safe batches cannot call `transferOwnership`.
 - Setting `remove.execution` to `safe` automatically switches to `revokeRole` and queues Safe transactions.
 

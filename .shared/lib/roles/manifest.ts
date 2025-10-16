@@ -5,6 +5,8 @@ import { getAddress } from "@ethersproject/address";
 
 import { SafeConfig } from "./types";
 
+export const DEFAULT_RENOUNCE_ROLES = ["MINTER_ROLE"];
+
 export type ExecutionMode = "direct" | "safe";
 export type DefaultAdminRemovalStrategy = "renounce" | "revoke";
 
@@ -47,6 +49,7 @@ export interface ManifestContractOverride {
   readonly ownable?: ManifestOwnableOverrides;
   readonly defaultAdmin?: ManifestDefaultAdminOverrides;
   readonly disabled?: boolean;
+  readonly roles?: ManifestRolePolicies;
 }
 
 export interface ManifestOutputConfig {
@@ -71,6 +74,10 @@ export interface ManifestExclusionConfig {
   readonly defaultAdmin?: boolean;
 }
 
+export interface ManifestRolePolicies {
+  readonly renounce?: string[];
+}
+
 export interface RoleManifest {
   readonly version: 2;
   readonly network?: string;
@@ -82,6 +89,7 @@ export interface RoleManifest {
   readonly overrides?: ManifestContractOverride[];
   readonly safe?: ManifestSafeConfig;
   readonly output?: ManifestOutputConfig;
+  readonly roles?: ManifestRolePolicies;
 }
 
 export interface ResolvedOwnableAction {
@@ -118,6 +126,7 @@ export interface ResolvedContractOverride {
   readonly ownable?: ResolvedOwnableOverride;
   readonly defaultAdmin?: ResolvedDefaultAdminOverride;
   readonly disabled?: boolean;
+  readonly roles?: ResolvedRoleOverride;
 }
 
 export interface ResolvedManifestDefaults {
@@ -139,6 +148,14 @@ export interface ResolvedExclusion {
   readonly defaultAdmin: boolean;
 }
 
+export interface ResolvedRolePolicies {
+  readonly renounce: string[];
+}
+
+export interface ResolvedRoleOverride {
+  readonly renounce?: string[];
+}
+
 export interface ResolvedRoleManifest {
   readonly version: 2;
   readonly network?: string;
@@ -150,6 +167,7 @@ export interface ResolvedRoleManifest {
   readonly overrides: ResolvedContractOverride[];
   readonly safe?: ManifestSafeConfig;
   readonly output?: ManifestOutputConfig;
+  readonly rolePolicies: ResolvedRolePolicies;
 }
 
 export class ManifestValidationError extends Error {
@@ -210,6 +228,61 @@ function normalizeStrategy(strategy: DefaultAdminRemovalStrategy | undefined): D
   return strategy;
 }
 
+function resolveRolePolicies(config: ManifestRolePolicies | undefined): ResolvedRolePolicies {
+  if (!config || config.renounce === undefined) {
+    return {
+      renounce: normalizeRoleList(DEFAULT_RENOUNCE_ROLES, "default roles.renounce"),
+    };
+  }
+
+  return {
+    renounce: normalizeRoleList(config.renounce, "roles.renounce"),
+  };
+}
+
+function resolveRoleOverride(
+  config: ManifestRolePolicies | undefined,
+  label: string,
+): ResolvedRoleOverride | undefined {
+  if (!config || config.renounce === undefined) {
+    return undefined;
+  }
+
+  return {
+    renounce: normalizeRoleList(config.renounce, `${label}.renounce`),
+  };
+}
+
+function normalizeRoleList(values: string[] | undefined, label: string): string[] {
+  if (!values || values.length === 0) {
+    return [];
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (let index = 0; index < values.length; index += 1) {
+    const raw = values[index];
+
+    if (typeof raw !== "string") {
+      throw new ManifestValidationError(`${label}[${index}] must be a string.`);
+    }
+
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      throw new ManifestValidationError(`${label}[${index}] cannot be empty.`);
+    }
+
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      normalized.push(trimmed);
+    }
+  }
+
+  normalized.sort((a, b) => a.localeCompare(b));
+  return normalized;
+}
+
 export function loadRoleManifest(manifestPath: string): RoleManifest {
   const absolutePath = path.isAbsolute(manifestPath) ? manifestPath : path.join(process.cwd(), manifestPath);
 
@@ -242,6 +315,7 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
   };
 
   const defaults = resolveManifestDefaults(manifest.defaults, context);
+  const rolePolicies = resolveRolePolicies(manifest.roles);
 
   const exclusions = (manifest.exclusions ?? []).map((exclusion, index) => {
     if (!exclusion.deployment && !exclusion.deploymentPrefix) {
@@ -289,12 +363,15 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
       ? resolveDefaultAdminOverride(contract.defaultAdmin, defaults.defaultAdmin, context, `overrides[${index}]`)
       : undefined;
 
+    const roleOverride = resolveRoleOverride(contract.roles, `overrides[${index}].roles`);
+
     const resolvedOverride: ResolvedContractOverride = {
       deployment,
       ...(contract.alias && contract.alias.trim().length > 0 ? { alias: contract.alias.trim() } : {}),
       ...(contract.notes ? { notes: contract.notes } : {}),
       ...(ownableOverride ? { ownable: ownableOverride } : {}),
       ...(defaultAdminOverride ? { defaultAdmin: defaultAdminOverride } : {}),
+      ...(roleOverride ? { roles: roleOverride } : {}),
     };
 
     overrides.push(resolvedOverride);
@@ -325,6 +402,7 @@ export function resolveRoleManifest(manifest: RoleManifest): ResolvedRoleManifes
     overrides,
     safe: safeConfig,
     output: manifest.output,
+    rolePolicies,
   };
 }
 

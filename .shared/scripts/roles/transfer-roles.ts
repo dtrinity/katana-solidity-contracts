@@ -133,6 +133,11 @@ async function main(): Promise<void> {
     logger.info(`Auto-included Ownable transfers: ${manifest.autoInclude.ownable ? "enabled" : "disabled"}`);
     logger.info(`Auto-included DEFAULT_ADMIN_ROLE transfers: ${manifest.autoInclude.defaultAdmin ? "enabled" : "disabled"}`);
     logger.info(`Overrides declared: ${manifest.overrides.length}`);
+    logger.info(
+      `Roles to renounce: ${
+        manifest.rolePolicies.renounce.length > 0 ? manifest.rolePolicies.renounce.join(", ") : "none"
+      }`,
+    );
 
     const planResult = await runRoleManifest({
       hre,
