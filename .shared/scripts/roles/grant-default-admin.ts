@@ -199,6 +199,43 @@ async function main(): Promise<void> {
     logger.info(`Missing DEFAULT_ADMIN_ROLE ABI/scan data: ${skippedMissingRole.length}`);
     logger.info(`Manifest opt-outs: ${manifestOptOuts.length}`);
 
+    if (actionable.length > 0) {
+      logger.info(`\nGranting DEFAULT_ADMIN_ROLE to governance multisig ${manifest.governance}:`);
+      actionable.forEach((target, index) => {
+        logger.info(
+          `- [${index + 1}/${actionable.length}] ${target.contractName} (${target.address}) :: grant from deployer -> ${manifest.governance} (${target.manifestSource})`,
+        );
+      });
+    }
+
+    if (skippedExisting.length > 0) {
+      logger.info("\nAlready satisfied (governance already holds DEFAULT_ADMIN_ROLE):");
+      skippedExisting.forEach((entry) => {
+        logger.info(`- ${entry.contractName} (${entry.address}) [${entry.manifestSource}]`);
+      });
+    }
+
+    if (skippedNoPermission.length > 0) {
+      logger.warn("\nMissing deployer permission (deployer does not hold DEFAULT_ADMIN_ROLE):");
+      skippedNoPermission.forEach((entry) => {
+        logger.warn(`- ${entry.contractName} (${entry.address}) [${entry.manifestSource}]`);
+      });
+    }
+
+    if (skippedMissingRole.length > 0) {
+      logger.warn("\nMissing DEFAULT_ADMIN_ROLE ABI or scan data (manual investigation required):");
+      skippedMissingRole.forEach((entry) => {
+        logger.warn(`- ${entry.contractName} (${entry.address}) [${entry.manifestSource}]`);
+      });
+    }
+
+    if (manifestOptOuts.length > 0) {
+      logger.info("\nManifest opt-outs (not processed by design):");
+      manifestOptOuts.forEach((opt) => {
+        logger.info(`- ${opt.contractName} (${opt.address}) :: ${opt.reason}`);
+      });
+    }
+
     if (actionable.length === 0) {
       logger.success("\nNo grants required. Governance already holds DEFAULT_ADMIN_ROLE (or manifest opts out).");
       await maybeEmitJson(options.jsonOutput, {
