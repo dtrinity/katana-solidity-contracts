@@ -828,7 +828,7 @@ describe("DStake Solver Mode Tests", function () {
         let grossAmount = (numerator + denominator - 1n) / denominator;
         if (grossAmount > 0n) {
           const feeAtLowerGross = ((grossAmount - 1n) * BigInt(withdrawalFeeBps)) / BASIS_POINTS;
-          const alternativeNet = (grossAmount - 1n) - feeAtLowerGross;
+          const alternativeNet = grossAmount - 1n - feeAtLowerGross;
           if (alternativeNet >= netAmount) {
             grossAmount -= 1n;
           }
@@ -846,9 +846,7 @@ describe("DStake Solver Mode Tests", function () {
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
       const sharesBefore = await dStakeToken.balanceOf(alice.address);
 
-      await router
-        .connect(alice)
-        .solverWithdrawAssets(vaults, requestedAssets, maxShares, alice.address, alice.address);
+      await router.connect(alice).solverWithdrawAssets(vaults, requestedAssets, maxShares, alice.address, alice.address);
 
       const routerBalanceAfter = await dStable.balanceOf(routerAddress);
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);

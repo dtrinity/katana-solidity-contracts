@@ -59,7 +59,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     const CollateralVaultFactory = await ethers.getContractFactory("DStakeCollateralVaultV2");
     collateralVault = await CollateralVaultFactory.deploy(
       dStakeToken.target, // dStakeVaultShare
-      dStable.target // dStableAsset
+      dStable.target, // dStableAsset
     );
 
     // Deploy router
@@ -88,7 +88,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       treasury.address,
       MAX_TREASURY_FEE_BPS,
       INITIAL_TREASURY_FEE_BPS,
-      EXCHANGE_THRESHOLD
+      EXCHANGE_THRESHOLD,
     );
 
     // Grant manager role
@@ -124,7 +124,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
         treasury.address,
         MAX_TREASURY_FEE_BPS,
         INITIAL_TREASURY_FEE_BPS,
-        EXCHANGE_THRESHOLD
+        EXCHANGE_THRESHOLD,
       );
 
       expect(await rewardManager2.urd()).to.equal(ethers.ZeroAddress);
@@ -144,8 +144,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
           treasury.address,
           MAX_TREASURY_FEE_BPS,
           INITIAL_TREASURY_FEE_BPS,
-          EXCHANGE_THRESHOLD
-        )
+          EXCHANGE_THRESHOLD,
+        ),
       ).to.be.reverted; // Just check it reverts, the exact error might be from parent constructor
     });
   });
@@ -170,7 +170,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
     it("should only allow admin to update URD", async function () {
       await expect(rewardManager.connect(user).setURD(ethers.ZeroAddress)).to.be.revertedWithCustomError(
         rewardManager,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
 
@@ -236,7 +236,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       // User should not be able to skim
       await expect(rewardManager.connect(user).skimRewards([rewardToken.target])).to.be.revertedWithCustomError(
         rewardManager,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
   });
@@ -301,7 +301,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
       await expect(rewardManager.connect(manager).claimRewardsFromURD(claimData)).to.be.revertedWithCustomError(
         rewardManager,
-        "InvalidURD"
+        "InvalidURD",
       );
     });
 
@@ -316,7 +316,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
       await expect(rewardManager.connect(user).claimRewardsFromURD(claimData)).to.be.revertedWithCustomError(
         rewardManager,
-        "AccessControlUnauthorizedAccount"
+        "AccessControlUnauthorizedAccount",
       );
     });
 
@@ -337,7 +337,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       // This should revert because URD has no pending rewards for this contract
       await expect(rewardManager.connect(manager).claimRewardsFromURD(claimData)).to.be.revertedWithCustomError(
         rewardManager,
-        "ClaimFailed"
+        "ClaimFailed",
       );
     });
 
@@ -406,7 +406,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       const compoundAmount = ethers.parseEther("50");
 
       await expect(
-        rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address)
+        rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address),
       ).to.be.revertedWithCustomError(rewardManager, "AccessControlUnauthorizedAccount");
     });
 
@@ -495,7 +495,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       const fee = (rewardAmount * BigInt(INITIAL_TREASURY_FEE_BPS)) / 1_000_000n;
       const netReward = rewardAmount - fee;
 
-      expect(await dStable.balanceOf(treasury.address) - treasuryBalanceBefore).to.equal(fee);
+      expect((await dStable.balanceOf(treasury.address)) - treasuryBalanceBefore).to.equal(fee);
       expect(await dStable.balanceOf(user.address)).to.equal(userBalanceBefore - compoundAmount + netReward);
 
       const vaultSharesAfter = await metaMorphoVault.balanceOf(collateralVault.target);
@@ -509,8 +509,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
         rewardManager.connect(user).compoundRewards(
           ethers.parseEther("5"), // Below threshold of 10
           [rewardToken.target],
-          user.address
-        )
+          user.address,
+        ),
       ).to.be.revertedWithCustomError(rewardManager, "ExchangeAmountTooLow");
     });
 
@@ -575,8 +575,8 @@ describe("DStakeRewardManagerMetaMorpho", function () {
       await dStable.connect(user).approve(rewardManager.target, compoundAmount);
 
       await expect(
-        rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address)
-      ).to.be.revertedWithCustomError(rewardManager, "AdapterNotSetForDefaultAsset");
+        rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address),
+      ).to.be.revertedWithCustomError(rewardManager, "DefaultDepositAssetNotSet");
     });
 
     it("should clear approvals after processing", async function () {
@@ -611,7 +611,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
     it("should only allow admin to emergency withdraw", async function () {
       await expect(
-        rewardManager.connect(user).emergencyWithdraw(rewardToken.target, ethers.parseEther("100"))
+        rewardManager.connect(user).emergencyWithdraw(rewardToken.target, ethers.parseEther("100")),
       ).to.be.revertedWithCustomError(rewardManager, "AccessControlUnauthorizedAccount");
     });
   });

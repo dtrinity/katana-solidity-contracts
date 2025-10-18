@@ -270,7 +270,7 @@ describe("DStakeRouterV2", function () {
       const vaultShares = [
         await vault1.balanceOf(collateralAddress),
         await vault2.balanceOf(collateralAddress),
-        await vault3.balanceOf(collateralAddress)
+        await vault3.balanceOf(collateralAddress),
       ];
 
       const vaultCapacities = await Promise.all(
@@ -278,7 +278,7 @@ describe("DStakeRouterV2", function () {
           const shares = vaultShares[index];
           if (shares === 0n) return 0n;
           return await vault.previewRedeem(shares);
-        })
+        }),
       );
 
       const largestVaultCapacity = vaultCapacities.reduce((max, value) => (value > max ? value : max), 0n);
@@ -291,9 +291,10 @@ describe("DStakeRouterV2", function () {
       expect(maxWithdraw).to.equal(expectedNetCapacity);
 
       const overLimit = maxWithdraw + 1n;
-      await expect(
-        dStakeToken.connect(alice).withdraw(overLimit, alice.address, alice.address)
-      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+      await expect(dStakeToken.connect(alice).withdraw(overLimit, alice.address, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ERC4626ExceedsMaxWithdraw",
+      );
     });
 
     it("clamps maxRedeem to router capacity and blocks larger share burns", async function () {
@@ -318,9 +319,10 @@ describe("DStakeRouterV2", function () {
       expect(maxRedeem).to.be.lt(aliceShares);
 
       const overLimitShares = maxRedeem + 1n;
-      await expect(
-        dStakeToken.connect(alice).redeem(overLimitShares, alice.address, alice.address)
-      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxRedeem");
+      await expect(dStakeToken.connect(alice).redeem(overLimitShares, alice.address, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ERC4626ExceedsMaxRedeem",
+      );
     });
 
     it("excludes suspended vaults when computing max withdraw capacity", async function () {
@@ -330,7 +332,7 @@ describe("DStakeRouterV2", function () {
       const deposits = [
         { index: 0, amount: ethers.parseEther("1500") },
         { index: 1, amount: ethers.parseEther("2500") },
-        { index: 2, amount: ethers.parseEther("1000") }
+        { index: 2, amount: ethers.parseEther("1000") },
       ];
 
       const totalDeposit = deposits.reduce((acc, plan) => acc + plan.amount, 0n);
@@ -359,7 +361,7 @@ describe("DStakeRouterV2", function () {
 
       const { maxValue: largestCapacity, maxIndex: largestIndex } = capacities.reduce(
         (acc, value, index) => (value > acc.maxValue ? { maxValue: value, maxIndex: index } : acc),
-        { maxValue: 0n, maxIndex: 0 }
+        { maxValue: 0n, maxIndex: 0 },
       );
 
       expect(await router.getMaxSingleVaultWithdraw()).to.equal(largestCapacity);
@@ -368,7 +370,7 @@ describe("DStakeRouterV2", function () {
         vaultTargets[largestIndex],
         adapterTargets[largestIndex],
         targetBps[largestIndex],
-        VaultStatus.Suspended
+        VaultStatus.Suspended,
       );
 
       const expectedRemainingCapacity = capacities.reduce((max, value, index) => {
@@ -405,13 +407,12 @@ describe("DStakeRouterV2", function () {
       expect(await router.getMaxSingleVaultWithdraw()).to.equal(0n);
       expect(await dStakeToken.maxWithdraw(alice.address)).to.equal(0n);
 
-      await expect(
-        dStakeToken.connect(alice).withdraw(1n, alice.address, alice.address)
-      ).to.be.revertedWithCustomError(dStakeToken, "ERC4626ExceedsMaxWithdraw");
+      await expect(dStakeToken.connect(alice).withdraw(1n, alice.address, alice.address)).to.be.revertedWithCustomError(
+        dStakeToken,
+        "ERC4626ExceedsMaxWithdraw",
+      );
 
-      await expect(
-        dStakeToken.connect(alice).withdraw(0, alice.address, alice.address)
-      )
+      await expect(dStakeToken.connect(alice).withdraw(0, alice.address, alice.address))
         .to.emit(dStakeToken, "Withdraw")
         .withArgs(alice.address, alice.address, alice.address, 0, 0);
     });
@@ -511,20 +512,14 @@ describe("DStakeRouterV2", function () {
   describe("Operational safeguards", function () {
     it("surfaces adapter failures to operators", async function () {
       const gasBombFactory = await ethers.getContractFactory("MockGasGuzzlingAdapter");
-      const gasBombAdapter = await gasBombFactory.deploy(
-        await dStable.getAddress(),
-        collateralVault.target,
-        vault1Address,
-        1_000,
-        64
-      );
+      const gasBombAdapter = await gasBombFactory.deploy(await dStable.getAddress(), collateralVault.target, vault1Address, 1_000, 64);
       await gasBombAdapter.waitForDeployment();
 
       await router.connect(owner).updateVaultConfig({
         strategyVault: vault1Address,
         adapter: await gasBombAdapter.getAddress(),
         targetBps: 500000,
-        status: VaultStatus.Active
+        status: VaultStatus.Active,
       });
 
       const depositAmount = ethers.parseEther("100");
@@ -532,7 +527,7 @@ describe("DStakeRouterV2", function () {
 
       await expect(dStakeToken.connect(alice).deposit(depositAmount, alice.address)).to.be.revertedWithCustomError(
         gasBombAdapter,
-        "GasBomb"
+        "GasBomb",
       );
     });
 
@@ -547,11 +542,8 @@ describe("DStakeRouterV2", function () {
       const toBalanceBefore = await vault2.balanceOf(collateralVault.target);
       expect(fromBalanceBefore).to.be.gt(0n);
 
-      await expect(
-        router
-          .connect(collateralExchanger)
-          .rebalanceStrategiesByShares(vault1Address, vault2Address, 1n, 0n)
-      ).to.not.be.reverted;
+      await expect(router.connect(collateralExchanger).rebalanceStrategiesByShares(vault1Address, vault2Address, 1n, 0n)).to.not.be
+        .reverted;
 
       const fromBalanceAfter = await vault1.balanceOf(collateralVault.target);
       expect(fromBalanceAfter).to.equal(fromBalanceBefore);
@@ -569,10 +561,7 @@ describe("DStakeRouterV2", function () {
 
       const totalBefore = await dStakeToken.totalAssets();
 
-      await expect(router.connect(owner).removeAdapter(vault1Address)).to.be.revertedWithCustomError(
-        router,
-        "VaultMustBeSuspended"
-      );
+      await expect(router.connect(owner).removeAdapter(vault1Address)).to.be.revertedWithCustomError(router, "VaultMustBeSuspended");
 
       await router.connect(owner).suspendVaultForRemoval(vault1Address);
       await router.connect(owner).removeAdapter(vault1Address);
@@ -600,11 +589,8 @@ describe("DStakeRouterV2", function () {
 
       const movement = fromBalance > 1n ? fromBalance / 2n : 1n;
 
-      await expect(
-        router
-          .connect(collateralExchanger)
-          .rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n)
-      ).to.not.be.reverted;
+      await expect(router.connect(collateralExchanger).rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n)).to.not.be
+        .reverted;
 
       const shareAllowance = await vault1.allowance(routerAddress, adapter1Address);
       const assetAllowance = await dStable.allowance(routerAddress, adapter2Address);
@@ -632,9 +618,7 @@ describe("DStakeRouterV2", function () {
       await vault1.connect(collateralExchanger).approve(await router.getAddress(), shareBalance);
 
       await expect(
-        router
-          .connect(collateralExchanger)
-          .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, shareBalance, 0n)
+        router.connect(collateralExchanger).rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, shareBalance, 0n),
       ).to.not.be.reverted;
 
       const shareAllowance = await vault1.allowance(routerAddress, adapter1Address);
@@ -656,11 +640,7 @@ describe("DStakeRouterV2", function () {
 
       const movement = fromBalance > 1n ? fromBalance / 2n : 1n;
 
-      await expect(
-        router
-          .connect(collateralExchanger)
-          .rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n)
-      )
+      await expect(router.connect(collateralExchanger).rebalanceStrategiesByShares(vault1Address, vault2Address, movement, 0n))
         .to.be.revertedWithCustomError(router, "VaultNotActive")
         .withArgs(vault2Address);
     });
@@ -685,9 +665,7 @@ describe("DStakeRouterV2", function () {
       const sharePortion = operatorShares > 1n ? operatorShares / 2n : 1n;
 
       await expect(
-        router
-          .connect(collateralExchanger)
-          .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, sharePortion, 0n)
+        router.connect(collateralExchanger).rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, vault2Address, sharePortion, 0n),
       )
         .to.be.revertedWithCustomError(router, "VaultNotActive")
         .withArgs(vault2Address);
@@ -704,9 +682,7 @@ describe("DStakeRouterV2", function () {
       await dStable.connect(owner).mint(owner.address, surplus);
       await dStable.connect(owner).transfer(routerAddress, surplus);
 
-      await expect(router.connect(owner).sweepSurplus(0))
-        .to.be.revertedWithCustomError(router, "VaultNotActive")
-        .withArgs(vault1Address);
+      await expect(router.connect(owner).sweepSurplus(0)).to.be.revertedWithCustomError(router, "VaultNotActive").withArgs(vault1Address);
     });
   });
 
@@ -764,7 +740,7 @@ describe("DStakeRouterV2", function () {
           dStableAddress,
           collateralVault.target,
           shortfallShareAddress,
-          factorBps
+          factorBps,
         );
         await shortfallAdapter.waitForDeployment();
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
@@ -774,7 +750,7 @@ describe("DStakeRouterV2", function () {
           strategyVault: shortfallShareAddress,
           adapter: shortfallAdapterAddress,
           targetBps: 0,
-          status: VaultStatus.Active
+          status: VaultStatus.Active,
         });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
@@ -791,12 +767,7 @@ describe("DStakeRouterV2", function () {
         await expect(
           router
             .connect(collateralExchanger)
-            .rebalanceStrategiesBySharesViaExternalLiquidity(
-              vault1Address,
-              shortfallShareAddress,
-              fromShareAmount,
-              minToShareAmount
-            )
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, shortfallShareAddress, fromShareAmount, minToShareAmount),
         ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
       });
 
@@ -817,7 +788,7 @@ describe("DStakeRouterV2", function () {
           dStableAddress,
           collateralVault.target,
           shortfallShareAddress,
-          factorBps
+          factorBps,
         );
         await shortfallAdapter.waitForDeployment();
         const shortfallAdapterAddress = await shortfallAdapter.getAddress();
@@ -827,7 +798,7 @@ describe("DStakeRouterV2", function () {
           strategyVault: shortfallShareAddress,
           adapter: shortfallAdapterAddress,
           targetBps: 0,
-          status: VaultStatus.Active
+          status: VaultStatus.Active,
         });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
@@ -846,12 +817,7 @@ describe("DStakeRouterV2", function () {
         await expect(
           router
             .connect(collateralExchanger)
-            .rebalanceStrategiesBySharesViaExternalLiquidity(
-              vault1Address,
-              shortfallShareAddress,
-              fromShareAmount,
-              minToShareAmount
-            )
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, shortfallShareAddress, fromShareAmount, minToShareAmount),
         ).to.not.be.reverted;
 
         const resultingShareBalance = await shortfallShare.balanceOf(collateralVault.target);
@@ -878,7 +844,7 @@ describe("DStakeRouterV2", function () {
           dStableAddress,
           collateralVault.target,
           devaluedShareAddress,
-          valueFactorBps
+          valueFactorBps,
         );
         await devaluingAdapter.waitForDeployment();
         const devaluingAdapterAddress = await devaluingAdapter.getAddress();
@@ -888,7 +854,7 @@ describe("DStakeRouterV2", function () {
           strategyVault: devaluedShareAddress,
           adapter: devaluingAdapterAddress,
           targetBps: 0,
-          status: VaultStatus.Active
+          status: VaultStatus.Active,
         });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
@@ -904,12 +870,7 @@ describe("DStakeRouterV2", function () {
         await expect(
           router
             .connect(collateralExchanger)
-            .rebalanceStrategiesBySharesViaExternalLiquidity(
-              vault1Address,
-              devaluedShareAddress,
-              fromShareAmount,
-              minToShareAmount
-            )
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, devaluedShareAddress, fromShareAmount, minToShareAmount),
         ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
       });
 
@@ -931,7 +892,7 @@ describe("DStakeRouterV2", function () {
           dStableAddress,
           collateralVault.target,
           devaluedShareAddress,
-          valueFactorBps
+          valueFactorBps,
         );
         await devaluingAdapter.waitForDeployment();
         const devaluingAdapterAddress = await devaluingAdapter.getAddress();
@@ -941,7 +902,7 @@ describe("DStakeRouterV2", function () {
           strategyVault: devaluedShareAddress,
           adapter: devaluingAdapterAddress,
           targetBps: 0,
-          status: VaultStatus.Active
+          status: VaultStatus.Active,
         });
 
         const collateralBalance = await vault1.balanceOf(collateralVault.target);
@@ -959,12 +920,7 @@ describe("DStakeRouterV2", function () {
         await expect(
           router
             .connect(collateralExchanger)
-            .rebalanceStrategiesBySharesViaExternalLiquidity(
-              vault1Address,
-              devaluedShareAddress,
-              fromShareAmount,
-              minToShareAmount
-            )
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, devaluedShareAddress, fromShareAmount, minToShareAmount),
         ).to.not.be.reverted;
 
         const resultingShareBalance = await devaluedShare.balanceOf(collateralVault.target);
@@ -982,7 +938,7 @@ describe("DStakeRouterV2", function () {
       const updatedConfigs = [
         { strategyVault: vault1.target, adapter: adapter1.target, targetBps: 700000, status: VaultStatus.Active },
         { strategyVault: vault2.target, adapter: adapter2.target, targetBps: 300000, status: VaultStatus.Active },
-        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 0, status: VaultStatus.Active }
+        { strategyVault: vault3.target, adapter: adapter3.target, targetBps: 0, status: VaultStatus.Active },
       ];
       await router.setVaultConfigs(updatedConfigs);
 
@@ -1131,7 +1087,6 @@ describe("DStakeRouterV2", function () {
         const depositAmount = ethers.parseEther("1000");
         await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
         await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
-
       }
 
       const [, allocsAfter] = await router.getCurrentAllocations();
@@ -1180,7 +1135,7 @@ describe("DStakeRouterV2", function () {
         vault1.target,
         vault2.target,
         exchangeAmount,
-        0 // minToVaultAssetAmount
+        0, // minToVaultAssetAmount
       );
       const receipt = await tx.wait();
 
@@ -1230,8 +1185,8 @@ describe("DStakeRouterV2", function () {
           vault1.target,
           vault2.target,
           exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
+          0, // minToVaultAssetAmount
+        ),
       ).to.be.revertedWithCustomError(router, "VaultNotActive");
     });
 
@@ -1243,8 +1198,8 @@ describe("DStakeRouterV2", function () {
           vault1.target,
           vault2.target,
           exchangeAmount,
-          0 // minToVaultAssetAmount
-        )
+          0, // minToVaultAssetAmount
+        ),
       ).to.be.reverted; // Should fail due to missing role
     });
   });
@@ -1260,7 +1215,7 @@ describe("DStakeRouterV2", function () {
         dStable.target, // _dStable
         newVault.target, // _metaMorphoVault
         collateralVault.target, // _collateralVault
-        owner.address // _initialAdmin
+        owner.address, // _initialAdmin
       );
 
       // Need to adjust existing allocations to make room
@@ -1305,8 +1260,8 @@ describe("DStakeRouterV2", function () {
           vault1.target,
           adapter1.target,
           5000,
-          VaultStatus.Suspended // Deactivate
-        )
+          VaultStatus.Suspended, // Deactivate
+        ),
       )
         .to.emit(router, "VaultConfigUpdated")
         .withArgs(vault1.target, adapter1.target, 5000, VaultStatus.Suspended);
@@ -1319,14 +1274,7 @@ describe("DStakeRouterV2", function () {
     });
 
     it("Should revert when updating vault config with adapter targeting different share", async function () {
-      await expect(
-        router.updateVaultConfig(
-          vault1.target,
-          adapter2.target,
-          500000,
-          VaultStatus.Active
-        )
-      )
+      await expect(router.updateVaultConfig(vault1.target, adapter2.target, 500000, VaultStatus.Active))
         .to.be.revertedWithCustomError(router, "AdapterAssetMismatch")
         .withArgs(adapter2.target, vault1.target, vault2.target);
     });
@@ -1340,9 +1288,7 @@ describe("DStakeRouterV2", function () {
 
       const tx = await router.removeVault(vault3.target);
 
-      await expect(tx)
-        .to.emit(router, "VaultConfigUpdated")
-        .withArgs(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
+      await expect(tx).to.emit(router, "VaultConfigUpdated").withArgs(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
       await expect(tx).to.emit(router, "AdapterRemoved").withArgs(vault3.target, adapter3.target);
       await expect(tx).to.emit(router, "VaultConfigRemoved").withArgs(vault3.target);
 
@@ -1528,7 +1474,7 @@ describe("DStakeRouterV2", function () {
         dStable.target, // _dStable
         newVault.target, // _metaMorphoVault
         collateralVault.target, // _collateralVault
-        owner.address // _initialAdmin
+        owner.address, // _initialAdmin
       );
 
       // Add zero-balance vault with significant allocation
@@ -1850,7 +1796,7 @@ describe("DStakeRouterV2", function () {
         vault1.target,
         vault2.target,
         exchangeAmount,
-        0 // minToVaultAssetAmount
+        0, // minToVaultAssetAmount
       );
 
       // Partial withdrawal
@@ -2125,9 +2071,7 @@ describe("DStakeRouterV2", function () {
         expect(totalBalance).to.be.gt(ethers.parseEther("15000")); // Should have funds
 
         const balances = await Promise.all(
-          vaults.map((vault) =>
-            ethers.getContractAt("IERC20", vault).then((c) => c.balanceOf(collateralVault.target))
-          )
+          vaults.map((vault) => ethers.getContractAt("IERC20", vault).then((c) => c.balanceOf(collateralVault.target))),
         );
         expect(balances.some((bal) => bal > 0n)).to.equal(true);
 
@@ -2525,7 +2469,7 @@ describe("DStakeRouterV2", function () {
           vault1Address,
           vault2Address,
           exchangeAmount,
-          0 // minToVaultAssetAmount
+          0, // minToVaultAssetAmount
         );
         const receipt = await tx.wait();
 
@@ -2580,7 +2524,7 @@ describe("DStakeRouterV2", function () {
           vault1Address,
           vault2Address,
           exchangeAmount,
-          0 // minToVaultAssetAmount
+          0, // minToVaultAssetAmount
         );
 
         const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -2611,7 +2555,7 @@ describe("DStakeRouterV2", function () {
           vault1Address,
           vault2Address,
           exchangeAmount,
-          0 // minToVaultAssetAmount
+          0, // minToVaultAssetAmount
         );
 
         const vault1BalanceAfter = await vault1.balanceOf(collateralVault.target);
@@ -2640,8 +2584,8 @@ describe("DStakeRouterV2", function () {
             vault1Address,
             vault2Address,
             exchangeAmount,
-            0 // minToVaultAssetAmount
-          )
+            0, // minToVaultAssetAmount
+          ),
         ).to.be.revertedWithCustomError(router, "VaultNotActive");
       });
 
@@ -2657,8 +2601,8 @@ describe("DStakeRouterV2", function () {
             vault1Address,
             vault2Address,
             exchangeAmount,
-            0 // minToVaultAssetAmount
-          )
+            0, // minToVaultAssetAmount
+          ),
         ).to.be.revertedWithCustomError(router, "VaultNotActive");
       });
     });
@@ -2807,7 +2751,7 @@ describe("DStakeRouterV2", function () {
           dStable.target,
           emptyVaultAddress,
           collateralVault.target,
-          owner.address // initialAdmin
+          owner.address, // initialAdmin
         );
         await emptyAdapter.waitForDeployment();
 
@@ -2859,12 +2803,7 @@ describe("DStakeRouterV2", function () {
         await expect(
           router
             .connect(collateralExchanger)
-            .rebalanceStrategiesByValue(
-              await noAdapterVault.getAddress(),
-              vault1Address,
-              ethers.parseEther("1"),
-              0,
-            ),
+            .rebalanceStrategiesByValue(await noAdapterVault.getAddress(), vault1Address, ethers.parseEther("1"), 0),
         )
           .to.be.revertedWithCustomError(router, "VaultNotFound")
           .withArgs(await noAdapterVault.getAddress());
@@ -2872,36 +2811,24 @@ describe("DStakeRouterV2", function () {
 
       it("surfaces adapter conversion errors", async function () {
         const gasBombFactory = await ethers.getContractFactory("MockGasGuzzlingAdapter");
-        const gasBombAdapter = await gasBombFactory.deploy(
-          await dStable.getAddress(),
-          collateralVault.target,
-          vault1Address,
-          1_000,
-          64,
-        );
+        const gasBombAdapter = await gasBombFactory.deploy(await dStable.getAddress(), collateralVault.target, vault1Address, 1_000, 64);
         await gasBombAdapter.waitForDeployment();
 
         await router.connect(owner).suspendVaultForRemoval(vault1Address);
         await router.connect(owner).removeAdapter(vault1Address);
         const gasBombAdapterAddress = await gasBombAdapter.getAddress();
         await router.connect(owner).addAdapter(vault1Address, gasBombAdapterAddress);
-        await router
-          .connect(owner)
-          .updateVaultConfig(vault1Address, gasBombAdapterAddress, 500000, VaultStatus.Active);
+        await router.connect(owner).updateVaultConfig(vault1Address, gasBombAdapterAddress, 500000, VaultStatus.Active);
         await router.connect(owner).setDefaultDepositStrategyShare(vault1Address);
 
         await expect(
-          router
-            .connect(collateralExchanger)
-            .rebalanceStrategiesByValue(vault1Address, vault2Address, ethers.parseEther("1"), 0),
+          router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, ethers.parseEther("1"), 0),
         ).to.be.revertedWithCustomError(gasBombAdapter, "GasBomb");
       });
 
       it("reverts when vault address is invalid", async function () {
         await expect(
-          router
-            .connect(collateralExchanger)
-            .rebalanceStrategiesByValue(vault1Address, ethers.ZeroAddress, ethers.parseEther("1"), 0),
+          router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, ethers.ZeroAddress, ethers.parseEther("1"), 0),
         )
           .to.be.revertedWithCustomError(router, "VaultNotFound")
           .withArgs(ethers.ZeroAddress);
@@ -3060,7 +2987,9 @@ describe("DStakeRouterV2", function () {
 
           // This should revert due to slippage protection
           await expect(
-            router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, unrealisticMinimum)
+            router
+              .connect(collateralExchanger)
+              .rebalanceStrategiesByValue(vault1Address, vault2Address, exchangeAmount, unrealisticMinimum),
           ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
         });
 
@@ -3170,7 +3099,7 @@ describe("DStakeRouterV2", function () {
             dStable.target,
             vault1Address,
             collateralVault.target,
-            customAdmin // Custom initial admin
+            customAdmin, // Custom initial admin
           );
           await customAdapter.waitForDeployment();
 
@@ -3214,7 +3143,7 @@ describe("DStakeRouterV2", function () {
             dStable.target,
             vault1Address,
             collateralVault.target,
-            customAdmin.address
+            customAdmin.address,
           );
           await adminAdapter.waitForDeployment();
 
@@ -3241,8 +3170,8 @@ describe("DStakeRouterV2", function () {
               dStable.target,
               vault1Address,
               collateralVault.target,
-              ethers.ZeroAddress // Invalid admin
-            )
+              ethers.ZeroAddress, // Invalid admin
+            ),
           ).to.be.reverted; // Should revert due to zero address check
         });
 
@@ -3274,7 +3203,7 @@ describe("DStakeRouterV2", function () {
             dStable.target,
             vault1Address,
             collateralVault.target,
-            initialAdmin.address
+            initialAdmin.address,
           );
           await transferAdapter.waitForDeployment();
 

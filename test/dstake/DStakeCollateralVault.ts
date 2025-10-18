@@ -181,9 +181,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const statusMismatch = configStruct.status !== desiredStatus;
 
         if (adapterMismatch || targetMismatch || statusMismatch) {
-          await router
-            .connect(routerSigner)
-            .updateVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
+          await router.connect(routerSigner).updateVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
         }
         if (initialTargetBps === null) {
           initialTargetBps = BigInt(desiredTarget);
@@ -194,9 +192,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       } else {
         const desiredTarget = Number(initialTargetBps ?? ONE_HUNDRED_PERCENT_BPS);
         const desiredStatus = initialVaultStatus ?? 0;
-        await router
-          .connect(routerSigner)
-          .addVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
+        await router.connect(routerSigner).addVaultConfig(strategyShareAddress, adapterAddress, desiredTarget, desiredStatus);
         if (initialTargetBps === null) {
           initialTargetBps = BigInt(desiredTarget);
         }
@@ -630,8 +626,8 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
             await collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, existingBalance, deployer.address);
           }
 
-        await suspendVaultIfConfigured(strategyShareAddress);
-        await router.connect(routerSigner).removeAdapter(strategyShareAddress);
+          await suspendVaultIfConfigured(strategyShareAddress);
+          await router.connect(routerSigner).removeAdapter(strategyShareAddress);
           expect(await router.strategyShareToAdapter(strategyShareAddress)).to.equal(ZeroAddress);
 
           const seedAmount = parseUnits(25, dStableDecimals);

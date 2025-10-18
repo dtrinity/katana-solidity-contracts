@@ -12,83 +12,87 @@ import { IDStableConversionAdapterV2 } from "../interfaces/IDStableConversionAda
  *         share token is used as a dSTAKE strategy. Useful for idle vaults that simply hold dUSD.
  */
 contract GenericERC4626ConversionAdapter is IDStableConversionAdapterV2 {
-  using SafeERC20 for IERC20;
+    using SafeERC20 for IERC20;
 
-  // --- Errors ---
-  error ZeroAddress();
-  error InvalidAmount();
-  error VaultAssetMismatch(address expected, address actual);
-  error IncorrectStrategyShare(address expected, address actual);
+    // --- Errors ---
+    error ZeroAddress();
+    error InvalidAmount();
+    error VaultAssetMismatch(address expected, address actual);
+    error IncorrectStrategyShare(address expected, address actual);
 
-  // --- State ---
-  address public immutable dStable;
-  IERC4626 public immutable vault;
-  address public immutable collateralVault;
+    // --- State ---
+    address public immutable dStable;
+    IERC4626 public immutable vault;
+    address public immutable collateralVault;
 
-  constructor(address _dStable, address _vault, address _collateralVault) {
-    if (_dStable == address(0) || _vault == address(0) || _collateralVault == address(0)) {
-      revert ZeroAddress();
+    constructor(address _dStable, address _vault, address _collateralVault) {
+        if (_dStable == address(0) || _vault == address(0) || _collateralVault == address(0)) {
+            revert ZeroAddress();
+        }
+
+        if (IERC4626(_vault).asset() != _dStable) {
+            revert VaultAssetMismatch(_dStable, IERC4626(_vault).asset());
+        }
+
+        dStable = _dStable;
+        vault = IERC4626(_vault);
+        collateralVault = _collateralVault;
     }
 
-    if (IERC4626(_vault).asset() != _dStable) {
-      revert VaultAssetMismatch(_dStable, IERC4626(_vault).asset());
+    // --- IDStableConversionAdapterV2 ---
+
+    function depositIntoStrategy(
+        uint256 stableAmount
+    ) external override returns (address shareToken, uint256 strategyShareAmount) {
+        if (stableAmount == 0) {
+            revert InvalidAmount();
+        }
+
+        IERC20(dStable).safeTransferFrom(msg.sender, address(this), stableAmount);
+        IERC20(dStable).forceApprove(address(vault), stableAmount);
+
+        strategyShareAmount = vault.deposit(stableAmount, collateralVault);
+        shareToken = address(vault);
     }
 
-    dStable = _dStable;
-    vault = IERC4626(_vault);
-    collateralVault = _collateralVault;
-  }
+    function withdrawFromStrategy(uint256 strategyShareAmount) external override returns (uint256 stableAmount) {
+        if (strategyShareAmount == 0) {
+            revert InvalidAmount();
+        }
 
-  // --- IDStableConversionAdapterV2 ---
+        IERC20(address(vault)).safeTransferFrom(msg.sender, address(this), strategyShareAmount);
+        stableAmount = vault.redeem(strategyShareAmount, msg.sender, address(this));
 
-  function depositIntoStrategy(uint256 stableAmount) external override returns (address shareToken, uint256 strategyShareAmount) {
-    if (stableAmount == 0) {
-      revert InvalidAmount();
+        if (stableAmount == 0) {
+            revert InvalidAmount();
+        }
     }
 
-    IERC20(dStable).safeTransferFrom(msg.sender, address(this), stableAmount);
-    IERC20(dStable).forceApprove(address(vault), stableAmount);
-
-    strategyShareAmount = vault.deposit(stableAmount, collateralVault);
-    shareToken = address(vault);
-  }
-
-  function withdrawFromStrategy(uint256 strategyShareAmount) external override returns (uint256 stableAmount) {
-    if (strategyShareAmount == 0) {
-      revert InvalidAmount();
+    function previewDepositIntoStrategy(
+        uint256 stableAmount
+    ) external view override returns (address shareToken, uint256 strategyShareAmount) {
+        shareToken = address(vault);
+        strategyShareAmount = vault.previewDeposit(stableAmount);
     }
 
-    IERC20(address(vault)).safeTransferFrom(msg.sender, address(this), strategyShareAmount);
-    stableAmount = vault.redeem(strategyShareAmount, msg.sender, address(this));
-
-    if (stableAmount == 0) {
-      revert InvalidAmount();
-    }
-  }
-
-  function previewDepositIntoStrategy(
-    uint256 stableAmount
-  ) external view override returns (address shareToken, uint256 strategyShareAmount) {
-    shareToken = address(vault);
-    strategyShareAmount = vault.previewDeposit(stableAmount);
-  }
-
-  function previewWithdrawFromStrategy(uint256 strategyShareAmount) external view override returns (uint256 stableAmount) {
-    stableAmount = vault.previewRedeem(strategyShareAmount);
-  }
-
-  function strategyShareValueInDStable(
-    address _strategyShare,
-    uint256 strategyShareAmount
-  ) external view override returns (uint256 stableValue) {
-    if (_strategyShare != address(vault)) {
-      revert IncorrectStrategyShare(address(vault), _strategyShare);
+    function previewWithdrawFromStrategy(
+        uint256 strategyShareAmount
+    ) external view override returns (uint256 stableAmount) {
+        stableAmount = vault.previewRedeem(strategyShareAmount);
     }
 
-    stableValue = vault.previewRedeem(strategyShareAmount);
-  }
+    function strategyShareValueInDStable(
+        address _strategyShare,
+        uint256 strategyShareAmount
+    ) external view override returns (uint256 stableValue) {
+        if (_strategyShare != address(vault)) {
+            revert IncorrectStrategyShare(address(vault), _strategyShare);
+        }
 
-  function strategyShare() external view override returns (address) {
-    return address(vault);
-  }
+        stableValue = vault.previewRedeem(strategyShareAmount);
+    }
+
+    function strategyShare() external view override returns (address) {
+        return address(vault);
+    }
 }
