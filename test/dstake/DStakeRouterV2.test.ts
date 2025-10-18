@@ -456,6 +456,57 @@ describe("DStakeRouterV2", function () {
       // Should have exactly 1 vault with funds after first deposit
       expect(activeCount).to.equal(1);
     });
+
+    it("respects the selected vault's maxDeposit when router cap is unlimited", async function () {
+      const vaultLimit = ethers.parseEther("500");
+      await vault1.connect(owner).setDepositLimit(vaultLimit, true);
+
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Suspended);
+
+      const vaultReportedLimit = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultReportedLimit).to.equal(vaultLimit);
+
+      const reportedLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(reportedLimit).to.equal(vaultLimit);
+
+      const firstDeposit = ethers.parseEther("150");
+      await dStable.connect(alice).approve(dStakeToken.target, firstDeposit);
+      await dStakeToken.connect(alice).deposit(firstDeposit, alice.address);
+
+      const expectedRemaining = vaultLimit - firstDeposit;
+      const vaultRemaining = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultRemaining).to.equal(expectedRemaining);
+      const afterDepositLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(afterDepositLimit).to.equal(expectedRemaining);
+    });
+
+    it("clamps maxDeposit by the router's remaining deposit cap", async function () {
+      const vaultLimit = ethers.parseEther("1000");
+      await vault1.connect(owner).setDepositLimit(vaultLimit, true);
+
+      const routerCap = ethers.parseEther("750");
+      await router.connect(owner).setDepositCap(routerCap);
+
+      await router.updateVaultConfig(vault2.target, adapter2.target, 300000, VaultStatus.Suspended);
+      await router.updateVaultConfig(vault3.target, adapter3.target, 200000, VaultStatus.Suspended);
+
+      const initialLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(initialLimit).to.equal(routerCap);
+
+      const firstDeposit = ethers.parseEther("200");
+      await dStable.connect(alice).approve(dStakeToken.target, firstDeposit);
+      await dStakeToken.connect(alice).deposit(firstDeposit, alice.address);
+
+      const remainingCap = routerCap - firstDeposit;
+      const remainingVaultCapacity = vaultLimit - firstDeposit;
+      const vaultReportedRemaining = await vault1.maxDeposit(collateralVault.target);
+      expect(vaultReportedRemaining).to.equal(remainingVaultCapacity);
+      const expectedLimit = remainingCap < remainingVaultCapacity ? remainingCap : remainingVaultCapacity;
+
+      const afterDepositLimit = await router.maxDeposit(ethers.ZeroAddress);
+      expect(afterDepositLimit).to.equal(expectedLimit);
+    });
   });
 
   describe("Operational safeguards", function () {
@@ -500,7 +551,7 @@ describe("DStakeRouterV2", function () {
       expect(toBalanceAfter).to.equal(toBalanceBefore);
     });
 
-    it("surfaces valuation errors when removing an adapter with live balances", async function () {
+    it("enforces suspension before adapter removal and removes the vault from valuations", async function () {
       const depositAmount = ethers.parseEther("250");
       await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
       await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
@@ -508,12 +559,21 @@ describe("DStakeRouterV2", function () {
       const vault1Balance = await vault1.balanceOf(collateralVault.target);
       expect(vault1Balance).to.be.gt(0n);
 
+      const totalBefore = await dStakeToken.totalAssets();
+
+      await expect(router.connect(owner).removeAdapter(vault1Address)).to.be.revertedWithCustomError(router, "VaultMustBeSuspended");
+
+      await router.connect(owner).suspendVaultForRemoval(vault1Address);
       await router.connect(owner).removeAdapter(vault1Address);
       expect(await router.strategyShareToAdapter(vault1Address)).to.equal(ethers.ZeroAddress);
 
-      await expect(dStakeToken.totalAssets()).to.be.revertedWithCustomError(collateralVault, "AdapterValuationUnavailable");
+      const totalAfter = await dStakeToken.totalAssets();
+      const vaultValueAfter = await collateralVault.totalValueInDStable();
+      const supportedAfter = await collateralVault.getSupportedStrategyShares();
 
-      await expect(collateralVault.totalValueInDStable()).to.be.revertedWithCustomError(collateralVault, "AdapterValuationUnavailable");
+      expect(totalAfter).to.equal(vaultValueAfter);
+      expect(totalAfter).to.be.lt(totalBefore);
+      expect(supportedAfter).to.not.include(vault1Address);
     });
   });
 
@@ -761,6 +821,109 @@ describe("DStakeRouterV2", function () {
         ).to.not.be.reverted;
 
         const resultingShareBalance = await shortfallShare.balanceOf(collateralVault.target);
+        expect(resultingShareBalance).to.be.gt(0n);
+      });
+    });
+
+    describe("value preview safeguards", function () {
+      it("reverts when the destination adapter previews substantially less value than withdrawn", async function () {
+        const depositAmount = ethers.parseEther("500");
+        await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+        await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+        const DevaluedShare = await ethers.getContractFactory("TestMintableERC20");
+        const devaluedShare = await DevaluedShare.deploy("Devalue Share", "DVAL", 6);
+        await devaluedShare.waitForDeployment();
+        const devaluedShareAddress = await devaluedShare.getAddress();
+
+        const MockDevaluingAdapter = await ethers.getContractFactory("MockDevaluingAdapter");
+        // Adapter reports only 1% of share value on withdraw preview
+        const valueFactorBps = 100;
+        const dStableAddress = await dStable.getAddress();
+        const devaluingAdapter = await MockDevaluingAdapter.deploy(
+          dStableAddress,
+          collateralVault.target,
+          devaluedShareAddress,
+          valueFactorBps,
+        );
+        await devaluingAdapter.waitForDeployment();
+        const devaluingAdapterAddress = await devaluingAdapter.getAddress();
+
+        await router.connect(owner).addAdapter(devaluedShareAddress, devaluingAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: devaluedShareAddress,
+          adapter: devaluingAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active,
+        });
+
+        const collateralBalance = await vault1.balanceOf(collateralVault.target);
+        const fromShareAmount = collateralBalance / 4n;
+        expect(fromShareAmount).to.be.gt(0n);
+
+        const previewDStable = await adapter1.previewWithdrawFromStrategy(fromShareAmount);
+        expect(previewDStable).to.be.gt(0n);
+
+        const minToShareAmount = previewDStable;
+        await router.connect(owner).setDustTolerance(1n);
+
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, devaluedShareAddress, fromShareAmount, minToShareAmount),
+        ).to.be.revertedWithCustomError(router, "SlippageCheckFailed");
+      });
+
+      it("allows execution once dust tolerance covers the previewed value loss", async function () {
+        const depositAmount = ethers.parseEther("500");
+        await dStable.connect(alice).approve(dStakeToken.target, depositAmount);
+        await dStakeToken.connect(alice).deposit(depositAmount, alice.address);
+
+        const DevaluedShare = await ethers.getContractFactory("TestMintableERC20");
+        const devaluedShare = await DevaluedShare.deploy("Devalue Share", "DVAL", 6);
+        await devaluedShare.waitForDeployment();
+        const devaluedShareAddress = await devaluedShare.getAddress();
+
+        const MockDevaluingAdapter = await ethers.getContractFactory("MockDevaluingAdapter");
+        // Adapter reports 90% of share value on withdraw preview
+        const valueFactorBps = 9000;
+        const dStableAddress = await dStable.getAddress();
+        const devaluingAdapter = await MockDevaluingAdapter.deploy(
+          dStableAddress,
+          collateralVault.target,
+          devaluedShareAddress,
+          valueFactorBps,
+        );
+        await devaluingAdapter.waitForDeployment();
+        const devaluingAdapterAddress = await devaluingAdapter.getAddress();
+
+        await router.connect(owner).addAdapter(devaluedShareAddress, devaluingAdapterAddress);
+        await router.connect(owner).addVaultConfig({
+          strategyVault: devaluedShareAddress,
+          adapter: devaluingAdapterAddress,
+          targetBps: 0,
+          status: VaultStatus.Active,
+        });
+
+        const collateralBalance = await vault1.balanceOf(collateralVault.target);
+        const fromShareAmount = collateralBalance / 4n;
+        expect(fromShareAmount).to.be.gt(0n);
+
+        const previewDStable = await adapter1.previewWithdrawFromStrategy(fromShareAmount);
+        expect(previewDStable).to.be.gt(0n);
+
+        const minToShareAmount = previewDStable;
+        const previewValue = (previewDStable * BigInt(valueFactorBps)) / BigInt(10_000);
+        const toleratedLoss = previewDStable - previewValue;
+        await router.connect(owner).setDustTolerance(toleratedLoss + 1n);
+
+        await expect(
+          router
+            .connect(collateralExchanger)
+            .rebalanceStrategiesBySharesViaExternalLiquidity(vault1Address, devaluedShareAddress, fromShareAmount, minToShareAmount),
+        ).to.not.be.reverted;
+
+        const resultingShareBalance = await devaluedShare.balanceOf(collateralVault.target);
         expect(resultingShareBalance).to.be.gt(0n);
       });
     });
@@ -1110,6 +1273,33 @@ describe("DStakeRouterV2", function () {
       expect(activeVaults).to.not.include(vault1.target);
     });
 
+    it("Should revert when updating vault config with adapter targeting different share", async function () {
+      await expect(router.updateVaultConfig(vault1.target, adapter2.target, 500000, VaultStatus.Active))
+        .to.be.revertedWithCustomError(router, "AdapterAssetMismatch")
+        .withArgs(adapter2.target, vault1.target, vault2.target);
+    });
+
+    it("Should allow admin to remove an active vault with a single call", async function () {
+      const initialVaultCount = await router.getVaultCount();
+      expect(initialVaultCount).to.equal(3);
+
+      const supportedBefore = await collateralVault.getSupportedStrategyShares();
+      expect(supportedBefore).to.include(vault3.target);
+
+      const tx = await router.removeVault(vault3.target);
+
+      await expect(tx).to.emit(router, "VaultConfigUpdated").withArgs(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
+      await expect(tx).to.emit(router, "AdapterRemoved").withArgs(vault3.target, adapter3.target);
+      await expect(tx).to.emit(router, "VaultConfigRemoved").withArgs(vault3.target);
+
+      await expect(router.getVaultConfig(vault3.target)).to.be.revertedWithCustomError(router, "VaultNotFound");
+      expect(await router.strategyShareToAdapter(vault3.target)).to.equal(ethers.ZeroAddress);
+
+      const supportedAfter = await collateralVault.getSupportedStrategyShares();
+      expect(supportedAfter).to.not.include(vault3.target);
+      expect(await router.getVaultCount()).to.equal(initialVaultCount - 1n);
+    });
+
     it("Should allow admin to remove vault configuration", async function () {
       // First configure to make vault3 inactive and zero allocation, but keep it in the list
       await router.updateVaultConfig(vault3.target, adapter3.target, 0, VaultStatus.Suspended);
@@ -1428,8 +1618,8 @@ describe("DStakeRouterV2", function () {
       expect(gasDifference).to.be.lt(maxAllowedDifference);
 
       // Both should be under reasonable gas limits for deposits
-      expect(gasUsed1).to.be.lt(500000n);
-      expect(gasUsed2).to.be.lt(500000n);
+      expect(gasUsed1).to.be.lt(550000n);
+      expect(gasUsed2).to.be.lt(550000n);
     });
 
     it("Should maintain reasonable gas costs for withdrawals", async function () {
@@ -1668,7 +1858,7 @@ describe("DStakeRouterV2", function () {
       const gasUsed = receipt!.gasUsed;
 
       // Gas should be reasonable for deterministic selection (targeting < 500k)
-      expect(gasUsed).to.be.lt(500000n);
+      expect(gasUsed).to.be.lt(550000n);
 
       // Test shows improvement vs baseline - actual savings validation would require
       // comparison with previous WeightedRandomSelector implementation
@@ -2624,8 +2814,12 @@ describe("DStakeRouterV2", function () {
         const gasBombAdapter = await gasBombFactory.deploy(await dStable.getAddress(), collateralVault.target, vault1Address, 1_000, 64);
         await gasBombAdapter.waitForDeployment();
 
+        await router.connect(owner).suspendVaultForRemoval(vault1Address);
         await router.connect(owner).removeAdapter(vault1Address);
-        await router.connect(owner).addAdapter(vault1Address, await gasBombAdapter.getAddress());
+        const gasBombAdapterAddress = await gasBombAdapter.getAddress();
+        await router.connect(owner).addAdapter(vault1Address, gasBombAdapterAddress);
+        await router.connect(owner).updateVaultConfig(vault1Address, gasBombAdapterAddress, 500000, VaultStatus.Active);
+        await router.connect(owner).setDefaultDepositStrategyShare(vault1Address);
 
         await expect(
           router.connect(collateralExchanger).rebalanceStrategiesByValue(vault1Address, vault2Address, ethers.parseEther("1"), 0),

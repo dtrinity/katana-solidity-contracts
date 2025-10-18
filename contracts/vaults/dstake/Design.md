@@ -27,6 +27,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 - Adapters (`contracts/vaults/dstake/adapters/`)
   - Implement `IDStableConversionAdapterV2`. Each adapter knows how to convert dSTABLE ↔ specific strategy shares and report valuations in dSTABLE terms.
   - Must mint/burn strategy shares directly against the collateral vault. Examples: MetaMorpho, wrapped lending tokens.
+  - Security invariant: adapters must only mint shares to the collateral vault and burn/transfer them before upstream withdrawals. Use preview helpers so wrapper supply stays aligned; `WrappedDLendInvariant.test.ts` shows the regression harness future adapters should mirror.
 
 - Rewards (optional) (`contracts/vaults/dstake/rewards/`)
   - Strategy-specific helpers that periodically claim and compound incentive tokens back into dSTABLE or strategy shares.
@@ -49,7 +50,7 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 - **Solver flows**
   - `solverDepositAssets` / `solverDepositShares` and their withdraw counterparts live on the router. They sum assets, enforce ERC4626 previews via the token helpers, and mint/burn shares through router-only hooks that emit ERC4626 `Deposit`/`Withdraw` events (`mintForRouter(msg.sender, receiver, assets, shares)` and `burnFromRouter(msg.sender, receiver, owner, netAssets, shares)`).
-  - Multi-vault deposits/withdrawals reuse the same dust tolerance and deterministic ordering; any failed adapter call reverts the entire solver transaction.
+  - Multi-vault deposits/withdrawals rely on the solver's off-chain calculations for vault ordering and dust handling; the router executes the provided arrays verbatim and the transaction reverts on any adapter failure.
   - Router transfers net proceeds directly to recipients; token is not in the payout path.
 
 - **Fee reinvestment**
@@ -141,7 +142,8 @@ dSTAKE is a yield-bearing stablecoin vault. Users deposit a dSTABLE asset (e.g.,
 
 5. **Offboard a strategy**
    - Mark the vault impaired or suspended so auto-routing stops using it, then migrate positions via solver withdrawals or operator swaps.
-   - Only call `removeAdapter` once the collateral vault no longer holds the strategy shares; otherwise NAV queries revert with `AdapterValuationUnavailable` and block user flows until a replacement adapter is installed.
+   - Call `router.suspendVaultForRemoval(vault)` to zero the target weight, clear default-deposit pointers, and freeze routing before tearing anything down.
+   - Once suspended, `removeAdapter` unregisters the strategy share even if balances remain, quarantining dust from NAV. Recover stranded tokens (or reinstall an adapter) before reactivating or onboarding a replacement strategy.
 
 ### Developer Map
 

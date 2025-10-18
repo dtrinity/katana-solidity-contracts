@@ -52,11 +52,14 @@ contract MockMetaMorphoVault is ERC4626 {
     bool public mockRevertOnConvertToAssets = false;
     uint256 public mockDepositFee = 0; // in basis points
     uint256 public mockWithdrawFee = 0; // in basis points
+    bool public mockDepositLimitEnabled = false;
+    uint256 public mockDepositLimit;
 
     // --- Events ---
     event YieldAccrued(uint256 amount);
     event MockBehaviorSet(string behavior, bool value);
     event RewardsClaimed(address indexed user, uint256 amount);
+    event DepositLimitUpdated(uint256 limit, bool enabled);
 
     // --- Constructor ---
     constructor(IERC20 _asset, string memory _name, string memory _symbol) ERC20(_name, _symbol) ERC4626(_asset) {
@@ -103,6 +106,18 @@ contract MockMetaMorphoVault is ERC4626 {
     }
 
     /**
+     * @notice Configure the mocked deposit limit used by maxDeposit/preview checks.
+     * @param limit Maximum total assets the vault is willing to hold when enabled.
+     * @param enabled Toggle to activate or disable the mocked limit.
+     */
+    function setDepositLimit(uint256 limit, bool enabled) external {
+        require(msg.sender == owner, "Not owner");
+        mockDepositLimit = limit;
+        mockDepositLimitEnabled = enabled;
+        emit DepositLimitUpdated(limit, enabled);
+    }
+
+    /**
      * @notice Configure preview functions to revert for valuation testing
      */
     function setPreviewRevertFlags(bool _revertPreviewRedeem, bool _revertConvertToAssets) external {
@@ -111,6 +126,24 @@ contract MockMetaMorphoVault is ERC4626 {
         mockRevertOnConvertToAssets = _revertConvertToAssets;
         emit MockBehaviorSet("revertPreviewRedeem", _revertPreviewRedeem);
         emit MockBehaviorSet("revertConvertToAssets", _revertConvertToAssets);
+    }
+
+    function _remainingDepositCapacity() internal view returns (uint256) {
+        if (!mockDepositLimitEnabled) {
+            return type(uint256).max;
+        }
+        if (mockDepositLimit <= mockTotalAssets) {
+            return 0;
+        }
+        return mockDepositLimit - mockTotalAssets;
+    }
+
+    function _enforceDepositLimit(uint256 assetsAfterFee) internal view {
+        if (!mockDepositLimitEnabled) {
+            return;
+        }
+        uint256 capacity = _remainingDepositCapacity();
+        require(capacity >= assetsAfterFee, "Deposit limit exceeded");
     }
 
     /**
@@ -157,32 +190,42 @@ contract MockMetaMorphoVault is ERC4626 {
         return mockTotalAssets;
     }
 
+    function maxDeposit(address receiver) public view virtual override returns (uint256) {
+        if (mockPaused) {
+            return 0;
+        }
+
+        uint256 parentLimit = super.maxDeposit(receiver);
+        if (!mockDepositLimitEnabled) {
+            return parentLimit;
+        }
+
+        uint256 remaining = _remainingDepositCapacity();
+        return parentLimit < remaining ? parentLimit : remaining;
+    }
+
     function deposit(uint256 assets, address receiver) public virtual override returns (uint256) {
         require(!mockPaused, "Vault paused");
         require(!mockRevertOnDeposit, "Mock revert");
         require(assets > 0, "Zero assets");
 
-        // Apply deposit fee if set
+        accrueYield();
+
         uint256 assetsAfterFee = assets;
         if (mockDepositFee > 0) {
             uint256 fee = (assets * mockDepositFee) / 10000;
             assetsAfterFee = assets - fee;
         }
 
-        // Accrue yield before deposit
-        accrueYield();
+        _enforceDepositLimit(assetsAfterFee);
 
-        // Track deposit timestamp for testing time-based attacks
         lastDepositTimestamp[receiver] = block.timestamp;
 
-        // For consistent ERC4626 behavior, shares should be calculated based on assets going into the vault
         uint256 shares = previewDeposit(assetsAfterFee);
 
-        // Transfer full assets from caller and mint calculated shares
         IERC20(asset()).transferFrom(_msgSender(), address(this), assets);
         _mint(receiver, shares);
 
-        // Update mock state to reflect assets after fees
         mockTotalAssets += assetsAfterFee;
 
         emit Deposit(_msgSender(), receiver, assets, shares);
@@ -198,17 +241,20 @@ contract MockMetaMorphoVault is ERC4626 {
         uint256 assets = previewMint(shares);
 
         // Apply deposit fee if set
+        uint256 fee = 0;
         if (mockDepositFee > 0) {
-            uint256 fee = (assets * mockDepositFee) / 10000;
+            fee = (assets * mockDepositFee) / 10000;
             assets = assets + fee; // User needs to provide more assets to mint exact shares
         }
+
+        uint256 assetsAfterFee = assets - fee;
+
+        _enforceDepositLimit(assetsAfterFee);
 
         lastDepositTimestamp[receiver] = block.timestamp;
 
         _deposit(_msgSender(), receiver, assets, shares);
 
-        // Update total assets after deposit
-        uint256 assetsAfterFee = assets - ((mockDepositFee > 0) ? (assets * mockDepositFee) / 10000 : 0);
         mockTotalAssets += assetsAfterFee;
 
         return assets;

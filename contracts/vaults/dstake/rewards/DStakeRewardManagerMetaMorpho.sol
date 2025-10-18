@@ -262,7 +262,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
             revert AdapterNotSetForDefaultAsset();
         }
 
-        // Approve router to spend dStable
+        // Approve adapter to spend dStable
         IERC20(exchangeAsset).forceApprove(adapter, exchangeAmountIn);
 
         // Check collateral vault balance before conversion
@@ -287,7 +287,7 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
         // Emit event for tracking (use actualReceived for accuracy)
         emit ExchangeAssetProcessed(defaultStrategyShare, actualReceived, exchangeAmountIn);
 
-        // Clear any remaining approval
+        // Clear any remaining approval now that the transfer has completed
         IERC20(exchangeAsset).forceApprove(adapter, 0);
     }
 

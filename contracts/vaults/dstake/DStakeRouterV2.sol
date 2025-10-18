@@ -15,6 +15,7 @@ import { IDStakeCollateralVaultV2 } from "./interfaces/IDStakeCollateralVaultV2.
 import { DeterministicVaultSelector } from "./libraries/DeterministicVaultSelector.sol";
 import { AllocationCalculator } from "./libraries/AllocationCalculator.sol";
 import { BasisPointConstants } from "../../common/BasisPointConstants.sol";
+import { WithdrawalFeeMath } from "../../common/WithdrawalFeeMath.sol";
 
 interface IDStakeTokenV2Minimal {
     function asset() external view returns (address);
@@ -85,6 +86,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     error SettlementShortfallTooHigh(uint256 shortfall, uint256 managedAssets);
     error UnauthorizedConfigCaller();
     error InvalidWithdrawalFee(uint256 feeBps, uint256 maxFeeBps);
+    error VaultMustBeSuspended(address vault);
+    error VaultTargetNotZero(address vault, uint256 targetBps);
 
     // --- Roles ---
     bytes32 public constant DSTAKE_TOKEN_ROLE = keccak256("DSTAKE_TOKEN_ROLE");
@@ -207,6 +210,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         address indexed initiator
     );
     event MaxVaultCountUpdated(uint256 oldCount, uint256 newCount);
+
     constructor(address _dStakeToken, address _collateralVault) {
         if (_dStakeToken == address(0) || _collateralVault == address(0)) {
             revert ZeroAddress();
@@ -262,11 +266,24 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         if (!_hasActiveVaultFor(OperationType.DEPOSIT)) {
             return 0;
         }
-        if (depositCap == 0) {
-            return type(uint256).max;
+
+        address targetVault = _selectAutoDepositVault();
+        uint256 vaultLimit = _vaultDepositLimit(targetVault);
+        if (vaultLimit == 0) {
+            return 0;
         }
+
+        if (depositCap == 0) {
+            return vaultLimit;
+        }
+
         uint256 managed = totalManagedAssets();
-        return depositCap > managed ? depositCap - managed : 0;
+        if (depositCap <= managed) {
+            return 0;
+        }
+
+        uint256 capRemaining = depositCap - managed;
+        return capRemaining < vaultLimit ? capRemaining : vaultLimit;
     }
 
     function maxMint(address) public view override returns (uint256) {
@@ -318,10 +335,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     function _calculateFee(uint256 grossAmount) internal view returns (uint256) {
-        if (grossAmount == 0) {
-            return 0;
-        }
-        return Math.mulDiv(grossAmount, _withdrawalFeeBps, BasisPointConstants.ONE_HUNDRED_PERCENT_BPS);
+        return WithdrawalFeeMath.calculateWithdrawalFee(grossAmount, _withdrawalFeeBps);
     }
 
     function _enforceDepositCap(uint256 additionalAssets) internal view {
@@ -335,40 +349,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
     }
 
     function _getNetAmount(uint256 grossAmount) internal view returns (uint256) {
-        if (grossAmount == 0 || _withdrawalFeeBps == 0) {
-            return grossAmount;
-        }
-        uint256 fee = _calculateFee(grossAmount);
-        if (fee >= grossAmount) {
-            return 0;
-        }
-        return grossAmount - fee;
+        return WithdrawalFeeMath.netAfterFee(grossAmount, _withdrawalFeeBps);
     }
 
     function _getGrossAmountForNet(uint256 netAmount) internal view returns (uint256) {
-        if (netAmount == 0) {
-            return 0;
-        }
-
-        if (_withdrawalFeeBps == 0) {
-            return netAmount;
-        }
-
-        uint256 grossAmount = Math.mulDiv(
-            netAmount,
-            BasisPointConstants.ONE_HUNDRED_PERCENT_BPS,
-            BasisPointConstants.ONE_HUNDRED_PERCENT_BPS - _withdrawalFeeBps,
-            Math.Rounding.Ceil
-        );
-
-        if (grossAmount > 0) {
-            uint256 alternativeNet = _getNetAmount(grossAmount - 1);
-            if (alternativeNet >= netAmount) {
-                grossAmount -= 1;
-            }
-        }
-
-        return grossAmount;
+        return WithdrawalFeeMath.grossFromNet(netAmount, _withdrawalFeeBps);
     }
 
     function _requireConfigOrToken(address account) internal view {
@@ -377,7 +362,15 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         }
     }
 
-    function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
+    function _clearDefaultDepositStrategyShare() internal {
+        if (defaultDepositStrategyShare == address(0)) {
+            return;
+        }
+        defaultDepositStrategyShare = address(0);
+        emit DefaultDepositStrategyShareSet(address(0));
+    }
+
+    function _selectAutoDepositVault() internal view returns (address targetVault) {
         (
             address[] memory activeVaults,
             uint256[] memory currentAllocations,
@@ -393,7 +386,26 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             1
         );
 
-        targetVault = sortedVaults[0];
+        return sortedVaults[0];
+    }
+
+    function _vaultDepositLimit(address vault) internal view returns (uint256) {
+        if (vault == address(0)) {
+            return 0;
+        }
+        if (_strategyShareToAdapter[vault] == address(0)) {
+            return 0;
+        }
+
+        try IERC4626(vault).maxDeposit(address(collateralVault)) returns (uint256 limit) {
+            return limit;
+        } catch {
+            return type(uint256).max;
+        }
+    }
+
+    function _depositToAutoVault(uint256 assets) internal returns (address targetVault) {
+        targetVault = _selectAutoDepositVault();
         _depositToVaultAtomically(targetVault, assets);
 
         address[] memory vaultArray = new address[](1);
@@ -629,6 +641,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         if (netAssets < totalNetAssets) {
             revert WithdrawalShortfall(totalNetAssets, netAssets);
         }
+        if (netAssets > totalNetAssets) {
+            uint256 roundingSurplus = netAssets - totalNetAssets;
+            fee += roundingSurplus;
+            netAssets = totalNetAssets;
+        }
 
         _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
 
@@ -678,6 +695,11 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
         if (netAssets < totalNetAssets) {
             revert WithdrawalShortfall(totalNetAssets, netAssets);
+        }
+        if (netAssets > totalNetAssets) {
+            uint256 roundingSurplus = netAssets - totalNetAssets;
+            fee += roundingSurplus;
+            netAssets = totalNetAssets;
         }
 
         _token().burnFromRouter(msg.sender, receiver, owner, netAssets, sharesBurned);
@@ -910,6 +932,14 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         if (actualToStrategyShare != toStrategyShare)
             revert AdapterAssetMismatch(locals.toAdapterAddress, toStrategyShare, actualToStrategyShare);
 
+        {
+            uint256 previewValue = locals.toAdapter.previewWithdrawFromStrategy(resultingToShareAmount);
+            uint256 dustAdjusted = locals.dStableValueIn > dustTolerance ? locals.dStableValueIn - dustTolerance : 0;
+            if (previewValue < dustAdjusted) {
+                revert SlippageCheckFailed(dStable, previewValue, dustAdjusted);
+            }
+        }
+
         // Validate actual conversion result by measuring the share shortfall in dStable units and comparing to tolerance
         if (resultingToShareAmount < minToShareAmount) {
             uint256 shareShortfall = minToShareAmount - resultingToShareAmount;
@@ -980,6 +1010,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         }
         _strategyShareToAdapter[strategyShare] = adapterAddress;
 
+        if (vaultExists[strategyShare]) {
+            vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;
+        }
+
         try collateralVault.addSupportedStrategyShare(strategyShare) {} catch {}
 
         emit AdapterSet(strategyShare, adapterAddress);
@@ -995,8 +1029,26 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             return;
         }
 
+        if (adapterAddress == address(0)) {
+            if (currentAdapter != address(0)) {
+                _removeAdapter(strategyShare);
+            }
+            return;
+        }
+
         if (currentAdapter != address(0)) {
-            _removeAdapter(strategyShare);
+            address adapterStrategyShare = IDStableConversionAdapterV2(adapterAddress).strategyShare();
+            if (adapterStrategyShare != strategyShare) {
+                revert AdapterAssetMismatch(adapterAddress, strategyShare, adapterStrategyShare);
+            }
+
+            _strategyShareToAdapter[strategyShare] = adapterAddress;
+            if (vaultExists[strategyShare]) {
+                vaultConfigs[vaultToIndex[strategyShare]].adapter = adapterAddress;
+            }
+            try collateralVault.addSupportedStrategyShare(strategyShare) {} catch {}
+            emit AdapterSet(strategyShare, adapterAddress);
+            return;
         }
 
         _addAdapter(strategyShare, adapterAddress);
@@ -1004,8 +1056,18 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
 
     function setDefaultDepositStrategyShare(address strategyShare) external onlyRole(CONFIG_MANAGER_ROLE) {
         if (_strategyShareToAdapter[strategyShare] == address(0)) revert AdapterNotFound(strategyShare);
+        if (vaultExists[strategyShare]) {
+            VaultConfig memory config = _getVaultConfig(strategyShare);
+            if (!_isVaultStatusEligible(config.status, OperationType.DEPOSIT)) {
+                revert VaultNotActive(strategyShare);
+            }
+        }
         defaultDepositStrategyShare = strategyShare;
         emit DefaultDepositStrategyShareSet(strategyShare);
+    }
+
+    function clearDefaultDepositStrategyShare() external onlyRole(CONFIG_MANAGER_ROLE) {
+        _clearDefaultDepositStrategyShare();
     }
 
     function setDustTolerance(uint256 _dustTolerance) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -1155,6 +1217,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         _removeVault(vault);
     }
 
+    function suspendVaultForRemoval(address vault) external onlyRole(VAULT_MANAGER_ROLE) {
+        _suspendVaultForRemoval(vault);
+    }
+
     /**
      * @notice Marks a vault inactive without altering its stored `targetBps`.
      * @dev This does NOT change totals or perform normalization. The inactive vault is
@@ -1172,6 +1238,31 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             vaultConfigs[index].targetBps,
             VaultStatus.Suspended
         );
+    }
+
+    function _suspendVaultForRemoval(address vault) internal {
+        if (!vaultExists[vault]) revert VaultNotFound(vault);
+        uint256 index = vaultToIndex[vault];
+        VaultConfig storage config = vaultConfigs[index];
+
+        bool mutated;
+        if (config.status != VaultStatus.Suspended) {
+            config.status = VaultStatus.Suspended;
+            mutated = true;
+        }
+
+        if (config.targetBps != 0) {
+            config.targetBps = 0;
+            mutated = true;
+        }
+
+        if (defaultDepositStrategyShare == vault) {
+            _clearDefaultDepositStrategyShare();
+        }
+
+        if (mutated) {
+            emit VaultConfigUpdated(vault, config.adapter, config.targetBps, VaultStatus.Suspended);
+        }
     }
 
     function setMaxVaultCount(uint256 _maxVaultCount) external onlyRole(CONFIG_MANAGER_ROLE) {
@@ -1269,17 +1360,19 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             revert VaultNotActive(vault);
         }
 
-        IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(config.adapter);
+        address adapterAddress = _strategyShareToAdapter[vault];
+        if (adapterAddress == address(0)) revert AdapterNotFound(vault);
+        IDStableConversionAdapterV2 adapter = IDStableConversionAdapterV2(adapterAddress);
 
         (address vaultExpected, uint256 expectedShares) = adapter.previewDepositIntoStrategy(dStableAmount);
-        if (vaultExpected != vault) revert AdapterAssetMismatch(config.adapter, vault, vaultExpected);
+        if (vaultExpected != vault) revert AdapterAssetMismatch(adapterAddress, vault, vaultExpected);
 
         uint256 beforeBal = IERC20(vault).balanceOf(address(collateralVault));
 
-        IERC20(dStable).forceApprove(config.adapter, dStableAmount);
+        IERC20(dStable).forceApprove(adapterAddress, dStableAmount);
         (address actualVault, uint256 reportedShares) = adapter.depositIntoStrategy(dStableAmount);
         if (actualVault != vault) {
-            revert AdapterAssetMismatch(config.adapter, vault, actualVault);
+            revert AdapterAssetMismatch(adapterAddress, vault, actualVault);
         }
 
         uint256 afterBal = IERC20(vault).balanceOf(address(collateralVault));
@@ -1293,7 +1386,7 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             revert AdapterSharesMismatch(actualShares, reportedShares);
         }
 
-        IERC20(dStable).forceApprove(config.adapter, 0);
+        IERC20(dStable).forceApprove(adapterAddress, 0);
         return actualShares;
     }
 
@@ -1323,7 +1416,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             revert VaultNotActive(vault);
         }
 
-        address adapter = config.adapter;
+        address adapter = _strategyShareToAdapter[vault];
+        if (adapter == address(0)) revert AdapterNotFound(vault);
         IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
         // Determine how many strategy shares correspond to the requested dStable amount
@@ -1358,7 +1452,8 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             revert VaultNotActive(vault);
         }
 
-        address adapter = config.adapter;
+        address adapter = _strategyShareToAdapter[vault];
+        if (adapter == address(0)) revert AdapterNotFound(vault);
         IDStableConversionAdapterV2 conversionAdapter = IDStableConversionAdapterV2(adapter);
 
         uint256 availableShares = IERC20(vault).balanceOf(address(collateralVault));
@@ -1444,6 +1539,10 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         OperationType operationType
     ) internal pure returns (bool) {
         if (!_isVaultStatusEligible(config.status, operationType)) {
+            return false;
+        }
+
+        if (config.adapter == address(0)) {
             return false;
         }
 
@@ -1595,6 +1694,12 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         uint256 indexToRemove = vaultToIndex[vault];
         uint256 lastIndex = vaultConfigs.length - 1;
 
+        _suspendVaultForRemoval(vault);
+
+        if (_strategyShareToAdapter[vault] != address(0)) {
+            _removeAdapter(vault);
+        }
+
         if (indexToRemove != lastIndex) {
             VaultConfig memory lastConfig = vaultConfigs[lastIndex];
             vaultConfigs[indexToRemove] = lastConfig;
@@ -1605,19 +1710,16 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
         delete vaultToIndex[vault];
         delete vaultExists[vault];
 
-        if (_strategyShareToAdapter[vault] != address(0)) {
-            _removeAdapter(vault);
-        }
-
         emit VaultConfigRemoved(vault);
     }
 
     function _clearVaultConfigs() internal {
         for (uint256 i = 0; i < vaultConfigs.length; i++) {
             address vault = vaultConfigs[i].strategyVault;
+            _suspendVaultForRemoval(vault);
+            _removeAdapter(vault);
             delete vaultToIndex[vault];
             delete vaultExists[vault];
-            _removeAdapter(vault);
         }
         delete vaultConfigs;
     }
@@ -1628,11 +1730,28 @@ contract DStakeRouterV2 is IDStakeRouterV2, AccessControl, ReentrancyGuard, Paus
             return false;
         }
 
+        if (vaultExists[strategyShare]) {
+            VaultConfig storage config = vaultConfigs[vaultToIndex[strategyShare]];
+            if (config.status != VaultStatus.Suspended) {
+                revert VaultMustBeSuspended(strategyShare);
+            }
+            if (config.targetBps != 0) {
+                revert VaultTargetNotZero(strategyShare, config.targetBps);
+            }
+        }
+
+        // Drop support in the collateral vault even if the position still holds dust so it stops affecting TVL.
+        // Important in cases where the strategyShare is paused or otherwise non-transferrable
+        collateralVault.removeSupportedStrategyShare(strategyShare);
+
+        if (defaultDepositStrategyShare == strategyShare) {
+            _clearDefaultDepositStrategyShare();
+        }
+
         delete _strategyShareToAdapter[strategyShare];
 
-        // Preserve valuation coverage when collateral is still held by keeping the share registered.
-        if (IERC20(strategyShare).balanceOf(address(collateralVault)) == 0) {
-            try collateralVault.removeSupportedStrategyShare(strategyShare) {} catch {}
+        if (vaultExists[strategyShare]) {
+            vaultConfigs[vaultToIndex[strategyShare]].adapter = address(0);
         }
 
         emit AdapterRemoved(strategyShare, adapterAddress);

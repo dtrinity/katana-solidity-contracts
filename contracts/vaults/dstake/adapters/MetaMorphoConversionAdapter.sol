@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -64,10 +63,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
     address public immutable dStable;
     IERC4626 public immutable metaMorphoVault;
     address public immutable collateralVault;
-    uint8 public immutable assetDecimals; // decimals of dStable asset
-    uint8 public immutable shareDecimals; // decimals of ERC4626 share token
-    uint256 public immutable assetUnit; // 10 ** assetDecimals
-    uint256 public immutable shareUnit; // 10 ** shareDecimals
+    // No cached decimals/units needed; avoid state bloat
 
     // --- Constructor ---
     /**
@@ -103,14 +99,8 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
             revert AssetMismatch(_dStable, vaultUnderlying);
         }
 
-        // Cache decimals and unit scalars for safe probing and gas efficiency
-        assetDecimals = IERC20Metadata(_dStable).decimals();
-        shareDecimals = IERC20Metadata(_metaMorphoVault).decimals();
-        assetUnit = 10 ** uint256(assetDecimals);
-        shareUnit = 10 ** uint256(shareDecimals);
-
-        // Verify vault is functional by checking it can preview operations with a 1 unit asset probe
-        metaMorphoVault.previewDeposit(assetUnit);
+        // Verify vault is functional by checking it can preview operations with a minimal probe
+        metaMorphoVault.previewDeposit(1);
     }
 
     // --- IDStableConversionAdapterV2 Implementation ---
@@ -144,14 +134,7 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
         IERC20(dStable).forceApprove(address(metaMorphoVault), dStableAmount);
 
         // 4. Deposit to vault and send shares directly to collateral vault
-        uint256 actualShares;
-        try metaMorphoVault.deposit(dStableAmount, collateralVault) returns (uint256 shares) {
-            actualShares = shares;
-        } catch {
-            // Clear approval on failure
-            IERC20(dStable).forceApprove(address(metaMorphoVault), 0);
-            revert VaultOperationFailed();
-        }
+        uint256 actualShares = metaMorphoVault.deposit(dStableAmount, collateralVault);
 
         // 5. Clear any remaining approval as a safety measure
         IERC20(dStable).forceApprove(address(metaMorphoVault), 0);
@@ -159,12 +142,6 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
         // 6. Validate received shares against slippage
         if (actualShares < minShares) {
             revert SlippageExceeded(expectedShares, actualShares);
-        }
-
-        // 7. Ensure no dStable remains in this contract (defense in depth)
-        uint256 remainingBalance = IERC20(dStable).balanceOf(address(this));
-        if (remainingBalance > 0) {
-            IERC20(dStable).safeTransfer(msg.sender, remainingBalance);
         }
 
         emit ConversionToVault(msg.sender, dStableAmount, actualShares);
@@ -199,18 +176,6 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
         // 4. Validate received assets against slippage
         if (actualAssets < minAssets) {
             revert SlippageExceeded(expectedAssets, actualAssets);
-        }
-
-        // 5. Ensure no vault shares remain in this contract
-        uint256 remainingShares = IERC20(address(metaMorphoVault)).balanceOf(address(this));
-        if (remainingShares > 0) {
-            // Attempt to redeem any remaining shares
-            try metaMorphoVault.redeem(remainingShares, msg.sender, address(this)) returns (uint256) {
-                // Additional assets sent to caller
-            } catch {
-                // If redemption fails, leave shares in contract (emergency withdrawal available)
-                // Don't transfer shares back to avoid inconsistent state
-            }
         }
 
         emit ConversionFromVault(msg.sender, strategyShareAmount, actualAssets);
@@ -333,55 +298,5 @@ contract MetaMorphoConversionAdapter is IDStableConversionAdapterV2, ReentrancyG
      */
     function getMaxSlippage() external view returns (uint256 slippageBps) {
         return maxSlippageBps;
-    }
-
-    /**
-     * @notice Check if the vault is currently functional
-     * @return bool True if vault appears to be working
-     */
-    function isVaultHealthy() external view returns (bool) {
-        // First check if we can read basic vault state
-        try metaMorphoVault.totalAssets() returns (uint256 assets) {
-            try metaMorphoVault.totalSupply() returns (uint256 supply) {
-                // Check for broken vault state
-                if (supply == 0) {
-                    // No shares minted yet, vault should be healthy if it can preview
-                    try metaMorphoVault.previewDeposit(assetUnit) returns (uint256) {
-                        return true;
-                    } catch {
-                        return false;
-                    }
-                } else {
-                    // Shares exist, check if exchange rate is reasonable
-                    if (assets == 0) {
-                        return false; // Vault has shares but no assets - bad state
-                    }
-                    // Check if preview functions work using one share unit
-                    try metaMorphoVault.convertToAssets(shareUnit) returns (uint256) {
-                        return true;
-                    } catch {
-                        return false;
-                    }
-                }
-            } catch {
-                return false;
-            }
-        } catch {
-            return false;
-        }
-    }
-
-    /**
-     * @notice Get the current exchange rate from the vault
-     * @return rate The current exchange rate (scaled by 1e18)
-     */
-    function getExchangeRate() external view returns (uint256 rate) {
-        uint256 totalShares = metaMorphoVault.totalSupply();
-        if (totalShares == 0) {
-            return 1e18;
-        }
-
-        uint256 totalAssets = metaMorphoVault.totalAssets();
-        return (totalAssets * 1e18) / totalShares;
     }
 }
