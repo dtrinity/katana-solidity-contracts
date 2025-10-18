@@ -2,12 +2,7 @@ import { ethers } from "hardhat";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import type { Deployment } from "hardhat-deploy/types";
 
-import type {
-  DStakeRouterV2,
-  DStakeCollateralVaultV2,
-  MetaMorphoConversionAdapter,
-  MockMetaMorphoVault,
-} from "../../../typechain-types";
+import type { DStakeRouterV2, DStakeCollateralVaultV2, MetaMorphoConversionAdapter, MockMetaMorphoVault } from "../../../typechain-types";
 
 type NamedAccounts = Record<string, string | undefined> | undefined;
 
@@ -83,7 +78,11 @@ export async function configureMetaMorphoRouter({
 }
 
 export interface EnsureRoleParams {
-  contract: { DEFAULT_ADMIN_ROLE(): Promise<string>; hasRole(role: string, account: string): Promise<boolean>; grantRole(role: string, account: string): Promise<void> };
+  contract: {
+    DEFAULT_ADMIN_ROLE(): Promise<string>;
+    hasRole(role: string, account: string): Promise<boolean>;
+    grantRole(role: string, account: string): Promise<void>;
+  };
   deployment: Deployment;
   role: string;
   operator: SignerWithAddress;
@@ -102,7 +101,7 @@ async function findAdminSigner(
   contract: { DEFAULT_ADMIN_ROLE(): Promise<string>; hasRole(role: string, account: string): Promise<boolean> },
   deployment: Deployment,
   operator: SignerWithAddress,
-  namedAccounts?: NamedAccounts
+  namedAccounts?: NamedAccounts,
 ): Promise<SignerWithAddress> {
   const defaultAdminRole = await contract.DEFAULT_ADMIN_ROLE();
 

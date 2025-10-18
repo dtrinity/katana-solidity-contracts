@@ -1,12 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import {
-  DStakeTokenV2,
-  MockDStakeCollateralVaultV2,
-  MockDStakeRouterV2,
-  TestMintableERC20
-} from "../../typechain-types";
+import { DStakeTokenV2, MockDStakeCollateralVaultV2, MockDStakeRouterV2, TestMintableERC20 } from "../../typechain-types";
 
 const WITHDRAWAL_FEE_BPS = 1_000;
 
@@ -26,17 +21,14 @@ async function deployFixture() {
     "Staked Mock",
     "smUSD",
     deployer.address,
-    deployer.address
+    deployer.address,
   ]);
 
   const proxyFactory = await ethers.getContractFactory("ERC1967Proxy");
   const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData);
   await proxy.waitForDeployment();
 
-  const dStakeToken = (await ethers.getContractAt(
-    "DStakeTokenV2",
-    await proxy.getAddress()
-  )) as DStakeTokenV2;
+  const dStakeToken = (await ethers.getContractAt("DStakeTokenV2", await proxy.getAddress())) as DStakeTokenV2;
 
   const collateralFactory = await ethers.getContractFactory("MockDStakeCollateralVaultV2");
   const collateral = (await collateralFactory.deploy(await asset.getAddress())) as MockDStakeCollateralVaultV2;
@@ -47,7 +39,7 @@ async function deployFixture() {
   const router = (await routerFactory.deploy(
     await dStakeToken.getAddress(),
     await collateral.getAddress(),
-    await asset.getAddress()
+    await asset.getAddress(),
   )) as MockDStakeRouterV2;
   await router.waitForDeployment();
 
@@ -87,4 +79,3 @@ describe("DStakeTokenV2 convertToAssets invariants", function () {
     expect(roundTrip).to.equal(shares);
   });
 });
-

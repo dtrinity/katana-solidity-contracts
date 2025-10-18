@@ -6,17 +6,24 @@ import { WithdrawalFeeHarness } from "../../typechain-types";
 const ONE_PERCENT_BPS = 10_000n;
 const HUNDRED_PERCENT_BPS = 1_000_000n;
 
-describe("WithdrawalFeeMath", function () {
+describe("WithdrawalFee math helpers", function () {
   let harness: WithdrawalFeeHarness;
 
   before(async function () {
     const factory = await ethers.getContractFactory("WithdrawalFeeHarness");
-    harness = (await factory.deploy()) as unknown as WithdrawalFeeHarness;
+    harness = (await factory.deploy(ONE_PERCENT_BPS)) as unknown as WithdrawalFeeHarness;
   });
 
   it("calculate handles uint256 max without overflow", async function () {
     const maxUint = ethers.MaxUint256;
     const fee = await harness.calculate(maxUint, ONE_PERCENT_BPS);
+    expect(fee).to.be.gt(0n);
+    expect(fee).to.be.lte(maxUint);
+  });
+
+  it("_calculateWithdrawalFee handles uint256 max without overflow", async function () {
+    const maxUint = ethers.MaxUint256;
+    const fee = await harness.calc(maxUint);
     expect(fee).to.be.gt(0n);
     expect(fee).to.be.lte(maxUint);
   });

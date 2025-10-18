@@ -6,5 +6,5 @@ pragma solidity ^0.8.20;
 
 // Empty contract to satisfy compilation - all functionality removed due to dlend module removal
 contract TestSellAdapter {
-  // This contract is disabled - functionality removed due to missing dlend dependencies
+    // This contract is disabled - functionality removed due to missing dlend dependencies
 }

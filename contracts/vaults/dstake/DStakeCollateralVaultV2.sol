@@ -80,12 +80,13 @@ contract DStakeCollateralVaultV2 is IDStakeCollateralVaultV2, AccessControl, Ree
 
       address adapterAddress = IAdapterProvider(router).strategyShareToAdapter(strategyShare);
 
-      if (adapterAddress == address(0)) {
-        // Force operators to supply a live adapter before valuing the position so NAV cannot silently drop to zero.
-        revert AdapterValuationUnavailable(strategyShare);
+      if (adapterAddress != address(0)) {
+        totalValue += IDStableConversionAdapterV2(adapterAddress).strategyShareValueInDStable(strategyShare, balance);
+        continue;
       }
 
-      totalValue += IDStableConversionAdapterV2(adapterAddress).strategyShareValueInDStable(strategyShare, balance);
+      // Force operators to supply a live adapter before valuing the position so NAV cannot silently drop to zero.
+      revert AdapterValuationUnavailable(strategyShare);
     }
     return totalValue;
   }

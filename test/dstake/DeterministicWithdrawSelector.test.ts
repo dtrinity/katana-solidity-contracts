@@ -6,7 +6,7 @@ import { createDStakeRouterV2Fixture } from "./routerFixture";
 const VaultStatus = {
   Active: 0,
   Suspended: 1,
-  Impaired: 2
+  Impaired: 2,
 } as const;
 
 describe("Deterministic Withdraw Selector", function () {
@@ -45,30 +45,26 @@ describe("Deterministic Withdraw Selector", function () {
         strategyVault: vault1Address,
         adapter: adapter1Address,
         targetBps: 100000,
-        status: VaultStatus.Active
+        status: VaultStatus.Active,
       },
       {
         strategyVault: vault2Address,
         adapter: adapter2Address,
         targetBps: 900000,
-        status: VaultStatus.Active
-      }
+        status: VaultStatus.Active,
+      },
     ]);
 
     const depositAmounts = [ethers.parseEther("100"), ethers.parseEther("900")];
     const depositVaults = [vault1Address, vault2Address];
 
-    await router
-      .connect(alice)
-      .solverDepositAssets(depositVaults, depositAmounts, 0n, alice.address);
+    await router.connect(alice).solverDepositAssets(depositVaults, depositAmounts, 0n, alice.address);
 
     const [, currentAllocations, targetAllocations] = await router.getCurrentAllocations();
     expect(currentAllocations).to.deep.equal(targetAllocations);
 
     const withdrawAssets = ethers.parseEther("600");
-    const tx = await dStakeToken
-      .connect(alice)
-      .withdraw(withdrawAssets, alice.address, alice.address);
+    const tx = await dStakeToken.connect(alice).withdraw(withdrawAssets, alice.address, alice.address);
 
     const receipt = await tx.wait();
     const withdrawEvent = receipt.logs

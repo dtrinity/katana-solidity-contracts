@@ -75,7 +75,13 @@ describe("Fee Accounting Regression Test", function () {
     await ensureRole({ contract: dStable, deployment: dStableDeployment, role: dStableMinterRole, operator: owner, namedAccounts });
 
     const dStakeDefaultAdmin = await dStakeToken.DEFAULT_ADMIN_ROLE();
-    await ensureRole({ contract: dStakeToken, deployment: dStakeTokenDeployment, role: dStakeDefaultAdmin, operator: owner, namedAccounts });
+    await ensureRole({
+      contract: dStakeToken,
+      deployment: dStakeTokenDeployment,
+      role: dStakeDefaultAdmin,
+      operator: owner,
+      namedAccounts,
+    });
 
     const dStakeFeeManager = await dStakeToken.FEE_MANAGER_ROLE();
     await ensureRole({ contract: dStakeToken, deployment: dStakeTokenDeployment, role: dStakeFeeManager, operator: owner, namedAccounts });
@@ -98,9 +104,7 @@ describe("Fee Accounting Regression Test", function () {
     const currentVault = (await dStakeToken.collateralVault()).toLowerCase();
 
     if (currentRouter !== targetRouter || currentVault !== targetVault) {
-      await dStakeToken
-        .connect(owner)
-        .migrateCore(await router.getAddress(), await collateralVault.getAddress());
+      await dStakeToken.connect(owner).migrateCore(await router.getAddress(), await collateralVault.getAddress());
     }
 
     // Ensure collateral vault has vault shares for withdrawals
@@ -167,7 +171,7 @@ describe("Fee Accounting Regression Test", function () {
         [vaultBalance1 / 10n], // 10% withdrawal
         maxShares,
         alice.address,
-        alice.address
+        alice.address,
       );
 
       const feeBalanceAfterFirst = await dStable.balanceOf(routerAddress);
@@ -180,7 +184,7 @@ describe("Fee Accounting Regression Test", function () {
         [vaultBalance2 / 10n], // Another 10% withdrawal
         await dStakeToken.balanceOf(alice.address),
         alice.address,
-        alice.address
+        alice.address,
       );
 
       const feeBalanceAfterSecond = await dStable.balanceOf(routerAddress);
@@ -208,12 +212,14 @@ describe("Fee Accounting Regression Test", function () {
       // Perform solver withdrawals to generate fees
       const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares = vaultBalance / 20n; // 5% withdrawal
-      await router.connect(alice).solverWithdrawShares(
+      await router
+        .connect(alice)
+        .solverWithdrawShares(
           [await vault.getAddress()],
           [withdrawShares],
           await dStakeToken.balanceOf(alice.address),
           alice.address,
-          alice.address
+          alice.address,
         );
 
       // Verify fees are accumulated
@@ -247,12 +253,14 @@ describe("Fee Accounting Regression Test", function () {
       // Generate fees through solver withdrawal
       const vaultBalance = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares = vaultBalance / 10n; // 10% withdrawal
-      await router.connect(alice).solverWithdrawShares(
+      await router
+        .connect(alice)
+        .solverWithdrawShares(
           [await vault.getAddress()],
           [withdrawShares],
           await dStakeToken.balanceOf(alice.address),
           alice.address,
-          alice.address
+          alice.address,
         );
     });
 
@@ -276,9 +284,7 @@ describe("Fee Accounting Regression Test", function () {
       expect(vaultValueAfter).to.be.closeTo(vaultValueBefore + expectedReinvested, ethers.parseEther("0.001"));
 
       // Verify RouterFeesReinvested event was emitted
-      await expect(tx)
-        .to.emit(router, "RouterFeesReinvested")
-        .withArgs(expectedReinvested, expectedIncentive, dStakeTokenAddress);
+      await expect(tx).to.emit(router, "RouterFeesReinvested").withArgs(expectedReinvested, expectedIncentive, dStakeTokenAddress);
     });
 
     it("Should return zero and not revert when no fees to reinvest", async function () {
@@ -339,7 +345,9 @@ describe("Fee Accounting Regression Test", function () {
         const withdrawShares = vaultBalance / 20n; // 5% each time
         const beforeBalance = await dStable.balanceOf(alice.address);
 
-        await router.connect(alice).solverWithdrawShares([await vault.getAddress()], [withdrawShares], ethers.parseEther("200"), alice.address, alice.address);
+        await router
+          .connect(alice)
+          .solverWithdrawShares([await vault.getAddress()], [withdrawShares], ethers.parseEther("200"), alice.address, alice.address);
 
         const afterBalance = await dStable.balanceOf(alice.address);
         cumulativeWithdrawals = cumulativeWithdrawals + (afterBalance - beforeBalance);
@@ -408,7 +416,9 @@ describe("Fee Accounting Regression Test", function () {
 
       const aliceBalanceBefore = await dStable.balanceOf(alice.address);
 
-      await router.connect(alice).solverWithdrawShares([await vault.getAddress()], [largeWithdrawShares], maxShares, alice.address, alice.address);
+      await router
+        .connect(alice)
+        .solverWithdrawShares([await vault.getAddress()], [largeWithdrawShares], maxShares, alice.address, alice.address);
 
       const aliceBalanceAfter = await dStable.balanceOf(alice.address);
 
@@ -467,7 +477,9 @@ describe("Fee Accounting Regression Test", function () {
         const withdrawShares = vaultBalance / 10n; // 10% each round
         const beforeBalance = await dStable.balanceOf(alice.address);
 
-        await router.connect(alice).solverWithdrawShares([await vault.getAddress()], [withdrawShares], ethers.MaxUint256, alice.address, alice.address);
+        await router
+          .connect(alice)
+          .solverWithdrawShares([await vault.getAddress()], [withdrawShares], ethers.MaxUint256, alice.address, alice.address);
 
         const afterBalance = await dStable.balanceOf(alice.address);
         totalWithdrawn = totalWithdrawn + (afterBalance - beforeBalance);
@@ -539,7 +551,9 @@ describe("Fee Accounting Regression Test", function () {
       const vaultBalance1 = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares1 = vaultBalance1 / 10n;
       const beforeBalance1 = await dStable.balanceOf(alice.address);
-      await router.connect(alice).solverWithdrawShares([await vault.getAddress()], [withdrawShares1], ethers.parseEther("150"), alice.address, alice.address);
+      await router
+        .connect(alice)
+        .solverWithdrawShares([await vault.getAddress()], [withdrawShares1], ethers.parseEther("150"), alice.address, alice.address);
       const afterBalance1 = await dStable.balanceOf(alice.address);
       currentTotalWithdrawn = currentTotalWithdrawn + (afterBalance1 - beforeBalance1);
 
@@ -567,12 +581,14 @@ describe("Fee Accounting Regression Test", function () {
       const vaultBalance2 = await vault.balanceOf(await collateralVault.getAddress());
       const withdrawShares2 = vaultBalance2 / 15n;
       const beforeBalance2 = await dStable.balanceOf(bob.address);
-      await router.connect(bob).solverWithdrawShares(
+      await router
+        .connect(bob)
+        .solverWithdrawShares(
           [await vault.getAddress()],
           [withdrawShares2],
           await dStakeToken.balanceOf(bob.address),
           bob.address,
-          bob.address
+          bob.address,
         );
       const afterBalance2 = await dStable.balanceOf(bob.address);
       currentTotalWithdrawn = currentTotalWithdrawn + (afterBalance2 - beforeBalance2);
@@ -616,7 +632,7 @@ describe("Fee Accounting Regression Test", function () {
         [vaultShares / 10n], // Also reduce vault shares withdrawal
         ethers.MaxUint256,
         alice.address,
-        alice.address
+        alice.address,
       );
 
       // Check accumulated fees
@@ -632,9 +648,7 @@ describe("Fee Accounting Regression Test", function () {
 
       // Bob calls reinvestFees and should receive incentive
       const tx = await dStakeToken.connect(bob).reinvestFees();
-      await expect(tx)
-        .to.emit(router, "RouterFeesReinvested")
-        .withArgs(expectedReinvested, expectedIncentive, dStakeTokenAddress);
+      await expect(tx).to.emit(router, "RouterFeesReinvested").withArgs(expectedReinvested, expectedIncentive, dStakeTokenAddress);
 
       // Verify Bob received the incentive
       const callerBalanceAfter = await dStable.balanceOf(bob.address);
@@ -667,7 +681,7 @@ describe("Fee Accounting Regression Test", function () {
       // Try to exceed maximum 20% (should revert)
       await expect(dStakeToken.connect(owner).setReinvestIncentive(200001)).to.be.revertedWithCustomError(
         router,
-        "InvalidReinvestIncentive"
+        "InvalidReinvestIncentive",
       );
 
       // Set incentive to 0 (disable incentive)
@@ -698,7 +712,7 @@ describe("Fee Accounting Regression Test", function () {
         [vaultShares / 10n], // Also reduce vault shares withdrawal
         ethers.MaxUint256,
         alice.address,
-        alice.address
+        alice.address,
       );
 
       // Check accumulated fees

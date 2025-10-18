@@ -576,7 +576,7 @@ describe("DStakeRewardManagerMetaMorpho", function () {
 
       await expect(
         rewardManager.connect(user).compoundRewards(compoundAmount, [rewardToken.target], user.address)
-      ).to.be.revertedWithCustomError(rewardManager, "DefaultDepositAssetNotSet");
+      ).to.be.revertedWithCustomError(rewardManager, "AdapterNotSetForDefaultAsset");
     });
 
     it("should clear approvals after processing", async function () {

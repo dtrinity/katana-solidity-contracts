@@ -49,7 +49,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
       if (!adapterConfig.strategyShare || adapterConfig.strategyShare === ethers.ZeroAddress) {
         console.log(
-          `⚠️  Strategy share missing for adapter ${adapterConfig.adapterContract} in ${instanceKey} (deployment will be skipped for this adapter)`
+          `⚠️  Strategy share missing for adapter ${adapterConfig.adapterContract} in ${instanceKey} (deployment will be skipped for this adapter)`,
         );
         continue;
       }
@@ -57,7 +57,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       // dLendConversionAdapter requires dLendAddressesProvider
       if (adapterConfig.adapterContract === "dLendConversionAdapter" && !dLendAddressesProviderAddress) {
         console.log(
-          `⚠️  Skipping dSTAKE instance ${instanceKey}: dLend PoolAddressesProvider not found for ${adapterConfig.adapterContract}`
+          `⚠️  Skipping dSTAKE instance ${instanceKey}: dLend PoolAddressesProvider not found for ${adapterConfig.adapterContract}`,
         );
         continue;
       }
@@ -102,7 +102,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
       if (!strategyShare || strategyShare === ethers.ZeroAddress) {
         console.log(
-          `    ⚠️  Skipping ${instanceKey}: Missing strategyShare for adapter ${adapterContract} (likely due to prerequisite deployments not being available)`
+          `    ⚠️  Skipping ${instanceKey}: Missing strategyShare for adapter ${adapterContract} (likely due to prerequisite deployments not being available)`,
         );
         continue;
       }

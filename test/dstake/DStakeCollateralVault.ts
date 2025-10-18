@@ -12,9 +12,7 @@ import { resolveRoleSigner } from "./utils/roleHelpers";
 const parseUnits = (value: string | number, decimals: number | bigint) => ethers.parseUnits(value.toString(), decimals);
 const ONE_HUNDRED_PERCENT_BPS = 1_000_000n;
 
-const COLLATERAL_TEST_CONFIGS = DSTAKE_CONFIGS.filter(
-  (cfg: DStakeFixtureConfig) => cfg.dStableSymbol === "dUSD",
-);
+const COLLATERAL_TEST_CONFIGS = DSTAKE_CONFIGS.filter((cfg: DStakeFixtureConfig) => cfg.dStableSymbol === "dUSD");
 
 COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
   describe(`DStakeCollateralVaultV2 for ${config.DStakeTokenV2Symbol}`, () => {
@@ -99,11 +97,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       const routerAdminSigner = await resolveRoleSigner(
         router,
         routerAdminRole,
-        [
-          user1.address,
-          deployer.address,
-          routerDeployment.receipt?.from,
-        ],
+        [user1.address, deployer.address, routerDeployment.receipt?.from],
         deployer,
       );
 
@@ -127,21 +121,14 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       const adminSignerForVault = await resolveRoleSigner(
         collateralVault,
         adminRole,
-        [
-          user1.address,
-          deployer.address,
-          collateralDeployment.receipt?.from,
-        ],
+        [user1.address, deployer.address, collateralDeployment.receipt?.from],
         deployer,
       );
 
       if (!(await collateralVault.hasRole(adminRole, user1.address))) {
         await collateralVault.connect(adminSignerForVault).grantRole(adminRole, user1.address);
       }
-      if (
-        (await collateralVault.hasRole(adminRole, deployer.address)) &&
-        deployer.address.toLowerCase() !== user1.address.toLowerCase()
-      ) {
+      if ((await collateralVault.hasRole(adminRole, deployer.address)) && deployer.address.toLowerCase() !== user1.address.toLowerCase()) {
         await collateralVault.connect(adminSignerForVault).revokeRole(adminRole, deployer.address);
       }
 
@@ -249,9 +236,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       const depositChunk = parseUnits(1_000, dStableDecimals);
       await stable.mint(user1.address, depositChunk);
       await stable.connect(user1).approve(routerAddress, depositChunk);
-      await router
-        .connect(user1)
-        .solverDepositAssets([strategyShareAddress], [depositChunk], 0n, user1.address);
+      await router.connect(user1).solverDepositAssets([strategyShareAddress], [depositChunk], 0n, user1.address);
       currentBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
 
       expect(currentBalance, "Unable to seed collateral vault balance").to.be.gte(minimumBalance);
@@ -283,7 +268,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
       it("Should only allow admin to set router", async function () {
         await expect(collateralVault.connect(user2).setRouter(routerAddress)).to.be.revertedWithCustomError(
           collateralVault,
-          "AccessControlUnauthorizedAccount"
+          "AccessControlUnauthorizedAccount",
         );
 
         await expect(collateralVault.connect(user1).setRouter(routerAddress)).to.not.be.reverted;
@@ -319,15 +304,11 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         await ensureAdapterRegistered();
         const recipient = user1.address;
         await expect(
-          collateralVault.connect(user2).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
-        ).to.be.revertedWithCustomError(
-          collateralVault,
-          "AccessControlUnauthorizedAccount"
-        );
+          collateralVault.connect(user2).transferStrategyShares(strategyShareAddress, amountToSend, recipient),
+        ).to.be.revertedWithCustomError(collateralVault, "AccessControlUnauthorizedAccount");
 
-        await expect(
-          collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, amountToSend, recipient)
-        ).to.not.be.reverted;
+        await expect(collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, amountToSend, recipient)).to.not.be
+          .reverted;
       });
 
       it("Should transfer asset correctly", async function () {
@@ -335,9 +316,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const initialVaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const initialRecipientBalance = await strategyShareToken.balanceOf(recipient);
 
-        await collateralVault
-          .connect(routerSigner)
-          .transferStrategyShares(strategyShareAddress, amountToSend, recipient);
+        await collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, amountToSend, recipient);
 
         const finalVaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const finalRecipientBalance = await strategyShareToken.balanceOf(recipient);
@@ -351,9 +330,8 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         const vaultBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
         const attemptToSend = vaultBalance + parseUnits("1", strategyShareDecimals);
 
-        await expect(
-          collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, attemptToSend, recipient)
-        ).to.be.reverted;
+        await expect(collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, attemptToSend, recipient)).to.be
+          .reverted;
       });
 
       it("Should revert if asset is not supported", async function () {
@@ -373,9 +351,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
           const balance = await strategyShareToken.balanceOf(collateralVaultAddress);
 
           if (balance > 0n) {
-            await collateralVault
-              .connect(routerSigner)
-              .transferStrategyShares(strategyShareAddress, balance, deployer.address);
+            await collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, balance, deployer.address);
           }
           await suspendVaultIfConfigured(strategyShareAddress);
           await router.connect(routerSigner).removeAdapter(strategyShareAddress);
@@ -413,7 +389,10 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         await ensureVaultHasStrategyShares(primaryTarget);
 
         const MockAdapterFactory = await ethers.getContractFactory("MockAdapterPositiveSlippage");
-        const additionalAdapter = (await MockAdapterFactory.deploy(dStableTokenAddress, collateralVaultAddress)) as IDStableConversionAdapterV2;
+        const additionalAdapter = (await MockAdapterFactory.deploy(
+          dStableTokenAddress,
+          collateralVaultAddress,
+        )) as IDStableConversionAdapterV2;
         const additionalAdapterAddress = await additionalAdapter.getAddress();
         const additionalStrategyShare = await additionalAdapter.strategyShare();
 
@@ -425,7 +404,10 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         await additionalAdapter.connect(routerSigner).depositIntoStrategy(additionalDepositAmount);
 
         const primaryBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
-        const additionalShareToken = await ethers.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", additionalStrategyShare);
+        const additionalShareToken = await ethers.getContractAt(
+          "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
+          additionalStrategyShare,
+        );
         const secondaryBalance = await additionalShareToken.balanceOf(collateralVaultAddress);
 
         const primaryValue = await primaryAdapter.strategyShareValueInDStable(strategyShareAddress, primaryBalance);
@@ -442,9 +424,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         expect(await collateralVault.totalValueInDStable()).to.be.gt(0);
 
         // Send all vault asset back to deployer
-        await collateralVault
-          .connect(routerSigner)
-          .transferStrategyShares(strategyShareAddress, seeded, deployer.address);
+        await collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, seeded, deployer.address);
         expect(await collateralVault.totalValueInDStable()).to.equal(0);
 
         await suspendVaultIfConfigured(strategyShareAddress);
@@ -541,14 +521,14 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
         it("Should only allow DEFAULT_ADMIN_ROLE to call rescueToken", async function () {
           await expect(
-            collateralVault.connect(user2).rescueToken(mockTokenAddress, user1.address, testAmount)
+            collateralVault.connect(user2).rescueToken(mockTokenAddress, user1.address, testAmount),
           ).to.be.revertedWithCustomError(collateralVault, "AccessControlUnauthorizedAccount");
         });
 
         it("Should revert with zero address receiver", async function () {
           await expect(collateralVault.connect(user1).rescueToken(mockTokenAddress, ZeroAddress, testAmount)).to.be.revertedWithCustomError(
             collateralVault,
-            "ZeroAddress"
+            "ZeroAddress",
           );
         });
 
@@ -587,14 +567,14 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
         it("Should only allow DEFAULT_ADMIN_ROLE to call rescueETH", async function () {
           await expect(collateralVault.connect(user2).rescueETH(user2.address, ethAmount)).to.be.revertedWithCustomError(
             collateralVault,
-            "AccessControlUnauthorizedAccount"
+            "AccessControlUnauthorizedAccount",
           );
         });
 
         it("Should revert with zero address receiver", async function () {
           await expect(collateralVault.connect(user1).rescueETH(ZeroAddress, ethAmount)).to.be.revertedWithCustomError(
             collateralVault,
-            "ZeroAddress"
+            "ZeroAddress",
           );
         });
 
@@ -647,9 +627,7 @@ COLLATERAL_TEST_CONFIGS.forEach((config: DStakeFixtureConfig) => {
 
           const existingBalance = await strategyShareToken.balanceOf(collateralVaultAddress);
           if (existingBalance > 0n) {
-            await collateralVault
-              .connect(routerSigner)
-              .transferStrategyShares(strategyShareAddress, existingBalance, deployer.address);
+            await collateralVault.connect(routerSigner).transferStrategyShares(strategyShareAddress, existingBalance, deployer.address);
           }
 
         await suspendVaultIfConfigured(strategyShareAddress);

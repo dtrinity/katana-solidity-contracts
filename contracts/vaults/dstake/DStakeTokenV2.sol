@@ -40,13 +40,6 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   event RouterSet(address indexed newRouter);
   event CollateralVaultSet(address indexed newCollateralVault);
 
-  modifier onlyRouter() {
-    if (_msgSender() != address(router)) {
-      revert RouterOnly();
-    }
-    _;
-  }
-
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
     _disableInitializers();
@@ -119,6 +112,42 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
 
   function grossTotalAssets() public view returns (uint256) {
     return _grossTotalAssets();
+  }
+
+  function _convertToSharesUsingNet(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
+    if (assets == 0) {
+      return 0;
+    }
+
+    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
+    uint256 netAssets = totalAssets();
+    return Math.mulDiv(assets, supply, netAssets + 1, rounding);
+  }
+
+  function _convertToAssetsUsingNet(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
+    if (shares == 0) {
+      return 0;
+    }
+
+    uint256 supply = totalSupply() + 10 ** _decimalsOffset();
+    uint256 netAssets = totalAssets();
+    return Math.mulDiv(shares, netAssets + 1, supply, rounding);
+  }
+
+  function convertToShares(uint256 assets) public view virtual override returns (uint256) {
+    return previewDeposit(assets);
+  }
+
+  function convertToAssets(uint256 shares) public view virtual override returns (uint256) {
+    return _convertToAssetsUsingNet(shares, Math.Rounding.Floor);
+  }
+
+  function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
+    return _convertToSharesUsingNet(assets, Math.Rounding.Floor);
+  }
+
+  function previewMint(uint256 shares) public view virtual override returns (uint256) {
+    return _convertToAssetsUsingNet(shares, Math.Rounding.Ceil);
   }
 
   function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
@@ -200,6 +229,9 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     }
 
     shares = previewWithdraw(assets);
+    if (shares == 0 && assets > 0) {
+      revert ZeroShares();
+    }
 
     uint256 maxRedeemShares = maxRedeem(owner);
     if (shares > maxRedeemShares) {
@@ -228,16 +260,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
       _spendAllowance(owner, caller, shares);
     }
 
-    if (shares == 0) {
-      if (assets > 0) {
-        revert ZeroShares();
+    if (assets == 0 || shares == 0) {
+      if (shares > 0) {
+        _burn(owner, shares);
       }
-      emit Withdraw(caller, receiver, owner, 0, 0);
-      return;
-    }
-
-    if (assets == 0) {
-      _burn(owner, shares);
       emit Withdraw(caller, receiver, owner, 0, shares);
       return;
     }
@@ -318,7 +344,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
   }
 
   // --- Router hooks ---
-  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external onlyRouter {
+  function mintForRouter(address initiator, address receiver, uint256 assets, uint256 shares) external {
+    if (_msgSender() != address(router)) {
+      revert RouterOnly();
+    }
     if (shares == 0) {
       revert ZeroShares();
     }
@@ -332,7 +361,10 @@ contract DStakeTokenV2 is Initializable, ERC4626Upgradeable, AccessControlUpgrad
     address owner,
     uint256 netAssets,
     uint256 shares
-  ) external onlyRouter {
+  ) external {
+    if (_msgSender() != address(router)) {
+      revert RouterOnly();
+    }
     if (shares == 0) {
       revert ZeroShares();
     }

@@ -5,7 +5,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployments, getNamedAccounts } = hre;
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
-  
+
   console.log("Running mock MetaMorpho vault deployment...");
 
   // Only deploy mocks on test networks
@@ -30,11 +30,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       await deploy(deploymentName, {
         from: deployer,
         contract: "MockMetaMorphoVault",
-        args: [
-          dUSDDeployment.address,
-          "Mock MetaMorpho dUSD Vault",
-          "mmvdUSD"
-        ],
+        args: [dUSDDeployment.address, "Mock MetaMorpho dUSD Vault", "mmvdUSD"],
         log: true,
       });
       console.log(`✅ Deployed ${deploymentName}`);
@@ -52,11 +48,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       await deploy(deploymentName, {
         from: deployer,
         contract: "MockMetaMorphoVault",
-        args: [
-          dETHDeployment.address,
-          "Mock MetaMorpho dETH Vault",
-          "mmvdETH"
-        ],
+        args: [dETHDeployment.address, "Mock MetaMorpho dETH Vault", "mmvdETH"],
         log: true,
       });
       console.log(`✅ Deployed ${deploymentName}`);
@@ -75,11 +67,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       await deploy(deploymentName, {
         from: deployer,
         contract: "MockMetaMorphoVault",
-        args: [
-          testToken.address,
-          "Mock MetaMorpho Test Vault",
-          "mmvTEST"
-        ],
+        args: [testToken.address, "Mock MetaMorpho Test Vault", "mmvTEST"],
         log: true,
       });
       console.log(`✅ Deployed ${deploymentName}`);

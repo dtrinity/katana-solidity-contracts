@@ -41,16 +41,18 @@ describe("MetaMorphoConversionAdapter - Valuation Handling", function () {
 
     await metaMorphoVault.setPreviewRevertFlags(true, false);
 
-    await expect(
-      adapter.strategyShareValueInDStable(metaMorphoVault.target, shares)
-    ).to.be.revertedWithCustomError(adapter, "ValuationUnavailable");
+    await expect(adapter.strategyShareValueInDStable(metaMorphoVault.target, shares)).to.be.revertedWithCustomError(
+      adapter,
+      "ValuationUnavailable",
+    );
   });
 
   it("reverts when both previewRedeem and convertToAssets revert", async function () {
     await metaMorphoVault.setPreviewRevertFlags(true, true);
 
-    await expect(
-      adapter.strategyShareValueInDStable(metaMorphoVault.target, 1n)
-    ).to.be.revertedWithCustomError(adapter, "ValuationUnavailable");
+    await expect(adapter.strategyShareValueInDStable(metaMorphoVault.target, 1n)).to.be.revertedWithCustomError(
+      adapter,
+      "ValuationUnavailable",
+    );
   });
 });

@@ -264,9 +264,6 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
       exchangeAmountIn
     );
 
-    // Clear any remaining approval now that the transfer has completed
-    IERC20(exchangeAsset).forceApprove(adapter, 0);
-
     // Verify the adapter returned the expected strategy share
     if (returnedStrategyShare != defaultStrategyShare) {
       revert AdapterReturnedUnexpectedAsset(defaultStrategyShare, returnedStrategyShare);
@@ -281,6 +278,9 @@ contract DStakeRewardManagerMetaMorpho is RewardClaimable {
 
     // Emit event for tracking (use actualReceived for accuracy)
     emit ExchangeAssetProcessed(defaultStrategyShare, actualReceived, exchangeAmountIn);
+
+    // Clear any remaining approval now that the transfer has completed
+    IERC20(exchangeAsset).forceApprove(adapter, 0);
   }
 
   /**

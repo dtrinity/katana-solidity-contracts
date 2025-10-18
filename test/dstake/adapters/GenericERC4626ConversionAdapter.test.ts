@@ -1,11 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import {
-  DStakeIdleVault,
-  GenericERC4626ConversionAdapter,
-  TestMintableERC20
-} from "../../../typechain-types";
+import { DStakeIdleVault, GenericERC4626ConversionAdapter, TestMintableERC20 } from "../../../typechain-types";
 
 describe("GenericERC4626ConversionAdapter", function () {
   let asset: TestMintableERC20;
@@ -26,20 +22,14 @@ describe("GenericERC4626ConversionAdapter", function () {
     await asset.mint(router, ethers.parseEther("10000"));
 
     const idleVaultFactory = await ethers.getContractFactory("DStakeIdleVault");
-    idleVault = (await idleVaultFactory.deploy(
-      await asset.getAddress(),
-      "Idle dUSD",
-      "idle-dUSD",
-      router,
-      router
-    )) as DStakeIdleVault;
+    idleVault = (await idleVaultFactory.deploy(await asset.getAddress(), "Idle dUSD", "idle-dUSD", router, router)) as DStakeIdleVault;
     await idleVault.waitForDeployment();
 
     const adapterFactory = await ethers.getContractFactory("GenericERC4626ConversionAdapter");
     adapter = (await adapterFactory.deploy(
       await asset.getAddress(),
       await idleVault.getAddress(),
-      collateralVault
+      collateralVault,
     )) as GenericERC4626ConversionAdapter;
     await adapter.waitForDeployment();
   });
@@ -89,9 +79,10 @@ describe("GenericERC4626ConversionAdapter", function () {
     const value = await adapter.strategyShareValueInDStable(await idleVault.getAddress(), mintedShares);
     expect(value).to.equal(depositAmount);
 
-    await expect(
-      adapter.strategyShareValueInDStable(ethers.ZeroAddress, mintedShares)
-    ).to.be.revertedWithCustomError(adapter, "IncorrectStrategyShare");
+    await expect(adapter.strategyShareValueInDStable(ethers.ZeroAddress, mintedShares)).to.be.revertedWithCustomError(
+      adapter,
+      "IncorrectStrategyShare",
+    );
   });
 
   it("exposes the managed strategy share", async function () {

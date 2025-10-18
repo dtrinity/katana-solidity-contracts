@@ -1,12 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import {
-  DStakeTokenV2,
-  MockDStakeRouterV2,
-  MockDStakeCollateralVaultV2,
-  TestMintableERC20
-} from "../../typechain-types";
+import { DStakeTokenV2, MockDStakeRouterV2, MockDStakeCollateralVaultV2, TestMintableERC20 } from "../../typechain-types";
 
 const WITHDRAWAL_FEE_BPS = 1_000; // 0.1%
 
@@ -27,17 +22,14 @@ describe("DStakeTokenV2 redeem withdrawal fee", function () {
       "Staked Mock",
       "smUSD",
       deployer.address,
-      deployer.address
+      deployer.address,
     ]);
 
     const proxyFactory = await ethers.getContractFactory("ERC1967Proxy");
     const proxy = await proxyFactory.deploy(await dStakeTokenImpl.getAddress(), initData);
     await proxy.waitForDeployment();
 
-    const dStakeToken = (await ethers.getContractAt(
-      "DStakeTokenV2",
-      await proxy.getAddress()
-    )) as DStakeTokenV2;
+    const dStakeToken = (await ethers.getContractAt("DStakeTokenV2", await proxy.getAddress())) as DStakeTokenV2;
 
     const collateralFactory = await ethers.getContractFactory("MockDStakeCollateralVaultV2");
     const collateral = (await collateralFactory.deploy(await asset.getAddress())) as MockDStakeCollateralVaultV2;
@@ -48,7 +40,7 @@ describe("DStakeTokenV2 redeem withdrawal fee", function () {
     const router = (await routerFactory.deploy(
       await dStakeToken.getAddress(),
       await collateral.getAddress(),
-      await asset.getAddress()
+      await asset.getAddress(),
     )) as MockDStakeRouterV2;
     await router.waitForDeployment();
 
@@ -75,11 +67,7 @@ describe("DStakeTokenV2 redeem withdrawal fee", function () {
     const expectedNet = await dStakeToken.previewRedeem(shares);
 
     const dStakeTokenFromUser = dStakeToken.connect(user);
-    const assetsFromCall = await dStakeTokenFromUser.redeem.staticCall(
-      shares,
-      user.address,
-      user.address,
-    );
+    const assetsFromCall = await dStakeTokenFromUser.redeem.staticCall(shares, user.address, user.address);
 
     const balanceBefore = await asset.balanceOf(user.address);
     await dStakeTokenFromUser.redeem(shares, user.address, user.address);

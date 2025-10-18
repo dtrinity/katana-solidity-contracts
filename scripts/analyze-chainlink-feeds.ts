@@ -11,7 +11,7 @@ const CHAINLINK_EXPECTED_DECIMALS = 8;
 const CHAINLINK_AGGREGATOR_ABI = [
   "function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
   "function decimals() external view returns (uint8)",
-  "function description() external view returns (string memory)"
+  "function description() external view returns (string memory)",
 ];
 
 interface FeedInfo {
@@ -74,8 +74,7 @@ async function getFeedInfo(feedAddress: string): Promise<{
       // Check if price is stale (older than 3600 seconds = 1 hour for Chainlink)
       const now = Math.floor(Date.now() / 1000);
       const staleThreshold = 3600; // 1 hour in seconds
-      isStale = (now - timestamp) > staleThreshold;
-
+      isStale = now - timestamp > staleThreshold;
     } catch (e) {
       console.log(`Warning: Could not read price from ${feedAddress}:`, e);
     }
@@ -90,7 +89,10 @@ async function getFeedInfo(feedAddress: string): Promise<{
 /**
  * Determine scaling requirements
  */
-function analyzeScaling(actualDecimals: number, expectedDecimals: number): {
+function analyzeScaling(
+  actualDecimals: number,
+  expectedDecimals: number,
+): {
   scalingNeeded: "none" | "upscale" | "downscale";
   scalingFactor: number;
 } {
@@ -160,7 +162,7 @@ async function extractChainlinkFeeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo.rawPrice,
         priceTimestamp: feedInfo.timestamp,
         isStale: feedInfo.isStale,
-        ...scaling
+        ...scaling,
       });
     }
 
@@ -184,7 +186,7 @@ async function extractChainlinkFeeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo.rawPrice,
         priceTimestamp: feedInfo.timestamp,
         isStale: feedInfo.isStale,
-        ...scaling
+        ...scaling,
       });
     }
 
@@ -210,10 +212,10 @@ async function extractChainlinkFeeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo1.rawPrice,
         priceTimestamp: feedInfo1.timestamp,
         isStale: feedInfo1.isStale,
-        ...scaling1
+        ...scaling1,
       });
 
-      // Feed 2 - typically intermediary/base pair  
+      // Feed 2 - typically intermediary/base pair
       const feedInfo2 = await getFeedInfo(compositeConfig.feed2);
       const scaling2 = analyzeScaling(feedInfo2.decimals, expectedDecimals);
 
@@ -231,7 +233,7 @@ async function extractChainlinkFeeds(): Promise<FeedInfo[]> {
         rawPrice: feedInfo2.rawPrice,
         priceTimestamp: feedInfo2.timestamp,
         isStale: feedInfo2.isStale,
-        ...scaling2
+        ...scaling2,
       });
     }
   }
@@ -256,15 +258,15 @@ function printAnalysis(feeds: FeedInfo[]) {
   }
 
   // Group by scaling requirements
-  const noScaling = feeds.filter(f => f.scalingNeeded === "none");
-  const upscaling = feeds.filter(f => f.scalingNeeded === "upscale");
-  const downscaling = feeds.filter(f => f.scalingNeeded === "downscale");
+  const noScaling = feeds.filter((f) => f.scalingNeeded === "none");
+  const upscaling = feeds.filter((f) => f.scalingNeeded === "upscale");
+  const downscaling = feeds.filter((f) => f.scalingNeeded === "downscale");
 
   console.log(`\n✅ FEEDS REQUIRING NO SCALING (${noScaling.length}):`);
   if (noScaling.length === 0) {
     console.log("  None");
   } else {
-    noScaling.forEach(feed => {
+    noScaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 
@@ -285,7 +287,7 @@ function printAnalysis(feeds: FeedInfo[]) {
   if (upscaling.length === 0) {
     console.log("  None");
   } else {
-    upscaling.forEach(feed => {
+    upscaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 
@@ -306,7 +308,7 @@ function printAnalysis(feeds: FeedInfo[]) {
   if (downscaling.length === 0) {
     console.log("  None");
   } else {
-    downscaling.forEach(feed => {
+    downscaling.forEach((feed) => {
       const lastUpdate = new Date(feed.priceTimestamp * 1000);
       const staleStatus = feed.isStale ? "🔴 STALE" : "🟢 FRESH";
 
@@ -332,8 +334,8 @@ function printAnalysis(feeds: FeedInfo[]) {
   console.log(`  ⬇️  Downscaling needed: ${downscaling.length}`);
 
   // Stale feed analysis
-  const staleFeeds = feeds.filter(f => f.isStale);
-  const freshFeeds = feeds.filter(f => !f.isStale);
+  const staleFeeds = feeds.filter((f) => f.isStale);
+  const freshFeeds = feeds.filter((f) => !f.isStale);
   console.log(`  🔴 Stale feeds: ${staleFeeds.length}`);
   console.log(`  🟢 Fresh feeds: ${freshFeeds.length}`);
 
@@ -348,8 +350,8 @@ function printAnalysis(feeds: FeedInfo[]) {
 
     // Group stale feeds by staleness severity
     const now = Math.floor(Date.now() / 1000);
-    const veryStaleFeedsCount = staleFeeds.filter(f => (now - f.priceTimestamp) > 24 * 3600).length;
-    const oldFeedsCount = staleFeeds.filter(f => (now - f.priceTimestamp) > 6 * 3600 && (now - f.priceTimestamp) <= 24 * 3600).length;
+    const veryStaleFeedsCount = staleFeeds.filter((f) => now - f.priceTimestamp > 24 * 3600).length;
+    const oldFeedsCount = staleFeeds.filter((f) => now - f.priceTimestamp > 6 * 3600 && now - f.priceTimestamp <= 24 * 3600).length;
 
     if (veryStaleFeedsCount > 0) {
       console.log(`  • ${veryStaleFeedsCount} feeds are very stale (>24 hours old) - HIGH PRIORITY`);
