@@ -72,6 +72,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
       AUSD: AUSDAddress, // Natively issued AUSD
       yUSD: yUSDAddress, // YieldFi yUSD
     },
+    lifi: {
+      diamond: "0xC59fe32C9549e3E8B5dCcdAbC45BD287Bd5bA2bc",
+    },
     walletAddresses: {
       governanceMultisig: governanceSafeMultisig,
       incentivesVault: "0x4B4B5cC616be4cd1947B93f2304d36b3e80D3ef6", // Official Safe on Katana

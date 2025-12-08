@@ -11,6 +11,9 @@ export interface Config {
   readonly oracleAggregators: {
     [key: string]: OracleAggregatorConfig;
   };
+  readonly lifi?: {
+    readonly diamond: string;
+  };
   readonly dStables: {
     [key: string]: DStableConfig;
   };
