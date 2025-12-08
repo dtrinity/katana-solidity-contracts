@@ -82,6 +82,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   if (lifiRouter) {
     const currentRouter = await exchanger.swapRouter();
+
     if (currentRouter.toLowerCase() !== lifiRouter.toLowerCase()) {
       const complete = await executor.tryOrQueue(
         async () => {
@@ -99,6 +100,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   console.log("Granting DEFAULT_ADMIN_ROLE on exchanger to governance multisig...");
+
   if (!(await exchanger.hasRole(DEFAULT_ADMIN_ROLE, governance))) {
     const complete = await executor.tryOrQueue(
       async () => {
@@ -149,8 +151,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
 
   console.log("Queueing revocation of deployer admin/operator roles for post-test cleanup...");
-  const maybeQueueRevocation = async (role: string, label: string) => {
+
+  const maybeQueueRevocation = async (role: string, label: string): Promise<void> => {
     const hasRole = await exchanger.hasRole(role, deployer);
+
     if (!hasRole) {
       console.log(`    ✓ ${label} already revoked from deployer`);
       return;

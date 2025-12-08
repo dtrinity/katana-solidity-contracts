@@ -98,8 +98,7 @@ describe("FlashMintCollateralExchanger", () => {
       approveTo: overrides.approveTo ?? (await router.getAddress()),
       value: overrides.value ?? 0n,
       data:
-        overrides.data ??
-        router.interface.encodeFunctionData("swap", [fromToken.target, toToken.target, recipient, amountIn, amountOut]),
+        overrides.data ?? router.interface.encodeFunctionData("swap", [fromToken.target, toToken.target, recipient, amountIn, amountOut]),
       deadline: overrides.deadline ?? deadline,
       recipient,
       fromChainId: overrides.fromChainId ?? chainId,
