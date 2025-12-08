@@ -36,7 +36,6 @@ contract FlashMintCollateralExchanger is AccessControl, Pausable, ReentrancyGuar
     error TokenMismatch(address expected, address actual);
     error AmountOutTooLow(uint256 actual, uint256 minExpected);
     error CollateralPairMustDiffer();
-    error FlashAmountTooHigh(uint256 requested, uint256 available);
     error ShortfallNotCovered();
     error RedeemerRoleMissing();
     error ValueMismatch(uint256 expected, uint256 supplied);
@@ -184,12 +183,13 @@ contract FlashMintCollateralExchanger is AccessControl, Pausable, ReentrancyGuar
             revert ValueMismatch(params.lifiData.value, msg.value);
         }
 
+        address operator = msg.sender;
         // Encode params for callback
-        bytes memory data = abi.encode(params);
-        // Pre-approve token contract to pull repayments after callback
-        dstable.forceApprove(address(flashLender), type(uint256).max);
+        bytes memory data = abi.encode(operator, params);
         bool ok = flashLender.flashLoan(this, address(dstable), params.flashAmount, data);
         require(ok, "flashLoan failed");
+        // Clear any lingering allowance to the flash lender after repayment has occurred
+        dstable.forceApprove(address(flashLender), 0);
         // Sweep any residual dStable (post-burn) to surplus recipient
         uint256 leftover = dstable.balanceOf(address(this));
         if (leftover > 0 && surplusRecipient != address(0)) {
@@ -216,10 +216,7 @@ contract FlashMintCollateralExchanger is AccessControl, Pausable, ReentrancyGuar
             revert TokenMismatch(address(dstable), token);
         }
 
-        // Pre-approve lender (token) for repayment burning
-        dstable.forceApprove(msg.sender, type(uint256).max);
-
-        FlashExchangeParams memory params = abi.decode(data, (FlashExchangeParams));
+        (address operator, FlashExchangeParams memory params) = abi.decode(data, (address, FlashExchangeParams));
 
         // Basic param validation
         if (params.fromCollateral == params.toCollateral) revert CollateralPairMustDiffer();
@@ -253,7 +250,7 @@ contract FlashMintCollateralExchanger is AccessControl, Pausable, ReentrancyGuar
             _sweepCollateral(params.toCollateral);
 
             emit FlashExchangeExecuted(
-                tx.origin,
+                operator,
                 params.fromCollateral,
                 params.toCollateral,
                 amount,
