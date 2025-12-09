@@ -26,5 +26,7 @@
   "dUSD_Redeemer": 1757744149,
   "dusd-whitelist-collateral": 1757744177,
   "point-usd-oracle-aggregator-for-usd": 1757744181,
-  "dstake_dlend_rewards": 1757744181
+  "dstake_dlend_rewards": 1757744181,
+  "update_dstake_router_roles": 1765194133,
+  "DUSD_FLASH_MINT_COLLATERAL_EXCHANGER": 1765194170
 }

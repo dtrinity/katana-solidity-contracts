@@ -52,7 +52,7 @@ make deploy
 
 The protocol separates concerns into distinct subsystems:
 
-1. **dSTABLE System** (`/contracts/deth/`)
+1. **dSTABLE System** (`/contracts/dstable/`)
    - `IssuerV2` mints stablecoins against collateral
    - `RedeemerV2` handles redemptions with dynamic fees
    - `CollateralHolderVault` stores collateral and enables exchanges

@@ -32,8 +32,8 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
   // Safe configuration for governance multisig
   const safeOwners = [
     "0x9E0c8376940aBE845A89b7304147a95c72644f59", // David
-    "0x0000000000000000000000000000000000000000", // TODO - set actual owners
-    "0x0000000000000000000000000000000000000000", // TODO - set actual owners
+    "0x4B58fF1AAE6AdD7465A5584eBCaeb876ec8f21FD", // Scott
+    "0xDC672ba6e55B71b39FA5423D42B88E7aDF9d24A4", // Kory
   ];
   const safeThreshold = 2; // 2 of 3 multisig
 
@@ -71,6 +71,9 @@ export async function getConfig(_hre: HardhatRuntimeEnvironment): Promise<Config
       USDT: USDTAddress, // vbUSDT
       AUSD: AUSDAddress, // Natively issued AUSD
       yUSD: yUSDAddress, // YieldFi yUSD
+    },
+    lifi: {
+      diamond: "0xC59fe32C9549e3E8B5dCcdAbC45BD287Bd5bA2bc",
     },
     walletAddresses: {
       governanceMultisig: governanceSafeMultisig,
