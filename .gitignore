@@ -34,3 +34,4 @@ reports/slither/
 
 # Mythril analysis reports
 reports/mythril/
+.verify-args/
